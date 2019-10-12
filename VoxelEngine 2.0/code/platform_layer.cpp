@@ -6,7 +6,6 @@
 #include "voxel_engine.hpp"
 
 #include <Windows.h>
-
 #include <stdio.h>
 
 global_variable bool8 GlobalRunning;
@@ -293,12 +292,18 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			ReleaseDC(Window, WindowDC);
 
 			game_memory GameMemory = {};
-			GameMemory.PermanentStorageSize = Megabytes(128);
-			GameMemory.TemporaryStorageSize = Gigabytes(1);
+#if 0
+			GameMemory.PermanentStorageSize = Gigabytes(1);
+			GameMemory.TemporaryStorageSize = Gigabytes(2);
 			GameMemory.PermanentStorage = VirtualAlloc(0, GameMemory.PermanentStorageSize + GameMemory.TemporaryStorageSize, 
 													   MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 			GameMemory.TemporaryStorage = (u8 *)GameMemory.PermanentStorage + GameMemory.PermanentStorageSize;
-
+#else
+			GameMemory.PermanentStorageSize = Gigabytes(1);
+			GameMemory.PermanentStorage = VirtualAlloc(0, GameMemory.PermanentStorageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+			GameMemory.TemporaryStorageSize = Gigabytes(2);
+			GameMemory.TemporaryStorage = VirtualAlloc(0, GameMemory.TemporaryStorageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+#endif
 			GameMemory.PlatformReadEntireFile = WinReadEntireFile;
 			GameMemory.PlatformFreeFileMemory = WinFreeFileMemory;
 			GameMemory.PlatformAllocateMemory = WinAllocateMemory;
@@ -310,7 +315,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 			RAWINPUTDEVICE RID;
 			RID.usUsagePage = 1;
-			RID.usUsage = 2; // NOTE(george): 2 is for mouse input
+			RID.usUsage = 2; // NOTE(georgy): 2 is for mouse input
 			RID.dwFlags = 0;
 			RID.hwndTarget = Window;
 			RegisterRawInputDevices(&RID, 1, sizeof(RID));

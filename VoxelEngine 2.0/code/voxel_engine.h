@@ -229,7 +229,14 @@ SetMat4(shader Shader, char *Name, mat4 Value)
 	glUniformMatrix4fv(glGetUniformLocation(Shader.ID, Name), 1, GL_FALSE, (GLfloat *)&Value.FirstColumn);
 }
 
-#include "voxel_engine_world.hpp"
+#include "voxel_engine_world.h"
+#include "voxel_engine_sim_region.h"
+
+struct stored_entity
+{
+	world_position P;
+	sim_entity Sim;
+};
 
 struct game_state
 {
@@ -242,9 +249,13 @@ struct game_state
 
 	shader DefaultShader;
 
-	vec3 CubeP;
+	stored_entity *Hero;
+	world_position CubeP;
 	r32 CubeAdditionalRotation;
 	GLuint CubeVAO, CubeVBO;
+
+	u32 StoredEntityCount;
+	stored_entity StoredEntities[10000];
 };
 
 struct temp_state

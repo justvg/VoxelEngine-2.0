@@ -4,15 +4,16 @@
 
 #define internal static
 #define global_variable static
+#define local_persist static
 
 #define Assert(Expression) if(!(Expression)) { *(int *)0 = 0; }
 #define InvalidCodePath Assert(!"InvalidCodePath")
 
 #define ArrayCount(Array) (sizeof(Array)/sizeof((Array)[0]))
 
-#define Kilobytes(Value) ((Value) * 1024L)
-#define Megabytes(Value) (Kilobytes(Value) * 1024L)
-#define Gigabytes(Value) (Megabytes(Value) * 1024L)
+#define Kilobytes(Value) ((Value) * 1024LL)
+#define Megabytes(Value) (Kilobytes(Value) * 1024LL)
+#define Gigabytes(Value) (Megabytes(Value) * 1024LL)
 
 typedef  uint8_t u8;
 typedef  uint8_t bool8;

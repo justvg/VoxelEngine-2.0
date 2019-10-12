@@ -57,6 +57,14 @@ struct vec3
 	}
 
 	inline real32 operator[] (size_t I) { return(m.m128_f32[I]); };
+
+	inline vec3 & __vectorcall
+		operator= (vec3 Other)
+	{
+		m = _mm_loadu_ps((float const *)&Other);
+
+		return(*this);
+	}
 };
 
 inline vec3 __vectorcall
