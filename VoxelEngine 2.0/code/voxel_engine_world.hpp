@@ -82,7 +82,7 @@ GetChunk(world *World, i32 ChunkX, i32 ChunkY, i32 ChunkZ, stack_allocator *Allo
 
 	if(!Chunk && Allocator)
 	{
-		Chunk = PushStruct(Allocator, chunk);
+		Chunk = PushStruct(Allocator, chunk, 16);
 		Chunk->X = ChunkX;
 		Chunk->Y = ChunkY;
 		Chunk->Z = ChunkZ;
@@ -122,7 +122,7 @@ IsRecentlyUsed(world *World, chunk *ChunkToCheck)
 }
 
 internal void
-SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator)
+SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 DEBUGEmptyChunk)
 {
 	Chunk->IsSetup = true;
 
@@ -133,14 +133,33 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator)
 	Chunk->BlocksInfo = World->FirstFreeChunkBlocksInfo;
 	World->FirstFreeChunkBlocksInfo = World->FirstFreeChunkBlocksInfo->Next;
 
-	for(u32 BlockIndex = 0;
-		BlockIndex < CHUNK_DIM*CHUNK_DIM*CHUNK_DIM;
-		BlockIndex++)
-	{
-		Chunk->BlocksInfo->Blocks[BlockIndex].Active = true;
-	}
-
 	block *Blocks = Chunk->BlocksInfo->Blocks;
+
+	for(u32 BlockZ = 0;
+		BlockZ < CHUNK_DIM;
+		BlockZ++)
+	{
+		for(u32 BlockY = 0;
+			BlockY < CHUNK_DIM;
+			BlockY++)
+		{
+			for(u32 BlockX = 0;
+				BlockX < CHUNK_DIM;
+				BlockX++)
+			{
+				if((BlockX == 0) || (BlockX == (CHUNK_DIM - 1)) || 
+					(BlockZ == 0) || (BlockZ == (CHUNK_DIM - 1)) ||
+					(BlockY == 0))
+				{
+					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true && !DEBUGEmptyChunk;
+				}
+				else
+				{
+					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = false;
+				}
+			}
+		}
+	}
 
 	InitializeDynamicArray(&Chunk->VerticesP);
 	InitializeDynamicArray(&Chunk->VerticesNormals);

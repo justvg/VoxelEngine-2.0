@@ -2,7 +2,7 @@
 #include <gl\glew.h>
 #include <gl\wglew.h>
 
-#include "platform.h"
+#include "voxel_engine_platform.h"
 #include "voxel_engine.hpp"
 
 #include <Windows.h>
@@ -137,7 +137,7 @@ WinInitOpenGL(HWND Window, HINSTANCE Instance, LPCSTR WindowClassName)
 					wglSwapIntervalEXT(1);
 					glEnable(GL_DEPTH_TEST);
 					glEnable(GL_CULL_FACE);
-					glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+					// glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 				}
 				else
 				{
@@ -336,6 +336,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				}
 
 				GameInput.MouseXDisplacement = GameInput.MouseYDisplacement = 0;
+				GameInput.MouseRight = GameInput.MouseLeft = false;
 
 				MSG Message;
 				while (PeekMessage(&Message, 0, 0, 0, PM_REMOVE))
@@ -374,6 +375,10 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 								{
 									GameInput.MoveLeft = IsDown;
 								}
+								if (KeyCode == VK_SPACE)
+								{
+									GameInput.MoveUp = IsDown;
+								}
 							}
 						} break;
 
@@ -390,26 +395,12 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 								GameInput.MouseYDisplacement = RawInput.data.mouse.lLastY;
 								GameInput.MouseX += RawInput.data.mouse.lLastX;
 								GameInput.MouseY += RawInput.data.mouse.lLastY;
+								
+								GameInput.MouseRight = RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN;
+								GameInput.MouseLeft= RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN;
 							}
 						} break;
-
-						case WM_LBUTTONDOWN:
-						{
-							GameInput.MouseLeft = true;
-						} break;
-						case WM_LBUTTONUP:
-						{
-							GameInput.MouseLeft = false;
-						} break;
-						case WM_RBUTTONDOWN:
-						{
-							GameInput.MouseRight = true;
-						} break;
-						case WM_RBUTTONUP:
-						{
-							GameInput.MouseRight = false;
-						} break;
-
+						
 						default:
 						{
 							TranslateMessage(&Message);

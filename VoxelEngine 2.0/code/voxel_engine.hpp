@@ -3,19 +3,82 @@
 #include "voxel_engine_sim_region.hpp"
 
 internal stored_entity *
-AddEntity(game_state *GameState, world_position P)
+TESTAddCube(game_state *GameState, world_position P, vec3 Dim, u32 VerticesCount, r32 *Vertices)
 {
 	Assert(GameState->StoredEntityCount < ArrayCount(GameState->StoredEntities));
 	u32 EntityIndex = GameState->StoredEntityCount++;
 
 	stored_entity *StoredEntity = GameState->StoredEntities + EntityIndex;
 	*StoredEntity = {};
+	StoredEntity->VerticesCount = VerticesCount;
+	for(u32 VertexIndex = 0;
+		VertexIndex < VerticesCount;
+		VertexIndex++)
+	{
+		StoredEntity->Vertices[VertexIndex] = vec3(Vertices[VertexIndex*3], Vertices[VertexIndex*3 + 1], Vertices[VertexIndex*3 + 2]);
+	}
 	StoredEntity->Sim.StorageIndex = EntityIndex;
+	StoredEntity->Sim.Type = (entity_type)10000;
+	StoredEntity->Sim.Dim = Dim;
 	StoredEntity->P = InvalidPosition();
+	StoredEntity->Sim.Collides = true;
 
 	ChangeEntityLocation(&GameState->World, &GameState->WorldAllocator, EntityIndex, StoredEntity, P);
 
 	return(StoredEntity);
+}
+
+struct add_stored_entity_result
+{
+	stored_entity *StoredEntity;
+	u32 StorageIndex;
+};
+inline add_stored_entity_result
+AddStoredEntity(game_state *GameState, entity_type Type, world_position P)
+{
+	add_stored_entity_result Result;
+	
+	Assert(GameState->StoredEntityCount < ArrayCount(GameState->StoredEntities));
+	Result.StorageIndex = GameState->StoredEntityCount++;
+
+	Result.StoredEntity = GameState->StoredEntities + Result.StorageIndex;
+	*Result.StoredEntity = {};
+	Result.StoredEntity->Sim.StorageIndex = Result.StorageIndex;
+	Result.StoredEntity->Sim.Type = Type;
+	Result.StoredEntity->P = InvalidPosition();
+
+	ChangeEntityLocation(&GameState->World, &GameState->WorldAllocator, Result.StorageIndex, Result.StoredEntity, P);
+
+	return(Result);
+}
+
+internal u32
+AddFireball(game_state *GameState, vec3 Dim)
+{
+	add_stored_entity_result Entity = AddStoredEntity(GameState, EntityType_Fireball, InvalidPosition());
+
+	Entity.StoredEntity->Sim.Moveable = true;
+	Entity.StoredEntity->Sim.NonSpatial = true;
+	Entity.StoredEntity->Sim.Collides = true;
+	Entity.StoredEntity->Sim.Rotation = 0.0f;
+	Entity.StoredEntity->Sim.Dim = Dim;
+
+	return(Entity.StorageIndex);
+}
+
+internal stored_entity *
+AddHero(game_state *GameState, world_position P, vec3 Dim)
+{
+	add_stored_entity_result Entity = AddStoredEntity(GameState, EntityType_Hero, P);
+
+	Entity.StoredEntity->Sim.Moveable = true;
+	Entity.StoredEntity->Sim.Collides = true;
+	Entity.StoredEntity->Sim.GravityAffected = true;
+	Entity.StoredEntity->Sim.Rotation = 0.0f;
+	Entity.StoredEntity->Sim.Dim = Dim;
+	Entity.StoredEntity->Sim.Fireball.StorageIndex = AddFireball(GameState, vec3(0.25f, 0.25f, 0.25f));
+
+	return(Entity.StoredEntity);
 }
 
 internal void
@@ -36,7 +99,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 		GameState->StoredEntityCount = 0;
 
-		GameState->Camera.DistanceFromHero = 12.0f;
+		GameState->Camera.DistanceFromHero = 6.0f;
 		GameState->Camera.Pitch = GameState->Camera.Head = 0;
 		GameState->Camera.RotSensetivity = 0.05f;
 		GameState->Camera.OffsetFromHero = {};
@@ -45,53 +108,49 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 		CompileShader(&GameState->DefaultShader, "data/shaders/DefaultVS.glsl", "data/shaders/DefaultFS.glsl");
 
-		GameState->CubeP = {};
-		GameState->CubeP.Offset = vec3(3.0f, 0.0f, 3.0f);
-		GameState->Hero = AddEntity(GameState, GameState->CubeP);
-		GameState->CubeAdditionalRotation = 0.0f;
 		r32 CubeVertices[] = {
 			// Back face
-			-1.0f, -1.0f, -1.0f,
-			1.0f,  1.0f, -1.0f,
-			1.0f, -1.0f, -1.0f,
-			1.0f,  1.0f, -1.0f,
-			-1.0f, -1.0f, -1.0f,
-			-1.0f,  1.0f, -1.0f,
+			-0.5f, -0.5f, -0.5f,
+			0.5f,  0.5f, -0.5f,
+			0.5f, -0.5f, -0.5f,
+			0.5f,  0.5f, -0.5f,
+			-0.5f, -0.5f, -0.5f,
+			-0.5f,  0.5f, -0.5f,
 			// Front face
-			-1.0f, -1.0f,  1.0f,
-			1.0f, -1.0f,  1.0f,
-			1.0f,  1.0f,  1.0f,
-			1.0f,  1.0f,  1.0f,
-			-1.0f,  1.0f,  1.0f,
-			-1.0f, -1.0f,  1.0f,
+			-0.5f, -0.5f,  0.5f,
+			0.5f, -0.5f,  0.5f,
+			0.5f,  0.5f,  0.5f,
+			0.5f,  0.5f,  0.5f,
+			-0.5f,  0.5f,  0.5f,
+			-0.5f, -0.5f,  0.5f,
 			// Left face
-			-1.0f,  1.0f,  1.0f,
-			-1.0f,  1.0f, -1.0f,
-			-1.0f, -1.0f, -1.0f,
-			-1.0f, -1.0f, -1.0f,
-			-1.0f, -1.0f,  1.0f,
-			-1.0f,  1.0f,  1.0f,
+			-0.5f,  0.5f,  0.5f,
+			-0.5f,  0.5f, -0.5f,
+			-0.5f, -0.5f, -0.5f,
+			-0.5f, -0.5f, -0.5f,
+			-0.5f, -0.5f,  0.5f,
+			-0.5f,  0.5f,  0.5f,
 			// Right face
-			1.0f,  1.0f,  1.0f,
-			1.0f, -1.0f, -1.0f,
-			1.0f,  1.0f, -1.0f,
-			1.0f, -1.0f, -1.0f,
-			1.0f,  1.0f,  1.0f,
-			1.0f, -1.0f,  1.0f,
+			0.5f,  0.5f,  0.5f,
+			0.5f, -0.5f, -0.5f,
+			0.5f,  0.5f, -0.5f,
+			0.5f, -0.5f, -0.5f,
+			0.5f,  0.5f,  0.5f,
+			0.5f, -0.5f,  0.5f,
 			// Bottom face
-			-1.0f, -1.0f, -1.0f,
-			1.0f, -1.0f, -1.0f,
-			1.0f, -1.0f,  1.0f,
-			1.0f, -1.0f,  1.0f,
-			-1.0f, -1.0f,  1.0f,
-			-1.0f, -1.0f, -1.0f,
+			-0.5f, -0.5f, -0.5f,
+			0.5f, -0.5f, -0.5f,
+			0.5f, -0.5f,  0.5f,
+			0.5f, -0.5f,  0.5f,
+			-0.5f, -0.5f,  0.5f,
+			-0.5f, -0.5f, -0.5f,
 			// Top face
-			-1.0f,  1.0f, -1.0f,
-			1.0f,  1.0f , 1.0f,
-			1.0f,  1.0f, -1.0f,
-			1.0f,  1.0f,  1.0f,
-			-1.0f,  1.0f, -1.0f,
-			-1.0f,  1.0f,  1.0f,
+			-0.5f,  0.5f, -0.5f,
+			0.5f,  0.5f , 0.5f,
+			0.5f,  0.5f, -0.5f,
+			0.5f,  0.5f,  0.5f,
+			-0.5f,  0.5f, -0.5f,
+			-0.5f,  0.5f,  0.5f,
 		};
 		glGenVertexArrays(1, &GameState->CubeVAO);
 		glGenBuffers(1, &GameState->CubeVBO);
@@ -101,6 +160,19 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		glEnableVertexAttribArray(0);
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(r32), (void *)0);
 		glBindVertexArray(0);
+
+		// NOTE(georgy): Reserve slot 0
+		AddStoredEntity(GameState, EntityType_Null, InvalidPosition());
+
+		world_position TestP = {};
+		TestP.ChunkY = 0;
+		TestP.Offset = vec3(6.0f, 2.0f, 3.0f);
+		TESTAddCube(GameState, TestP, vec3(1.0f, 1.0f, 1.0f), 36, CubeVertices);
+
+		world_position HeroP = {};
+		HeroP.ChunkY = 1;
+		HeroP.Offset = vec3(0.3f, 5.0f, 3.0f);
+		GameState->Hero.Entity = AddHero(GameState, HeroP, vec3(1.0f, 1.0f, 1.0f));
 
 		GameState->IsInitialized = true;
 	}
@@ -117,8 +189,9 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 	temporary_memory RenderMemory = BeginTemporaryMemory(&TempState->Allocator);
 	
-	sim_region *SimRegion = BeginSimulation(GameState, &GameState->World, GameState->Hero->P, vec3(60.0f, 10.0f, 60.0f), 
-											&GameState->WorldAllocator, &TempState->Allocator);
+	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-60.0f, -20.0f, -60.0f), vec3(60.0f, 20.0f, 60.0f));
+	sim_region *SimRegion = BeginSimulation(GameState, &GameState->World, GameState->Hero.Entity->P, SimRegionUpdatableBounds, 
+											&GameState->WorldAllocator, &TempState->Allocator, Input->dt);
 
 	camera *Camera = &GameState->Camera;
 	Camera->Pitch -= Input->MouseYDisplacement*Camera->RotSensetivity;
@@ -142,67 +215,151 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 	Camera->Front = Normalize(vec3(CameraTargetDirX, CameraTargetDirY, CameraTargetDirZ));
 #endif
 
+	vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), 0.0f, -Camera->OffsetFromHero.z()));
+	// vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), -Camera->OffsetFromHero.y(), -Camera->OffsetFromHero.z()));
+	vec3 Right = Normalize(Cross(Forward, vec3(0.0f, 1.0f, 0.0f)));
+	r32 Theta = -RAD2DEG(atan2f(Forward.z(), Forward.x())) + 90.0f;
+	GameState->Hero.ddP = vec3(0.0f, 0.0f, 0.0f);
+	if (Input->MoveForward)
+	{
+		GameState->Hero.ddP += Forward;
+		GameState->Hero.AdditionalRotation = Theta;
+	}
+	if (Input->MoveBack)
+	{
+		GameState->Hero.ddP -= Forward;
+		GameState->Hero.AdditionalRotation = Theta - 180.0f;
+	}
+	if (Input->MoveRight)
+	{
+		GameState->Hero.ddP += Right;
+		GameState->Hero.AdditionalRotation = Theta - 90.0f;
+	}
+	if (Input->MoveLeft)
+	{
+		GameState->Hero.ddP -= Right;
+		GameState->Hero.AdditionalRotation = Theta + 90.0f;
+	}
+
+	GameState->Hero.dY = 0.0f;
+	if(Input->MoveUp)
+	{
+		GameState->Hero.dY = 3.0f;
+	}
+
+	if (Input->MoveForward && Input->MoveRight)
+	{
+		GameState->Hero.AdditionalRotation = Theta - 45.0f;
+	}
+	if (Input->MoveForward && Input->MoveLeft)
+	{
+		GameState->Hero.AdditionalRotation = Theta + 45.0f;
+	}
+	if (Input->MoveBack && Input->MoveRight)
+	{
+		GameState->Hero.AdditionalRotation = Theta - 135.0f;
+	}
+	if (Input->MoveBack && Input->MoveLeft)
+	{
+		GameState->Hero.AdditionalRotation = Theta + 135.0f;
+	}
+
+	GameState->Hero.Fireball = Input->MouseRight;
+
+	UseShader(GameState->DefaultShader);	
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	mat4 View = RotationMatrixFromDirection(Camera->OffsetFromHero) * Translate(-Camera->OffsetFromHero);
+	mat4 Projection = Perspective(45.0f, (r32)Width/Height, 0.1f, 100.0f);
+	SetMat4(GameState->DefaultShader, "View", View);
+	SetMat4(GameState->DefaultShader, "Projection", Projection);
 	for(u32 EntityIndex = 0;
 		EntityIndex < SimRegion->EntityCount;
 		EntityIndex++)
 	{
 		sim_entity *Entity = SimRegion->Entities + EntityIndex;
+		r32 dt = Input->dt;
+		if(Entity->Updatable)
+		{
+			vec3 ddP = {};
+			r32 Drag = 0.0f;
+			switch(Entity->Type)
+			{
+				case EntityType_Hero:
+				{
+					ddP = GameState->Hero.ddP;
+					Drag = 2.0f;
+					if(GameState->Hero.dY)
+					{
+						Entity->dP.SetY(GameState->Hero.dY);
+					}
 
-		//vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), 0.0f, -Camera->OffsetFromHero.z()));
-		vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), -Camera->OffsetFromHero.y(), -Camera->OffsetFromHero.z()));
-		vec3 Right = Normalize(Cross(Forward, vec3(0.0f, 1.0f, 0.0f)));
-		r32 Theta = -RAD2DEG(atan2f(Forward.z(), Forward.x())) + 90.0f;
-		if (Input->MoveForward)
-		{
-			Entity->P += 15.0f*Forward*Input->dt;
-			GameState->CubeAdditionalRotation = Theta;
-		}
-		if (Input->MoveBack)
-		{
-			Entity->P -= 15.0f*Forward*Input->dt;
-			GameState->CubeAdditionalRotation = Theta - 180.0f;
-		}
-		if (Input->MoveRight)
-		{
-			Entity->P += 15.0f*Right*Input->dt;
-			GameState->CubeAdditionalRotation = Theta - 90.0f;
-		}
-		if (Input->MoveLeft)
-		{
-			Entity->P -= 15.0f*Right*Input->dt;
-			GameState->CubeAdditionalRotation = Theta + 90.0f;
-		}
+					Entity->Rotation = GameState->Hero.AdditionalRotation;
 
-		if (Input->MoveForward && Input->MoveRight)
-		{
-			GameState->CubeAdditionalRotation = Theta - 45.0f;
-		}
-		if (Input->MoveForward && Input->MoveLeft)
-		{
-			GameState->CubeAdditionalRotation = Theta + 45.0f;
-		}
-		if (Input->MoveBack && Input->MoveRight)
-		{
-			GameState->CubeAdditionalRotation = Theta - 135.0f;
-		}
-		if (Input->MoveBack && Input->MoveLeft)
-		{
-			GameState->CubeAdditionalRotation = Theta + 135.0f;
+					if(GameState->Hero.Fireball)
+					{
+						sim_entity *Fireball = Entity->Fireball.SimPtr;
+						if(Fireball && Fireball->NonSpatial)
+						{
+							Fireball->NonSpatial = false;
+							Fireball->DistanceLimit = 8.0f;
+							Fireball->P = Entity->P + vec3(0.0f, 0.5f*Entity->Dim.y(), 0.0f);
+							Fireball->dP = vec3(Entity->dP.x(), 0.0f, Entity->dP.z()) - vec3(0.0f, 0.0f, 5.0f);
+						}
+					}
+				} break;
+
+				case EntityType_Fireball:
+				{
+					if(Entity->DistanceLimit == 0.0f)
+					{
+						Entity->P = vec3((r32)INVALID_POSITION, (r32)INVALID_POSITION, (r32)INVALID_POSITION);
+						Entity->NonSpatial = true;						
+					}
+				} break;
+			}
+
+			if(Entity->Moveable && !Entity->NonSpatial)
+			{
+				MoveEntity(GameState, SimRegion, Entity, ddP, Drag, dt, false);
+				if(Entity->GravityAffected)
+				{
+					MoveEntity(GameState, SimRegion, Entity, ddP, Drag, dt, true);
+				}
+			}
+
+			switch(Entity->Type)
+			{
+				case EntityType_Hero:
+				{
+					glBindVertexArray(GameState->CubeVAO);
+					mat4 Model = Translate(vec3(0.0f, 0.5f*Entity->Dim.y(), 0.0f)) * Rotate(Entity->Rotation, vec3(0.0f, 1.0f, 0.0f));
+					SetMat4(GameState->DefaultShader, "Model", Model);
+					glDrawArrays(GL_TRIANGLES, 0, 36);
+					glBindVertexArray(0);
+				} break;
+
+				case EntityType_Fireball:
+				{
+					glBindVertexArray(GameState->CubeVAO);
+					mat4 Model = Translate(vec3(0.0f, 0.5f*Entity->Dim.y(), 0.0f) + Entity->P) * Scale(vec3(0.25f, 0.25f, 0.25f));
+					SetMat4(GameState->DefaultShader, "Model", Model);
+					glDrawArrays(GL_TRIANGLES, 0, 36);
+					glBindVertexArray(0);
+				} break;
+
+				// TEST
+				default:
+				{
+					glBindVertexArray(GameState->CubeVAO);
+					mat4 Model = Translate(vec3(0.0f, 0.5f*Entity->Dim.y(), 0.0f) + Entity->P);
+					SetMat4(GameState->DefaultShader, "Model", Model);
+					glDrawArrays(GL_TRIANGLES, 0, 36);
+					glBindVertexArray(0);
+				}  break;
+			}
 		}
 	}
 	
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-	UseShader(GameState->DefaultShader);
-	glBindVertexArray(GameState->CubeVAO);
-	mat4 Model = Rotate(GameState->CubeAdditionalRotation, vec3(0.0f, 1.0f, 0.0f));
-	mat4 View = RotationMatrixFromDirection(Camera->OffsetFromHero) * Translate(-Camera->OffsetFromHero);
-	mat4 Projection = Perspective(45.0f, (r32)Width/Height, 0.1f, 100.0f);
-	SetMat4(GameState->DefaultShader, "Model", Model);
-	SetMat4(GameState->DefaultShader, "View", View);
-	SetMat4(GameState->DefaultShader, "Projection", Projection);
-	glDrawArrays(GL_TRIANGLES, 0, 36);
-
 	RenderChunks(&GameState->World, GameState->DefaultShader);
 	
 	EndSimulation(GameState, SimRegion, &GameState->WorldAllocator);

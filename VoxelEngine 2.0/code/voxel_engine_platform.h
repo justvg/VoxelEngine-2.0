@@ -69,13 +69,14 @@ struct game_input
 
 	union
 	{
-		bool8 Buttons[4];
+		bool8 Buttons[5];
 		struct
 		{
 			bool8 MoveForward;
 			bool8 MoveBack;
 			bool8 MoveRight;
 			bool8 MoveLeft;
+			bool8 MoveUp;
 		};
 	};
 };

@@ -27,13 +27,31 @@ InitializeStackAllocator(stack_allocator *Allocator, u64 Size, void *Base)
 	Allocator->Used = 0;
 }
 
-#define PushStruct(Allocator, type) (type *)PushSize(Allocator, sizeof(type))
-#define PushArray(Allocator, Count, type) (type *)PushSize(Allocator, (Count)*sizeof(type))
-inline void *
-PushSize(stack_allocator *Allocator, u64 Size)
+inline u64
+GetAlignmentOffset(stack_allocator *Allocator, u64 Alignment)
 {
+	u64 ResultPointer = (u64)Allocator->Base + Allocator->Used;
+	u64 AlignmentOffset = 0;
+
+	u64 AlignmentMask = Alignment - 1;
+	if(ResultPointer & AlignmentMask)
+	{
+		AlignmentOffset = Alignment - (ResultPointer & AlignmentMask);
+	}
+
+	return(AlignmentOffset);
+}
+
+#define PushStruct(Allocator, type, ...) (type *)PushSize(Allocator, sizeof(type), ## __VA_ARGS__)
+#define PushArray(Allocator, Count, type, ...) (type *)PushSize(Allocator, (Count)*sizeof(type), ## __VA_ARGS__)
+inline void *
+PushSize(stack_allocator *Allocator, u64 Size, u64 Alignment = 4)
+{
+	u64 AlignmentOffset = GetAlignmentOffset(Allocator, Alignment);
+	Size += AlignmentOffset;
+
 	Assert((Allocator->Used + Size) <= Allocator->Size);
-	void *Result = Allocator->Base + Allocator->Used;
+	void *Result = Allocator->Base + Allocator->Used + AlignmentOffset;
 	Allocator->Used += Size;
 
 	return(Result);
@@ -55,6 +73,19 @@ EndTemporaryMemory(temporary_memory TempMemory)
 	stack_allocator *Allocator = TempMemory.Allocator;
 	Assert(Allocator->Used >= TempMemory.Used);
 	Allocator->Used = TempMemory.Used;
+}
+
+#define ZeroStruct(Struct) ZeroSize(&(Struct), sizeof(Struct));
+#define ZeroArray(Pointer, Count) ZeroSize((Pointer), Count*sizeof((Pointer)[0]));
+inline void
+ZeroSize(void *Ptr, u64 Size)
+{
+	// TODO(georgy): Performance!
+	u8 *Byte = (u8 *)Ptr;
+	while(Size--)
+	{
+		*Byte++ = 0;
+	}
 }
 
 #include "voxel_engine_math.h"
@@ -84,6 +115,7 @@ ExpandDynamicArray(dynamic_array_vec3 *Array)
 	u32 NewMaxEntriesCount = Array->MaxEntriesCount ? Array->MaxEntriesCount * 2 : INITIAL_MAX_ENTRIES_COUNT;
 	vec3 *NewMemory = (vec3 *)PlatformAllocateMemory(NewMaxEntriesCount * sizeof(vec3));
 	Assert(NewMemory);
+	Assert(((i32)NewMemory & 15) == 0);
 
 	for (u32 EntryIndex = 0;
 		EntryIndex < Array->MaxEntriesCount;
@@ -103,6 +135,7 @@ InitializeDynamicArray(dynamic_array_vec3 *Array, u32 InitialMaxEntriesCount = I
 	Array->MaxEntriesCount = InitialMaxEntriesCount;
 	Array->EntriesCount = 0;
 	Array->Entries = (vec3 *)PlatformAllocateMemory(Array->MaxEntriesCount * sizeof(vec3));
+	Assert(((i32)Array->Entries & 15) == 0);
 }
 
 internal void
@@ -236,6 +269,24 @@ struct stored_entity
 {
 	world_position P;
 	sim_entity Sim;
+
+	// TODO(georgy): 
+	// 	This is just for collision detection test, it should be moved from here (to the asset system?)
+	// 	We don't wanna store vertices for every entity of the same type!
+	// 	Or this should be simplified entity volume just for collision detection? (Yes!) (Like collision rules)	
+	u32 VerticesCount;
+	vec3 Vertices[100];
+};
+
+struct hero
+{
+	stored_entity *Entity;
+
+	bool32 Fireball;
+
+	vec3 ddP;
+	r32 dY;
+	r32 AdditionalRotation;
 };
 
 struct game_state
@@ -249,9 +300,7 @@ struct game_state
 
 	shader DefaultShader;
 
-	stored_entity *Hero;
-	world_position CubeP;
-	r32 CubeAdditionalRotation;
+	hero Hero;
 	GLuint CubeVAO, CubeVBO;
 
 	u32 StoredEntityCount;
