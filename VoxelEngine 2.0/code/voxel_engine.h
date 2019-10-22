@@ -245,6 +245,12 @@ SetInt(shader Shader, char *Name, int32_t Value)
 }
 
 inline void
+SetVec2(shader Shader, char *Name, vec2 Value)
+{
+	glUniform2f(glGetUniformLocation(Shader.ID, Name), Value.x, Value.y);
+}
+
+inline void
 SetVec3(shader Shader, char *Name, vec3 Value)
 {
 	glUniform3fv(glGetUniformLocation(Shader.ID, Name), 1, (GLfloat *)&Value.m);
@@ -309,6 +315,7 @@ struct game_state
 	pairwise_collision_rule CollisionRules[256];
 
 	shader DefaultShader;
+	shader BillboardShader;
 
 	hero Hero;
 	GLuint CubeVAO, CubeVBO;
@@ -326,3 +333,11 @@ struct temp_state
 
 	stack_allocator Allocator;
 };
+
+#define INVALID_POSITION INT32_MAX
+inline void
+MakeEntityNonSpatial(sim_entity *Entity)
+{
+	Entity->P = vec3((r32)INVALID_POSITION, (r32)INVALID_POSITION, (r32)INVALID_POSITION);
+	Entity->NonSpatial = true;
+}

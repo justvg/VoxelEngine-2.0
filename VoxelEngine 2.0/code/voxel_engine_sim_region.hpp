@@ -502,7 +502,6 @@ HandleCollision(game_state *GameState, sim_entity *EntityA, sim_entity *EntityB,
 	}
 	else if((A == EntityType_Fireball) && (B == 10000))
 	{
-		PlatformOutputDebugString("FIREBAAAAAL");
 		EntityB->HitPoints -= 10;
 		if(EntityB->HitPoints <= 0)
 		{

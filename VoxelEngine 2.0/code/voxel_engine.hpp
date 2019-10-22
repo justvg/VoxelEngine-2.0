@@ -2,13 +2,6 @@
 #include "voxel_engine_world.hpp"
 #include "voxel_engine_sim_region.hpp"
 
-inline void
-MakeEntityNonSpatial(sim_entity *Entity)
-{
-	Entity->P = vec3((r32)INVALID_POSITION, (r32)INVALID_POSITION, (r32)INVALID_POSITION);
-	Entity->NonSpatial = true;
-}
-
 internal void
 AddCollisionRule(game_state *GameState, u32 StorageIndexA, u32 StorageIndexB, bool32 CanCollide)
 {
@@ -179,6 +172,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		InitializeWorld(&GameState->World);
 
 		CompileShader(&GameState->DefaultShader, "data/shaders/DefaultVS.glsl", "data/shaders/DefaultFS.glsl");
+		CompileShader(&GameState->BillboardShader, "data/shaders/BillboardVS.glsl", "data/shaders/BillboardFS.glsl");
 
 		r32 CubeVertices[] = {
 			// Back face
@@ -235,10 +229,10 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 		r32 QuadVertices[] = 
 		{
-			-1.0f, 1.0f, 0.0f,
-			-1.0f, -1.0f, 0.0f,
-			1.0f, -1.0f, 0.0f,
-			1.0f, 1.0f, 0.0f
+			-0.5f, 0.5f, 0.0f,
+			-0.5f, -0.5f, 0.0f,
+			0.5f, 0.5f, 0.0f,
+			0.5f, -0.5f, 0.0f
 		};
 		glGenVertexArrays(1, &GameState->QuadVAO);
 		glGenBuffers(1, &GameState->QuadVBO);
@@ -253,8 +247,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		AddStoredEntity(GameState, EntityType_Null, InvalidPosition());
 
 		world_position TestP = {};
-		TestP.ChunkY = 0;
-		TestP.Offset = vec3(6.0f, 2.0f, 3.0f);
+		TestP.ChunkY = 1;
+		TestP.Offset = vec3(0.0f, 0.0f, 3.0f);
 		TESTAddCube(GameState, TestP, vec3(1.0f, 1.0f, 1.0f), 36, CubeVertices);
 
 		world_position HeroP = {};
@@ -353,13 +347,23 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 	}
 
 	GameState->Hero.Fireball = Input->MouseRight;
+	if(GameState->Hero.Fireball)
+	{
+		GameState->Hero.AdditionalRotation = Theta;
+	}
+
+
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	UseShader(GameState->DefaultShader);	
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	mat4 View = RotationMatrixFromDirection(Camera->OffsetFromHero) * Translate(-Camera->OffsetFromHero);
 	mat4 Projection = Perspective(45.0f, (r32)Width/Height, 0.1f, 100.0f);
 	SetMat4(GameState->DefaultShader, "View", View);
 	SetMat4(GameState->DefaultShader, "Projection", Projection);
+	UseShader(GameState->BillboardShader);
+	SetMat4(GameState->BillboardShader, "View", View);
+	SetMat4(GameState->BillboardShader, "Projection", Projection);
+
 	for(u32 EntityIndex = 0;
 		EntityIndex < SimRegion->EntityCount;
 		EntityIndex++)
@@ -368,6 +372,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		r32 dt = Input->dt;
 		if(Entity->Updatable)
 		{
+			UseShader(GameState->DefaultShader);	
+			
 			vec3 ddP = {};
 			r32 Drag = 0.0f;
 			switch(Entity->Type)
@@ -391,7 +397,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 							Fireball->NonSpatial = false;
 							Fireball->DistanceLimit = 8.0f;
 							Fireball->P = Entity->P + vec3(0.0f, 0.5f*Entity->Dim.y(), 0.0f);
-							Fireball->dP = vec3(Entity->dP.x(), 0.0f, Entity->dP.z()) - vec3(0.0f, 0.0f, 5.0f);
+							Fireball->dP = vec3(Entity->dP.x(), 0.0f, Entity->dP.z()) + 5.0f*Forward;
 						}
 					}
 				} break;
@@ -407,13 +413,13 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 				case 10000:
 				{
-					Drag = 1.0f;
+					//Drag = 1.0f;
 
 					vec3 DisplacementToHero = -Entity->P;
 					r32 Distance = Length(DisplacementToHero);
 					if(Distance > 2.0f)
 					{
-						ddP = Normalize(DisplacementToHero);
+						//ddP = Normalize(DisplacementToHero);
 					}
 				} break;
 			}
@@ -445,8 +451,6 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 					SetMat4(GameState->DefaultShader, "Model", Model);
 					glDrawArrays(GL_TRIANGLES, 0, 36);
 					glBindVertexArray(0);
-
-
 				} break;
 
 				// TEST
@@ -456,6 +460,16 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 					mat4 Model = Translate(vec3(0.0f, 0.5f*Entity->Dim.y(), 0.0f) + Entity->P);
 					SetMat4(GameState->DefaultShader, "Model", Model);
 					glDrawArrays(GL_TRIANGLES, 0, 36);
+					glBindVertexArray(0);
+
+					UseShader(GameState->BillboardShader);
+					SetVec3(GameState->BillboardShader, "Color", vec3(1.0f, 0.0f, 0.0f));
+					SetVec3(GameState->BillboardShader, "CameraRight", Right);
+					SetVec3(GameState->BillboardShader, "BillboardSimCenterP", Entity->P + vec3(0.0f, Entity->Dim.y() + 0.1f, 0.0f));
+					SetVec2(GameState->BillboardShader, "Scale", vec2((r32)Entity->HitPoints / (r32)Entity->MaxHitPoints, 0.2f));
+					
+					glBindVertexArray(GameState->QuadVAO);
+					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 					glBindVertexArray(0);
 				}  break;
 			}

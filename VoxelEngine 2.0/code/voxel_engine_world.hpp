@@ -12,7 +12,6 @@ InitializeWorld(world *World)
 	World->FirstFreeWorldEntityBlock = 0;
 }
 
-#define INVALID_POSITION INT32_MAX
 inline world_position
 InvalidPosition(void)
 {
