@@ -429,24 +429,38 @@ NarrowPhaseCollisionDetection(vec3 P1, vec3 P2, vec3 P3, mat3 WorldToEllipsoid,
 } 
 
 internal bool32
-CanCollide(sim_entity *A, sim_entity *B)
+CanCollide(game_state *GameState, sim_entity *A, sim_entity *B)
 {
 	bool32 Result = false;
 
 	if(A != B)
 	{
-		Result = A->Collides && B->Collides;
-
-		if (A->Type > B->Type)
+		if(A->Collides && B->Collides)
 		{
-			sim_entity *Temp = A;
-			A = B;
-			B = Temp;
-		}
+			if (A->StorageIndex > B->StorageIndex)
+			{
+				sim_entity *Temp = A;
+				A = B;
+				B = Temp;
+			}
 
-		if((A->Type == EntityType_Hero) && (B->Type == EntityType_Fireball))
-		{
-			Result = false;
+			if(!A->NonSpatial && !B->NonSpatial)
+			{
+				Result = true;
+			}
+
+			for(u32 CollisionRuleIndex = 0;
+				CollisionRuleIndex < ArrayCount(GameState->CollisionRules);
+				CollisionRuleIndex++)
+			{
+				pairwise_collision_rule *CollisionRule = GameState->CollisionRules + CollisionRuleIndex;
+				if((CollisionRule->StorageIndexA == A->StorageIndex) &&
+				   (CollisionRule->StorageIndexB == B->StorageIndex))
+				{
+					Result = CollisionRule->CanCollide;
+					break;
+				}
+			}
 		}
 	}
 
@@ -454,9 +468,22 @@ CanCollide(sim_entity *A, sim_entity *B)
 }
 
 internal bool32
-HandleCollision(sim_entity *EntityA, sim_entity *EntityB, entity_type A, entity_type B)
+HandleCollision(game_state *GameState, sim_entity *EntityA, sim_entity *EntityB, entity_type A, entity_type B)
 {
-	bool32 Result = true;
+	bool32 Result;
+
+	if(EntityA->Type == EntityType_Fireball)
+	{
+		if(EntityB)
+		{
+			AddCollisionRule(GameState, EntityA->StorageIndex, EntityB->StorageIndex, false);
+		}
+		Result = false;
+	}
+	else
+	{
+		Result = true;
+	}
 
 	if(A > B)
 	{
@@ -471,8 +498,17 @@ HandleCollision(sim_entity *EntityA, sim_entity *EntityB, entity_type A, entity_
 
 	if((A == EntityType_Chunk) && (B == EntityType_Fireball))
 	{
-		EntityB->P = vec3((r32)INVALID_POSITION, (r32)INVALID_POSITION, (r32)INVALID_POSITION);
-		EntityB->NonSpatial = true;
+		MakeEntityNonSpatial(EntityB);
+	}
+	else if((A == EntityType_Fireball) && (B == 10000))
+	{
+		PlatformOutputDebugString("FIREBAAAAAL");
+		EntityB->HitPoints -= 10;
+		if(EntityB->HitPoints <= 0)
+		{
+			EntityB->HitPoints = 0;
+			MakeEntityNonSpatial(EntityB);
+		}
 	}
 
 	return(Result);
@@ -569,7 +605,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 		{
 			sim_entity *TestEntity = SimRegion->Entities + TestEntityIndex;
 
-			if(CanCollide(Entity, TestEntity))
+			if(CanCollide(GameState, Entity, TestEntity))
 			{
 				box TestEntityBox = ConstructBoxDim(TestEntity->Dim);
 				mat3 TestEntityTransformation = Rotate3x3(TestEntity->Rotation, vec3(0.0f, 1.0f, 0.0f));
@@ -639,23 +675,25 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 			{
 				sim_entity *TestEntity = CollideEntities[CollisionEntityIndex];
 				stored_entity *StoredTestEntity = &GameState->StoredEntities[TestEntity->StorageIndex];
-
-				for(u32 TriangleIndex = 0;
-					TriangleIndex < (StoredTestEntity->VerticesCount / 3);
-					TriangleIndex++)
+				if(CanCollide(GameState, Entity, TestEntity))
 				{
-					mat3 TestEntityTransformation = Rotate3x3(TestEntity->Rotation, vec3(0.0f, 1.0f, 0.0f));
-					vec3 Displacement = vec3(0.0f, 0.5f*TestEntity->Dim.y(), 0.0f);
-					// TODO(georgy): This is not right at the moment! I don't scale vertices appropriately
-					vec3 P1 = (TestEntityTransformation*StoredTestEntity->Vertices[TriangleIndex*3]) + TestEntity->P + Displacement;
-					vec3 P2 = (TestEntityTransformation*StoredTestEntity->Vertices[TriangleIndex*3 + 1]) + TestEntity->P + Displacement;
-					vec3 P3 = (TestEntityTransformation*StoredTestEntity->Vertices[TriangleIndex*3 + 2]) + TestEntity->P + Displacement;
-
-					if(NarrowPhaseCollisionDetection(P1, P2, P3, WorldToEllipsoid, NormalizedESpaceEntityDelta,
-													 ESpaceP, ESpaceEntityDelta, &t, &CollisionP))
+					for(u32 TriangleIndex = 0;
+						TriangleIndex < (StoredTestEntity->VerticesCount / 3);
+						TriangleIndex++)
 					{
-						HitEntity = TestEntity;
-						HitEntityType = HitEntity->Type;
+						mat3 TestEntityTransformation = Rotate3x3(TestEntity->Rotation, vec3(0.0f, 1.0f, 0.0f));
+						vec3 Displacement = vec3(0.0f, 0.5f*TestEntity->Dim.y(), 0.0f);
+						// TODO(georgy): This is not right at the moment! I don't scale vertices appropriately
+						vec3 P1 = (TestEntityTransformation*StoredTestEntity->Vertices[TriangleIndex*3]) + TestEntity->P + Displacement;
+						vec3 P2 = (TestEntityTransformation*StoredTestEntity->Vertices[TriangleIndex*3 + 1]) + TestEntity->P + Displacement;
+						vec3 P3 = (TestEntityTransformation*StoredTestEntity->Vertices[TriangleIndex*3 + 2]) + TestEntity->P + Displacement;
+
+						if(NarrowPhaseCollisionDetection(P1, P2, P3, WorldToEllipsoid, NormalizedESpaceEntityDelta,
+														ESpaceP, ESpaceEntityDelta, &t, &CollisionP))
+						{
+							HitEntity = TestEntity;
+							HitEntityType = HitEntity->Type;
+						}
 					}
 				}
 			}
@@ -665,7 +703,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 			ESpaceEntityDelta = ESpaceDesiredP - ESpaceP;
 			if(HitEntityType)
 			{
-				bool32 StopOnCollision = HandleCollision(Entity, HitEntity, Entity->Type, HitEntityType);
+				bool32 StopOnCollision = HandleCollision(GameState, Entity, HitEntity, Entity->Type, HitEntityType);
 
 				if(StopOnCollision)
 				{

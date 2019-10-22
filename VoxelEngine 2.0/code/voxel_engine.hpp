@@ -2,6 +2,74 @@
 #include "voxel_engine_world.hpp"
 #include "voxel_engine_sim_region.hpp"
 
+inline void
+MakeEntityNonSpatial(sim_entity *Entity)
+{
+	Entity->P = vec3((r32)INVALID_POSITION, (r32)INVALID_POSITION, (r32)INVALID_POSITION);
+	Entity->NonSpatial = true;
+}
+
+internal void
+AddCollisionRule(game_state *GameState, u32 StorageIndexA, u32 StorageIndexB, bool32 CanCollide)
+{
+	if(StorageIndexA > StorageIndexB)
+	{
+		u32 Temp = StorageIndexA;
+		StorageIndexA = StorageIndexB;
+		StorageIndexB = Temp;
+	}
+
+	for(u32 CollisionRuleIndex = GameState->LastStoredCollisionRule;
+		CollisionRuleIndex < ArrayCount(GameState->CollisionRules);
+		CollisionRuleIndex++)
+	{
+		pairwise_collision_rule *CollisionRule = GameState->CollisionRules + CollisionRuleIndex;
+		if((CollisionRule->StorageIndexA == 0) &&
+		   (CollisionRule->StorageIndexB == 0))
+		{
+			CollisionRule->StorageIndexA = StorageIndexA;
+			CollisionRule->StorageIndexB = StorageIndexB;
+			CollisionRule->CanCollide = CanCollide;
+			GameState->LastStoredCollisionRule = CollisionRuleIndex;
+			return;
+		}
+	}
+
+	for(u32 CollisionRuleIndex = 0;
+		CollisionRuleIndex < GameState->LastStoredCollisionRule;
+		CollisionRuleIndex++)
+	{
+		pairwise_collision_rule *CollisionRule = GameState->CollisionRules + CollisionRuleIndex;
+		if((CollisionRule->StorageIndexA == 0) &&
+		   (CollisionRule->StorageIndexB == 0))
+		{
+			CollisionRule->StorageIndexA = StorageIndexA;
+			CollisionRule->StorageIndexB = StorageIndexB;
+			CollisionRule->CanCollide = CanCollide;
+			GameState->LastStoredCollisionRule = CollisionRuleIndex;
+			return;
+		}
+	}
+
+	Assert(!"NO SPACE FOR NEW COLLISION RULE!");
+}
+
+internal void
+ClearCollisionRulesFor(game_state *GameState, u32 StorageIndex)
+{
+	for(u32 CollisionRuleIndex = 0;
+		CollisionRuleIndex < ArrayCount(GameState->CollisionRules);
+		CollisionRuleIndex++)
+	{
+		pairwise_collision_rule *CollisionRule = GameState->CollisionRules + CollisionRuleIndex;
+		if((CollisionRule->StorageIndexA == StorageIndex) ||
+		   (CollisionRule->StorageIndexB == StorageIndex))
+		{
+			CollisionRule->StorageIndexA = CollisionRule->StorageIndexB = 0;
+		}
+	}
+}
+
 internal stored_entity *
 TESTAddCube(game_state *GameState, world_position P, vec3 Dim, u32 VerticesCount, r32 *Vertices)
 {
@@ -21,7 +89,11 @@ TESTAddCube(game_state *GameState, world_position P, vec3 Dim, u32 VerticesCount
 	StoredEntity->Sim.Type = (entity_type)10000;
 	StoredEntity->Sim.Dim = Dim;
 	StoredEntity->P = InvalidPosition();
+	StoredEntity->Sim.Moveable = true;
 	StoredEntity->Sim.Collides = true;
+
+	StoredEntity->Sim.MaxHitPoints = 30;
+	StoredEntity->Sim.HitPoints = 30;
 
 	ChangeEntityLocation(&GameState->World, &GameState->WorldAllocator, EntityIndex, StoredEntity, P);
 
@@ -157,6 +229,22 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		glBindVertexArray(GameState->CubeVAO);
 		glBindBuffer(GL_ARRAY_BUFFER, GameState->CubeVBO);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(CubeVertices), CubeVertices, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(r32), (void *)0);
+		glBindVertexArray(0);
+
+		r32 QuadVertices[] = 
+		{
+			-1.0f, 1.0f, 0.0f,
+			-1.0f, -1.0f, 0.0f,
+			1.0f, -1.0f, 0.0f,
+			1.0f, 1.0f, 0.0f
+		};
+		glGenVertexArrays(1, &GameState->QuadVAO);
+		glGenBuffers(1, &GameState->QuadVBO);
+		glBindVertexArray(GameState->QuadVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, GameState->QuadVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(QuadVertices), QuadVertices, GL_STATIC_DRAW);
 		glEnableVertexAttribArray(0);
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(r32), (void *)0);
 		glBindVertexArray(0);
@@ -312,8 +400,20 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 				{
 					if(Entity->DistanceLimit == 0.0f)
 					{
-						Entity->P = vec3((r32)INVALID_POSITION, (r32)INVALID_POSITION, (r32)INVALID_POSITION);
-						Entity->NonSpatial = true;						
+						MakeEntityNonSpatial(Entity);
+						ClearCollisionRulesFor(GameState, Entity->StorageIndex);
+					}
+				} break;
+
+				case 10000:
+				{
+					Drag = 1.0f;
+
+					vec3 DisplacementToHero = -Entity->P;
+					r32 Distance = Length(DisplacementToHero);
+					if(Distance > 2.0f)
+					{
+						ddP = Normalize(DisplacementToHero);
 					}
 				} break;
 			}
@@ -345,6 +445,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 					SetMat4(GameState->DefaultShader, "Model", Model);
 					glDrawArrays(GL_TRIANGLES, 0, 36);
 					glBindVertexArray(0);
+
+
 				} break;
 
 				// TEST

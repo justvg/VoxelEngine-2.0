@@ -289,6 +289,13 @@ struct hero
 	r32 AdditionalRotation;
 };
 
+struct pairwise_collision_rule
+{
+	u32 StorageIndexA;
+	u32 StorageIndexB;
+	bool32 CanCollide;
+};
+
 struct game_state
 {
 	bool32 IsInitialized;
@@ -298,14 +305,20 @@ struct game_state
 	stack_allocator WorldAllocator;
 	world World;	
 
+	u32 LastStoredCollisionRule;
+	pairwise_collision_rule CollisionRules[256];
+
 	shader DefaultShader;
 
 	hero Hero;
 	GLuint CubeVAO, CubeVBO;
+	GLuint QuadVAO, QuadVBO;
 
 	u32 StoredEntityCount;
 	stored_entity StoredEntities[10000];
 };
+
+internal void AddCollisionRule(game_state *GameState, u32 StorageIndexA, u32 StorageIndexB, bool32 CanCollide);
 
 struct temp_state
 {

@@ -31,6 +31,9 @@ struct sim_entity
 	bool32 Collides;
 	bool32 GravityAffected;
 
+	i32 MaxHitPoints;
+	i32 HitPoints;
+
 	r32 Rotation;
 
 	vec3 Dim;
