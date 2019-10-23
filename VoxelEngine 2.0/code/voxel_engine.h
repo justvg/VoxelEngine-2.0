@@ -45,7 +45,7 @@ GetAlignmentOffset(stack_allocator *Allocator, u64 Alignment)
 #define PushStruct(Allocator, type, ...) (type *)PushSize(Allocator, sizeof(type), ## __VA_ARGS__)
 #define PushArray(Allocator, Count, type, ...) (type *)PushSize(Allocator, (Count)*sizeof(type), ## __VA_ARGS__)
 inline void *
-PushSize(stack_allocator *Allocator, u64 Size, u64 Alignment = 4)
+PushSize(stack_allocator *Allocator, u64 Size, u64 Alignment = 16)
 {
 	u64 AlignmentOffset = GetAlignmentOffset(Allocator, Alignment);
 	Size += AlignmentOffset;
@@ -275,13 +275,6 @@ struct stored_entity
 {
 	world_position P;
 	sim_entity Sim;
-
-	// TODO(georgy): 
-	// 	This is just for collision detection test, it should be moved from here (to the asset system?)
-	// 	We don't wanna store vertices for every entity of the same type!
-	// 	Or this should be simplified entity volume just for collision detection? (Yes!) (Like collision rules)	
-	u32 VerticesCount;
-	vec3 Vertices[100];
 };
 
 struct hero
@@ -302,6 +295,15 @@ struct pairwise_collision_rule
 	bool32 CanCollide;
 };
 
+struct loaded_model
+{
+	GLuint VAO, PVBO, NormalsVBO;
+	dynamic_array_vec3 VerticesP;
+	dynamic_array_vec3 Normals;
+
+	vec3 Alignment;
+};
+
 struct game_state
 {
 	bool32 IsInitialized;
@@ -314,12 +316,17 @@ struct game_state
 	u32 LastStoredCollisionRule;
 	pairwise_collision_rule CollisionRules[256];
 
+	sim_entity_collision_volume *HeroCollision;
+	sim_entity_collision_volume *FireballCollision;
+	sim_entity_collision_volume *TESTCubeCollision;
+
 	shader DefaultShader;
 	shader BillboardShader;
 
 	hero Hero;
 	GLuint CubeVAO, CubeVBO;
 	GLuint QuadVAO, QuadVBO;
+	loaded_model GoblinHeadModel;
 
 	u32 StoredEntityCount;
 	stored_entity StoredEntities[10000];

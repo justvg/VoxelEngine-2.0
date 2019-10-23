@@ -80,7 +80,7 @@ internal sim_region *
 BeginSimulation(game_state *GameState, world *World, world_position Origin, rect3 Bounds, 
 				stack_allocator *WorldAllocator, stack_allocator *TempAllocator, r32 dt)
 {
-	sim_region *SimRegion = PushStruct(TempAllocator, sim_region, 16);
+	sim_region *SimRegion = PushStruct(TempAllocator, sim_region);
 	SimRegion->World = World;
 	SimRegion->Origin = Origin;
 	SimRegion->UpdatableBounds = Bounds;
@@ -139,7 +139,7 @@ BeginSimulation(game_state *GameState, world *World, world_position Origin, rect
 
 					if(Chunk->IsSetup && Chunk->IsLoaded)
 					{
-						chunk *ChunkToRender = PushStruct(TempAllocator, chunk, 16);
+						chunk *ChunkToRender = PushStruct(TempAllocator, chunk);
 						*ChunkToRender = *Chunk;
 						world_position ChunkPosition = { ChunkX, ChunkY, ChunkZ, vec3(0.0f, 0.0f, 0.0f) };
 						ChunkToRender->Translation = Substract(World, &ChunkPosition, &Origin);
@@ -161,7 +161,7 @@ BeginSimulation(game_state *GameState, world *World, world_position Origin, rect
 							if(!StoredEntity->Sim.NonSpatial)
 							{
 								vec3 SimSpaceP = Substract(World, &StoredEntity->P, &Origin);
-								rect3 EntityAABB = RectBottomFaceCenterDim(SimSpaceP, StoredEntity->Sim.Dim);
+								rect3 EntityAABB = RectCenterDim(SimSpaceP + StoredEntity->Sim.Collision->OffsetP, StoredEntity->Sim.Collision->Dim);
 								if(RectIntersect(SimRegion->Bounds, EntityAABB))
 								{
 									AddEntity(GameState, SimRegion, StoredEntity, SimSpaceP);
@@ -517,8 +517,8 @@ internal void
 MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec3 ddP, r32 Drag, r32 dt, bool32 Gravity)
 {
 	mat3 EllipsoidToWorld = Rotate3x3(Entity->Rotation, vec3(0.0f, 1.0f, 0.0f)) * 
-							Scale3x3(0.5f*Entity->Dim);
-	mat3 WorldToEllipsoid = Scale3x3(1.0f / (0.5f*Entity->Dim)) * 
+							Scale3x3(0.5f*Entity->Collision->Dim);
+	mat3 WorldToEllipsoid = Scale3x3(1.0f / (0.5f*Entity->Collision->Dim)) * 
 							Rotate3x3(-Entity->Rotation, vec3(0.0f, 1.0f, 0.0f));
 
 	if(Gravity)
@@ -538,8 +538,8 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 		ddP += DragV;
 	}
 
-	vec3 EntityDisplacement = vec3(0.0f, 0.5f*Entity->Dim.y(), 0.0f);
-	vec3 CollisionEntityP = Entity->P + EntityDisplacement;
+	vec3 CollisionVolumeDisplacement = Entity->Collision->OffsetP;
+	vec3 CollisionEntityP = Entity->P + CollisionVolumeDisplacement;
 	vec3 OldP = CollisionEntityP;
 	vec3 DesiredP = (0.5f*ddP*dt*dt) + (Entity->dP*dt) + CollisionEntityP;
 
@@ -560,7 +560,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 		// TODO(georgy): 
 		//	I guess, we can have a situation, where EntityOldPAABB is totally in Chunk1 and EntityDesiredPAABB is totally on Chunk2
 		//	so we can miss all other chunks that could intersect with us when we were moving from Chunk1 to Chunk2
-		box EntityBox = ConstructBoxDim(Entity->Dim);
+		box EntityBox = ConstructBoxDim(Entity->Collision->Dim);
 		mat3 EntityRotationMatrix = Rotate3x3(Entity->Rotation, vec3(0.0f, 1.0f, 0.0f)); 
 
 		box EntityBoxOldP = ConstructBox(&EntityBox, EntityRotationMatrix, OldP);
@@ -606,10 +606,9 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 
 			if(CanCollide(GameState, Entity, TestEntity))
 			{
-				box TestEntityBox = ConstructBoxDim(TestEntity->Dim);
+				box TestEntityBox = ConstructBoxDim(TestEntity->Collision->Dim);
 				mat3 TestEntityTransformation = Rotate3x3(TestEntity->Rotation, vec3(0.0f, 1.0f, 0.0f));
-				TransformBox(&TestEntityBox, TestEntityTransformation, TestEntity->P + 
-																	   vec3(0.0f, 0.5f*TestEntity->Dim.y(), 0.0f));
+				TransformBox(&TestEntityBox, TestEntityTransformation, TestEntity->P + TestEntity->Collision->OffsetP);
 				rect3 TestEntityAABB = RectFromBox(&TestEntityBox);
 
 				if(RectIntersect(TestEntityAABB, EntityOldPAABB) || RectIntersect(TestEntityAABB, EntityDesiredPAABB))
@@ -673,19 +672,17 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 				CollisionEntityIndex++)
 			{
 				sim_entity *TestEntity = CollideEntities[CollisionEntityIndex];
-				stored_entity *StoredTestEntity = &GameState->StoredEntities[TestEntity->StorageIndex];
 				if(CanCollide(GameState, Entity, TestEntity))
 				{
 					for(u32 TriangleIndex = 0;
-						TriangleIndex < (StoredTestEntity->VerticesCount / 3);
+						TriangleIndex < (TestEntity->Collision->VerticesP.EntriesCount / 3);
 						TriangleIndex++)
 					{
 						mat3 TestEntityTransformation = Rotate3x3(TestEntity->Rotation, vec3(0.0f, 1.0f, 0.0f));
-						vec3 Displacement = vec3(0.0f, 0.5f*TestEntity->Dim.y(), 0.0f);
-						// TODO(georgy): This is not right at the moment! I don't scale vertices appropriately
-						vec3 P1 = (TestEntityTransformation*StoredTestEntity->Vertices[TriangleIndex*3]) + TestEntity->P + Displacement;
-						vec3 P2 = (TestEntityTransformation*StoredTestEntity->Vertices[TriangleIndex*3 + 1]) + TestEntity->P + Displacement;
-						vec3 P3 = (TestEntityTransformation*StoredTestEntity->Vertices[TriangleIndex*3 + 2]) + TestEntity->P + Displacement;
+						vec3 Displacement = TestEntity->Collision->OffsetP;
+						vec3 P1 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3]) + TestEntity->P + Displacement;
+						vec3 P2 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3 + 1]) + TestEntity->P + Displacement;
+						vec3 P3 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3 + 2]) + TestEntity->P + Displacement;
 
 						if(NarrowPhaseCollisionDetection(P1, P2, P3, WorldToEllipsoid, NormalizedESpaceEntityDelta,
 														ESpaceP, ESpaceEntityDelta, &t, &CollisionP))
@@ -711,8 +708,8 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 					{
 						Entity->OnGround = true;
 					}
-					ESpaceEntityDelta = ESpaceEntityDelta - 1.001f*Dot(SlidingPlaneNormal, ESpaceEntityDelta)*SlidingPlaneNormal;
-					Entity->dP = Entity->dP - (1.001f*Dot(EllipsoidToWorld * SlidingPlaneNormal, Entity->dP)) *
+					ESpaceEntityDelta = ESpaceEntityDelta - 1.01f*Dot(SlidingPlaneNormal, ESpaceEntityDelta)*SlidingPlaneNormal;
+					Entity->dP = Entity->dP - (1.01f*Dot(EllipsoidToWorld * SlidingPlaneNormal, Entity->dP)) *
 													  (EllipsoidToWorld * SlidingPlaneNormal);
 				}
 			}
@@ -723,7 +720,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 		}
 	}
 
-	Entity->P = EllipsoidToWorld * ESpaceP - EntityDisplacement;
+	Entity->P = EllipsoidToWorld * ESpaceP - CollisionVolumeDisplacement;
 
 	if(Entity->DistanceLimit != 0.0f)
 	{

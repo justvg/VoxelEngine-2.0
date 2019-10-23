@@ -18,6 +18,14 @@ struct entity_reference
 	sim_entity *SimPtr;
 };
 
+struct sim_entity_collision_volume
+{
+	vec3 OffsetP;
+	vec3 Dim;
+
+	dynamic_array_vec3 VerticesP;
+};
+
 struct sim_entity
 {
 	u32 StorageIndex;
@@ -36,7 +44,7 @@ struct sim_entity
 
 	r32 Rotation;
 
-	vec3 Dim;
+	sim_entity_collision_volume *Collision;
 
 	r32 DistanceLimit;
 	vec3 P;

@@ -2,6 +2,235 @@
 #include "voxel_engine_world.hpp"
 #include "voxel_engine_sim_region.hpp"
 
+internal sim_entity_collision_volume *
+MakeSimpleCollision(game_state *GameState, vec3 Dim)
+{
+	sim_entity_collision_volume *Result = PushStruct(&GameState->WorldAllocator, sim_entity_collision_volume);
+
+	Result->Dim = Dim;
+	Result->OffsetP = vec3(0.0f, 0.5f*Dim.y(), 0.0f);
+
+	InitializeDynamicArray(&Result->VerticesP);
+
+	box Box = ConstructBoxDim(Dim);
+	vec3 VolumeVertices[] = 
+	{
+			// Back face
+			Box.Points[0],
+			Box.Points[5],
+			Box.Points[4],
+			Box.Points[5],
+			Box.Points[0],
+			Box.Points[1],
+
+			// Front face
+			Box.Points[2],
+			Box.Points[6],
+			Box.Points[7],
+			Box.Points[7],			
+			Box.Points[3],
+			Box.Points[2],
+
+			// Left face
+			Box.Points[3],
+			Box.Points[1],
+			Box.Points[0],
+			Box.Points[0],			
+			Box.Points[2],
+			Box.Points[3],
+
+			// Right face
+			Box.Points[7],
+			Box.Points[4],
+			Box.Points[5],
+			Box.Points[4],
+			Box.Points[7],
+			Box.Points[6],
+
+			// Bottom face
+			Box.Points[0],
+			Box.Points[4],
+			Box.Points[6],
+			Box.Points[6],
+			Box.Points[2],
+			Box.Points[0],
+
+			// Top face
+			Box.Points[1],
+			Box.Points[7],
+			Box.Points[5],
+			Box.Points[7],
+			Box.Points[1],
+			Box.Points[3],			
+	};
+
+	for(u32 VertexIndex = 0;
+		VertexIndex < 36;
+		VertexIndex++)
+	{
+		PushEntry(&Result->VerticesP, VolumeVertices[VertexIndex]);
+	}
+
+	return(Result);
+}
+
+internal loaded_model
+LoadCub(char *Filename)
+{
+	loaded_model Model = {};
+
+	Filename = "data/models/goblin-head.cub";
+
+	u32 Width, Height, Depth;
+	read_entire_file_result FileData = PlatformReadEntireFile(Filename);
+	if(FileData.Memory)
+	{
+		InitializeDynamicArray(&Model.VerticesP);
+		InitializeDynamicArray(&Model.Normals);
+
+		Width = *((u32 *)FileData.Memory);
+		Depth = *((u32 *)FileData.Memory + 1);
+		Height = *((u32 *)FileData.Memory + 2);
+
+		bool8 *VoxelsStates = (bool8 *)PlatformAllocateMemory(sizeof(bool8)*Width*Height*Depth);
+		u8 *Voxels = (u8 *)((u32 *)FileData.Memory + 3);
+		for(u32 VoxelY = 0;
+			VoxelY < Height;
+			VoxelY++)
+		{
+			for(u32 VoxelZ = 0;
+				VoxelZ < Depth;
+				VoxelZ++)
+			{
+				for(u32 VoxelX = 0;
+					VoxelX < Width;
+					VoxelX++)
+				{
+					u8 R, G, B;
+					R = *Voxels++;
+					G = *Voxels++;
+					B = *Voxels++;					
+					if(R != 0 || G != 0 || B != 0)
+					{
+						VoxelsStates[VoxelY*Width*Depth + VoxelZ*Width + VoxelX] = true;
+					}
+				}
+			}
+		}
+
+		r32 BlockDimInMeters = 0.03f;
+		Model.Alignment = vec3(0.0f, 0.5f*Height*BlockDimInMeters, 0.0f);
+		for(u32 VoxelY = 0;
+			VoxelY < Height;
+			VoxelY++)
+		{
+			for(u32 VoxelZ = 0;
+				VoxelZ < Depth;
+				VoxelZ++)
+			{
+				for(u32 VoxelX = 0;
+					VoxelX < Width;
+					VoxelX++)
+				{
+					if(VoxelsStates[VoxelY*Width*Depth + VoxelZ*Width + VoxelX])
+					{
+						r32 X = VoxelX*BlockDimInMeters - 0.5f*Width*BlockDimInMeters;
+						r32 Y = VoxelY*BlockDimInMeters - 0.5f*Height*BlockDimInMeters;
+						r32 Z = VoxelZ*BlockDimInMeters - 0.5f*Depth*BlockDimInMeters;
+
+						vec3 A, B, C, D;
+
+						if ((VoxelX == 0) || !VoxelsStates[VoxelY*Width*Depth + VoxelZ*Width + (VoxelX-1)])
+						{
+							A = vec3(X, Y, Z);
+							B = vec3(X, Y, Z + BlockDimInMeters);
+							C = vec3(X, Y + BlockDimInMeters, Z);
+							D = vec3(X, Y + BlockDimInMeters, Z + BlockDimInMeters);
+							vec3 N = vec3(-1.0f, 0.0f, 0.0f);
+							AddQuad(&Model.VerticesP, A, B, C, D);
+							AddQuad(&Model.Normals, N, N, N, N);
+						}
+
+						if ((VoxelX == Width - 1) || !VoxelsStates[VoxelY*Width*Depth + VoxelZ*Width + (VoxelX+1)])
+						{
+							A = vec3(X + BlockDimInMeters, Y, Z);
+							B = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z);
+							C = vec3(X + BlockDimInMeters, Y, Z + BlockDimInMeters);
+							D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z + BlockDimInMeters);
+							vec3 N = vec3(1.0f, 0.0f, 0.0f);
+							AddQuad(&Model.VerticesP, A, B, C, D);
+							AddQuad(&Model.Normals, N, N, N, N);
+						}
+
+						if ((VoxelZ == 0) || !VoxelsStates[VoxelY*Width*Depth + (VoxelZ-1)*Width + VoxelX])
+						{
+							A = vec3(X, Y, Z);
+							B = vec3(X, Y + BlockDimInMeters, Z);
+							C = vec3(X + BlockDimInMeters, Y, Z);
+							D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z);
+							vec3 N = vec3(0.0f, 0.0f, -1.0f);
+							AddQuad(&Model.VerticesP, A, B, C, D);
+							AddQuad(&Model.Normals, N, N, N, N);
+						}
+
+						if ((VoxelZ == Depth - 1) || !VoxelsStates[VoxelY*Width*Depth + (VoxelZ+1)*Width + VoxelX])
+						{
+							A = vec3(X, Y, Z + BlockDimInMeters);
+							B = vec3(X + BlockDimInMeters, Y, Z + BlockDimInMeters);
+							C = vec3(X, Y + BlockDimInMeters, Z + BlockDimInMeters);
+							D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z + BlockDimInMeters);
+							vec3 N = vec3(0.0f, 0.0f, 1.0f);
+							AddQuad(&Model.VerticesP, A, B, C, D);
+							AddQuad(&Model.Normals, N, N, N, N);
+						}
+
+						if ((VoxelY == 0) || !VoxelsStates[(VoxelY-1)*Width*Depth + VoxelZ*Width + VoxelX])
+						{
+							A = vec3(X, Y, Z);
+							B = vec3(X + BlockDimInMeters, Y, Z);
+							C = vec3(X, Y, Z + BlockDimInMeters);
+							D = vec3(X + BlockDimInMeters, Y, Z + BlockDimInMeters);
+							vec3 N = vec3(0.0f, -1.0f, 0.0f);
+							AddQuad(&Model.VerticesP, A, B, C, D);
+							AddQuad(&Model.Normals, N, N, N, N);
+						}
+
+						if ((VoxelY == Height - 1) || !VoxelsStates[(VoxelY+1)*Width*Depth + VoxelZ*Width + VoxelX])
+						{
+							A = vec3(X, Y + BlockDimInMeters, Z);
+							B = vec3(X, Y + BlockDimInMeters, Z + BlockDimInMeters);
+							C = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z);
+							D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z + BlockDimInMeters);
+							vec3 N = vec3(0.0f, 1.0f, 0.0f);
+							AddQuad(&Model.VerticesP, A, B, C, D);
+							AddQuad(&Model.Normals, N, N, N, N);
+						}
+					}
+				}	
+			}
+		}
+
+		glGenVertexArrays(1, &Model.VAO);
+		glGenBuffers(1, &Model.PVBO);
+		glGenBuffers(1, &Model.NormalsVBO);
+		glBindVertexArray(Model.VAO);
+		glBindBuffer(GL_ARRAY_BUFFER, Model.PVBO);
+		glBufferData(GL_ARRAY_BUFFER, Model.VerticesP.EntriesCount*sizeof(vec3), Model.VerticesP.Entries, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
+		glBindBuffer(GL_ARRAY_BUFFER, Model.NormalsVBO);
+		glBufferData(GL_ARRAY_BUFFER, Model.Normals.EntriesCount*sizeof(vec3), Model.Normals.Entries, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
+		glBindVertexArray(0);
+
+		PlatformFreeMemory(VoxelsStates);
+		PlatformFreeFileMemory(FileData.Memory);
+	}
+
+	return (Model);
+}
+
 internal void
 AddCollisionRule(game_state *GameState, u32 StorageIndexA, u32 StorageIndexB, bool32 CanCollide)
 {
@@ -71,16 +300,9 @@ TESTAddCube(game_state *GameState, world_position P, vec3 Dim, u32 VerticesCount
 
 	stored_entity *StoredEntity = GameState->StoredEntities + EntityIndex;
 	*StoredEntity = {};
-	StoredEntity->VerticesCount = VerticesCount;
-	for(u32 VertexIndex = 0;
-		VertexIndex < VerticesCount;
-		VertexIndex++)
-	{
-		StoredEntity->Vertices[VertexIndex] = vec3(Vertices[VertexIndex*3], Vertices[VertexIndex*3 + 1], Vertices[VertexIndex*3 + 2]);
-	}
 	StoredEntity->Sim.StorageIndex = EntityIndex;
 	StoredEntity->Sim.Type = (entity_type)10000;
-	StoredEntity->Sim.Dim = Dim;
+	StoredEntity->Sim.Collision = GameState->TESTCubeCollision;
 	StoredEntity->P = InvalidPosition();
 	StoredEntity->Sim.Moveable = true;
 	StoredEntity->Sim.Collides = true;
@@ -118,7 +340,7 @@ AddStoredEntity(game_state *GameState, entity_type Type, world_position P)
 }
 
 internal u32
-AddFireball(game_state *GameState, vec3 Dim)
+AddFireball(game_state *GameState)
 {
 	add_stored_entity_result Entity = AddStoredEntity(GameState, EntityType_Fireball, InvalidPosition());
 
@@ -126,13 +348,13 @@ AddFireball(game_state *GameState, vec3 Dim)
 	Entity.StoredEntity->Sim.NonSpatial = true;
 	Entity.StoredEntity->Sim.Collides = true;
 	Entity.StoredEntity->Sim.Rotation = 0.0f;
-	Entity.StoredEntity->Sim.Dim = Dim;
+	Entity.StoredEntity->Sim.Collision = GameState->FireballCollision;
 
 	return(Entity.StorageIndex);
 }
 
 internal stored_entity *
-AddHero(game_state *GameState, world_position P, vec3 Dim)
+AddHero(game_state *GameState, world_position P)
 {
 	add_stored_entity_result Entity = AddStoredEntity(GameState, EntityType_Hero, P);
 
@@ -140,8 +362,8 @@ AddHero(game_state *GameState, world_position P, vec3 Dim)
 	Entity.StoredEntity->Sim.Collides = true;
 	Entity.StoredEntity->Sim.GravityAffected = true;
 	Entity.StoredEntity->Sim.Rotation = 0.0f;
-	Entity.StoredEntity->Sim.Dim = Dim;
-	Entity.StoredEntity->Sim.Fireball.StorageIndex = AddFireball(GameState, vec3(0.25f, 0.25f, 0.25f));
+	Entity.StoredEntity->Sim.Collision = GameState->HeroCollision;
+	Entity.StoredEntity->Sim.Fireball.StorageIndex = AddFireball(GameState);
 
 	return(Entity.StoredEntity);
 }
@@ -162,6 +384,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		InitializeStackAllocator(&GameState->WorldAllocator, Memory->PermanentStorageSize - sizeof(game_state),
 															 (u8 *)Memory->PermanentStorage + sizeof(game_state));
 
+		GameState->GoblinHeadModel = LoadCub("qwe");
+
 		GameState->StoredEntityCount = 0;
 
 		GameState->Camera.DistanceFromHero = 6.0f;
@@ -170,6 +394,10 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		GameState->Camera.OffsetFromHero = {};
 
 		InitializeWorld(&GameState->World);
+
+		GameState->HeroCollision = MakeSimpleCollision(GameState, vec3(0.54f, 0.54f, 0.48f));
+		GameState->FireballCollision = MakeSimpleCollision(GameState, vec3(0.25f, 0.25f, 0.25f));
+		GameState->TESTCubeCollision = MakeSimpleCollision(GameState, vec3(1.0f, 1.0f, 1.0f));
 
 		CompileShader(&GameState->DefaultShader, "data/shaders/DefaultVS.glsl", "data/shaders/DefaultFS.glsl");
 		CompileShader(&GameState->BillboardShader, "data/shaders/BillboardVS.glsl", "data/shaders/BillboardFS.glsl");
@@ -254,7 +482,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		world_position HeroP = {};
 		HeroP.ChunkY = 1;
 		HeroP.Offset = vec3(0.3f, 5.0f, 3.0f);
-		GameState->Hero.Entity = AddHero(GameState, HeroP, vec3(1.0f, 1.0f, 1.0f));
+		GameState->Hero.Entity = AddHero(GameState, HeroP);
 
 		GameState->IsInitialized = true;
 	}
@@ -396,7 +624,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 						{
 							Fireball->NonSpatial = false;
 							Fireball->DistanceLimit = 8.0f;
-							Fireball->P = Entity->P + vec3(0.0f, 0.5f*Entity->Dim.y(), 0.0f);
+							Fireball->P = Entity->P + vec3(0.0f, 0.5f*GameState->GoblinHeadModel.Alignment.y(), 0.0f);
 							Fireball->dP = vec3(Entity->dP.x(), 0.0f, Entity->dP.z()) + 5.0f*Forward;
 						}
 					}
@@ -437,17 +665,25 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 			{
 				case EntityType_Hero:
 				{
+#if 0
 					glBindVertexArray(GameState->CubeVAO);
 					mat4 Model = Translate(vec3(0.0f, 0.5f*Entity->Dim.y(), 0.0f)) * Rotate(Entity->Rotation, vec3(0.0f, 1.0f, 0.0f));
 					SetMat4(GameState->DefaultShader, "Model", Model);
 					glDrawArrays(GL_TRIANGLES, 0, 36);
 					glBindVertexArray(0);
+#else
+					glBindVertexArray(GameState->GoblinHeadModel.VAO);
+					mat4 Model = Translate(GameState->GoblinHeadModel.Alignment) * Rotate(Entity->Rotation, vec3(0.0f, 1.0f, 0.0f));
+					SetMat4(GameState->DefaultShader, "Model", Model);
+					glDrawArrays(GL_TRIANGLES, 0, GameState->GoblinHeadModel.VerticesP.EntriesCount);
+					glBindVertexArray(0);
+#endif
 				} break;
 
 				case EntityType_Fireball:
 				{
 					glBindVertexArray(GameState->CubeVAO);
-					mat4 Model = Translate(vec3(0.0f, 0.5f*Entity->Dim.y(), 0.0f) + Entity->P) * Scale(vec3(0.25f, 0.25f, 0.25f));
+					mat4 Model = Translate(vec3(0.0f, 0.5f*0.25f, 0.0f) + Entity->P) * Scale(vec3(0.25f, 0.25f, 0.25f));
 					SetMat4(GameState->DefaultShader, "Model", Model);
 					glDrawArrays(GL_TRIANGLES, 0, 36);
 					glBindVertexArray(0);
@@ -457,7 +693,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 				default:
 				{
 					glBindVertexArray(GameState->CubeVAO);
-					mat4 Model = Translate(vec3(0.0f, 0.5f*Entity->Dim.y(), 0.0f) + Entity->P);
+					mat4 Model = Translate(vec3(0.0f, 0.5f, 0.0f) + Entity->P);
 					SetMat4(GameState->DefaultShader, "Model", Model);
 					glDrawArrays(GL_TRIANGLES, 0, 36);
 					glBindVertexArray(0);
@@ -465,7 +701,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 					UseShader(GameState->BillboardShader);
 					SetVec3(GameState->BillboardShader, "Color", vec3(1.0f, 0.0f, 0.0f));
 					SetVec3(GameState->BillboardShader, "CameraRight", Right);
-					SetVec3(GameState->BillboardShader, "BillboardSimCenterP", Entity->P + vec3(0.0f, Entity->Dim.y() + 0.1f, 0.0f));
+					SetVec3(GameState->BillboardShader, "BillboardSimCenterP", Entity->P + vec3(0.0f, 1.0f + 0.1f, 0.0f));
 					SetVec2(GameState->BillboardShader, "Scale", vec2((r32)Entity->HitPoints / (r32)Entity->MaxHitPoints, 0.2f));
 					
 					glBindVertexArray(GameState->QuadVAO);

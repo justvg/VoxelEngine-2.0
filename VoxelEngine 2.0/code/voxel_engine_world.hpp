@@ -81,7 +81,7 @@ GetChunk(world *World, i32 ChunkX, i32 ChunkY, i32 ChunkZ, stack_allocator *Allo
 
 	if(!Chunk && Allocator)
 	{
-		Chunk = PushStruct(Allocator, chunk, 16);
+		Chunk = PushStruct(Allocator, chunk);
 		Chunk->X = ChunkX;
 		Chunk->Y = ChunkY;
 		Chunk->Z = ChunkZ;
@@ -120,6 +120,7 @@ IsRecentlyUsed(world *World, chunk *ChunkToCheck)
 	return(Result);
 }
 
+// TODO(georgy): Should I use EBO here??
 internal void
 SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 DEBUGEmptyChunk)
 {
