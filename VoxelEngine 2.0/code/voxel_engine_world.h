@@ -18,6 +18,7 @@ struct block
 struct chunk_blocks_info
 {
 	block Blocks[CHUNK_DIM*CHUNK_DIM*CHUNK_DIM];
+	vec3 Colors[CHUNK_DIM*CHUNK_DIM*CHUNK_DIM];
 
 	chunk_blocks_info *Next;
 };
@@ -32,8 +33,9 @@ struct chunk
 
 	dynamic_array_vec3 VerticesP;
 	dynamic_array_vec3 VerticesNormals;
+	dynamic_array_vec3 VerticesColors;
 
-	GLuint VAO, PVBO, NormalsVBO;
+	GLuint VAO, PVBO, NormalsVBO, ColorsVBO;
 
 	vec3 Translation;
 

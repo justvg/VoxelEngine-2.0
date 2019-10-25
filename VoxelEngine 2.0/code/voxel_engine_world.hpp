@@ -133,7 +133,10 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 	Chunk->BlocksInfo = World->FirstFreeChunkBlocksInfo;
 	World->FirstFreeChunkBlocksInfo = World->FirstFreeChunkBlocksInfo->Next;
 
+	ZeroSize(Chunk->BlocksInfo, sizeof(chunk_blocks_info));
+
 	block *Blocks = Chunk->BlocksInfo->Blocks;
+	vec3 *Colors = Chunk->BlocksInfo->Colors;
 
 	for(u32 BlockZ = 0;
 		BlockZ < CHUNK_DIM;
@@ -152,6 +155,7 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 					(BlockY == 0))
 				{
 					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true && !DEBUGEmptyChunk;
+					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = vec3(0.53f, 0.53f, 0.53f);
 				}
 				else
 				{
@@ -163,6 +167,7 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 
 	InitializeDynamicArray(&Chunk->VerticesP);
 	InitializeDynamicArray(&Chunk->VerticesNormals);
+	InitializeDynamicArray(&Chunk->VerticesColors);
 	
 	for(u32 BlockZ = 0;
 		BlockZ < CHUNK_DIM;
@@ -184,6 +189,7 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 					r32 Z = BlockZ*BlockDimInMeters;
 
 					vec3 A, B, C, D;
+					vec3 Color = Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX];
 
 					if ((BlockX == 0) || !IsBlockActive(Blocks, BlockX - 1, BlockY, BlockZ))
 					{
@@ -194,6 +200,7 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 						vec3 N = vec3(-1.0f, 0.0f, 0.0f);
 						AddQuad(&Chunk->VerticesP, A, B, C, D);
 						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
+						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
 					}
 
 					if ((BlockX == CHUNK_DIM - 1) || !IsBlockActive(Blocks, BlockX + 1, BlockY, BlockZ))
@@ -205,6 +212,7 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 						vec3 N = vec3(1.0f, 0.0f, 0.0f);
 						AddQuad(&Chunk->VerticesP, A, B, C, D);
 						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
+						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
 					}
 
 					if ((BlockZ == 0) || !IsBlockActive(Blocks, BlockX, BlockY, BlockZ - 1))
@@ -216,6 +224,7 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 						vec3 N = vec3(0.0f, 0.0f, -1.0f);
 						AddQuad(&Chunk->VerticesP, A, B, C, D);
 						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
+						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
 					}
 
 					if ((BlockZ == CHUNK_DIM - 1) || !IsBlockActive(Blocks, BlockX, BlockY, BlockZ + 1))
@@ -227,6 +236,7 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 						vec3 N = vec3(0.0f, 0.0f, 1.0f);
 						AddQuad(&Chunk->VerticesP, A, B, C, D);
 						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
+						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
 					}
 
 					if ((BlockY == 0) || (!IsBlockActive(Blocks, BlockX, BlockY - 1, BlockZ)))
@@ -238,6 +248,7 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 						vec3 N = vec3(0.0f, -1.0f, 0.0f);
 						AddQuad(&Chunk->VerticesP, A, B, C, D);
 						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
+						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
 					}
 
 					if ((BlockY == CHUNK_DIM - 1) || (!IsBlockActive(Blocks, BlockX, BlockY + 1, BlockZ)))
@@ -249,6 +260,7 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 						vec3 N = vec3(0.0f, 1.0f, 0.0f);
 						AddQuad(&Chunk->VerticesP, A, B, C, D);
 						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
+						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
 					}
 				}
 			}
@@ -273,6 +285,11 @@ LoadChunk(chunk *Chunk)
 	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesNormals.EntriesCount*sizeof(vec3), Chunk->VerticesNormals.Entries, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
+	glGenBuffers(1, &Chunk->ColorsVBO);
+	glBindBuffer(GL_ARRAY_BUFFER, Chunk->ColorsVBO);
+	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesColors.EntriesCount*sizeof(vec3), Chunk->VerticesColors.Entries, GL_STATIC_DRAW);
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
 	glBindVertexArray(0);
 }
 
@@ -288,6 +305,7 @@ UnloadChunk(world *World, chunk *Chunk)
 
 		FreeDynamicArray(&Chunk->VerticesP);
 		FreeDynamicArray(&Chunk->VerticesNormals);
+		FreeDynamicArray(&Chunk->VerticesColors);
 
 		Chunk->IsSetup = false;
 	}
@@ -296,6 +314,7 @@ UnloadChunk(world *World, chunk *Chunk)
 	{
 		glDeleteBuffers(1, &Chunk->PVBO);
 		glDeleteBuffers(1, &Chunk->NormalsVBO);
+		glDeleteBuffers(1, &Chunk->ColorsVBO);
 		glDeleteVertexArrays(1, &Chunk->VAO);
 
 		Chunk->IsLoaded = false;

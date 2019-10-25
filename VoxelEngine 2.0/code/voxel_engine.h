@@ -268,6 +268,7 @@ SetMat4(shader Shader, char *Name, mat4 Value)
 	glUniformMatrix4fv(glGetUniformLocation(Shader.ID, Name), 1, GL_FALSE, (GLfloat *)&Value.FirstColumn);
 }
 
+#include "voxel_engine_asset.h"
 #include "voxel_engine_world.h"
 #include "voxel_engine_sim_region.h"
 
@@ -295,15 +296,6 @@ struct pairwise_collision_rule
 	bool32 CanCollide;
 };
 
-struct loaded_model
-{
-	GLuint VAO, PVBO, NormalsVBO;
-	dynamic_array_vec3 VerticesP;
-	dynamic_array_vec3 Normals;
-
-	vec3 Alignment;
-};
-
 struct game_state
 {
 	bool32 IsInitialized;
@@ -326,7 +318,6 @@ struct game_state
 	hero Hero;
 	GLuint CubeVAO, CubeVBO;
 	GLuint QuadVAO, QuadVBO;
-	loaded_model GoblinHeadModel;
 
 	u32 StoredEntityCount;
 	stored_entity StoredEntities[10000];
@@ -339,6 +330,8 @@ struct temp_state
 	bool32 IsInitialized;
 
 	stack_allocator Allocator;
+
+	game_assets *GameAssets;
 };
 
 #define INVALID_POSITION INT32_MAX

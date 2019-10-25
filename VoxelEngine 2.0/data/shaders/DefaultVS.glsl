@@ -1,11 +1,14 @@
 #version 330 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
+layout (location = 2) in vec3 aColor;
 
 out vs_out
 {	
 	vec3 FragPosView;
 	vec3 Normal;
+	vec3 Color;
+
 	vec3 DirLight;
 } Output;
 
@@ -20,6 +23,8 @@ void main()
 	vec4 ViewPos = View * Model * vec4(aPos, 1.0); 
 	Output.FragPosView = vec3(ViewPos);
 	Output.Normal = normalize(mat3(View * Model) * aNormal);
+	Output.Color = aColor;
+
 	Output.DirLight = normalize(mat3(View) * DirLightDirection);
 
 	gl_Position = Projection * ViewPos;

@@ -326,9 +326,14 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			{
 				if (GlobalCursorShouldBeClipped)
 				{
-					RECT ClipCursorRect;
-					GetWindowRect(Window, &ClipCursorRect);
-					ClipCursor(&ClipCursorRect);
+					RECT WindowRect, ClientRect;
+					GetWindowRect(Window, &WindowRect);
+					LONG WindowRectHeight = WindowRect.bottom - WindowRect.top;
+					GetClientRect(Window, &ClientRect);
+					LONG ClientRectHeight = ClientRect.bottom - ClientRect.top;
+					LONG Diff = WindowRectHeight - ClientRectHeight;
+					WindowRect.top += Diff;
+					ClipCursor(&WindowRect);
 				}
 				else
 				{
