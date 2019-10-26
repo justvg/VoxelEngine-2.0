@@ -513,6 +513,11 @@ HandleCollision(game_state *GameState, sim_entity *EntityA, sim_entity *EntityB,
 	return(Result);
 }
 
+struct collided_chunk_info
+{
+	chunk *Chunk;
+	vec3 Min, Max;
+};
 internal void
 MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec3 ddP, r32 Drag, r32 dt, bool32 Gravity)
 {
@@ -551,7 +556,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 	world_position OldWorldP = StoredEntity->P;
 
 	u32 CollideChunksCount = 0;
-	chunk *CollideChunks[27];
+	collided_chunk_info CollideChunks[27];
 
 	u32 CollideEntitiesCount = 0;
 	sim_entity *CollideEntities[10];
@@ -591,7 +596,19 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 
 						if(RectIntersect(SimSpaceChunkAABB, EntityOldPAABB) || RectIntersect(SimSpaceChunkAABB, EntityDesiredPAABB))
 						{
-							CollideChunks[CollideChunksCount++] = Chunk;
+							vec3 HeroMinOffsetOld = EntityOldPAABB.Min - SimSpaceChunkAABB.Min;
+							vec3 HeroMaxOffsetOld = EntityOldPAABB.Max - SimSpaceChunkAABB.Min;
+							vec3 HeroMinOffsetDesired = EntityDesiredPAABB.Min - SimSpaceChunkAABB.Min;
+							vec3 HeroMaxOffsetDesired = EntityDesiredPAABB.Max - SimSpaceChunkAABB.Min;
+							CollideChunks[CollideChunksCount].Min = vec3(FLT_MAX, FLT_MAX, FLT_MAX);
+							CollideChunks[CollideChunksCount].Max = vec3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+							CollideChunks[CollideChunksCount].Min = Min(CollideChunks[CollideChunksCount].Min, HeroMinOffsetOld);
+							CollideChunks[CollideChunksCount].Min = Min(CollideChunks[CollideChunksCount].Min, HeroMinOffsetDesired);
+							CollideChunks[CollideChunksCount].Max = Max(CollideChunks[CollideChunksCount].Max, HeroMaxOffsetOld);
+							CollideChunks[CollideChunksCount].Max = Max(CollideChunks[CollideChunksCount].Max, HeroMaxOffsetDesired);
+
+							CollideChunks[CollideChunksCount++].Chunk = Chunk;
 						}
 					}
 				}	
@@ -652,21 +669,42 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 				ChunkIndex++)
 			{
 				for(u32 TriangleIndex = 0;
-					TriangleIndex < (CollideChunks[ChunkIndex]->VerticesP.EntriesCount / 3);
+					TriangleIndex < (CollideChunks[ChunkIndex].Chunk->VerticesP.EntriesCount / 3);
 					TriangleIndex++)
 				{
-					vec3 P1 = CollideChunks[ChunkIndex]->VerticesP.Entries[TriangleIndex*3] + CollideChunks[ChunkIndex]->Translation;
-					vec3 P2 = CollideChunks[ChunkIndex]->VerticesP.Entries[TriangleIndex*3 + 1] + CollideChunks[ChunkIndex]->Translation;
-					vec3 P3 = CollideChunks[ChunkIndex]->VerticesP.Entries[TriangleIndex*3 + 2] + CollideChunks[ChunkIndex]->Translation;
+					chunk *Chunk = CollideChunks[ChunkIndex].Chunk;
+					vec3 Min = CollideChunks[ChunkIndex].Min;
+					vec3 Max = CollideChunks[ChunkIndex].Max;
+					vec3 P1 = Chunk->VerticesP.Entries[TriangleIndex*3];
+					vec3 P2 = Chunk->VerticesP.Entries[TriangleIndex*3 + 1];
+					vec3 P3 = Chunk->VerticesP.Entries[TriangleIndex*3 + 2];
 
-					if(NarrowPhaseCollisionDetection(P1, P2, P3, WorldToEllipsoid, NormalizedESpaceEntityDelta,
-												  	 ESpaceP, ESpaceEntityDelta, &t, &CollisionP))
+					if(!((P1.x() > Max.x() + 0.5f) || (P1.x() < Min.x() - 0.5f)) || 
+					   !((P2.x() > Max.x() + 0.5f) || (P2.x() < Min.x() - 0.5f)) || 
+					   !((P3.x() > Max.x() + 0.5f) || (P3.x() < Min.x() - 0.5f)))
 					{
-						HitEntityType = EntityType_Chunk;
+						if(!((P1.y() > Max.y() + 0.5f) || (P1.y() < Min.y() - 0.5f)) || 
+					   	   !((P2.y() > Max.y() + 0.5f) || (P2.y() < Min.y() - 0.5f)) || 
+					   	   !((P3.y() > Max.y() + 0.5f) || (P3.y() < Min.y() - 0.5f)))
+						{
+							if(!((P1.z() > Max.z() + 0.5f) || (P1.z() < Min.z() - 0.5f)) || 
+					   	   	   !((P2.z() > Max.z() + 0.5f) || (P2.z() < Min.z() - 0.5f)) || 
+					   	  	   !((P3.z() > Max.z() + 0.5f) || (P3.z() < Min.z() - 0.5f)))
+							{
+								P1 += Chunk->Translation;
+								P2 += Chunk->Translation;
+								P3 += Chunk->Translation;
+								if(NarrowPhaseCollisionDetection(P1, P2, P3, WorldToEllipsoid, NormalizedESpaceEntityDelta,
+																ESpaceP, ESpaceEntityDelta, &t, &CollisionP))
+								{
+									HitEntityType = EntityType_Chunk;
+								}
+							}
+						}
 					}
 				}
 			}
-
+			
 			for(u32 CollisionEntityIndex = 0;
 				CollisionEntityIndex < CollideEntitiesCount;
 				CollisionEntityIndex++)

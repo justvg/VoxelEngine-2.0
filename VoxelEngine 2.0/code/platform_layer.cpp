@@ -2,6 +2,8 @@
 #include <gl\glew.h>
 #include <gl\wglew.h>
 
+#include <intrin.h>
+
 #include "voxel_engine_platform.h"
 #include "voxel_engine.hpp"
 
@@ -259,9 +261,76 @@ WinGetSecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End)
 	return(Result);
 }
 
+struct job_system_queue
+{
+	u32 volatile EntryToRead;
+	u32 volatile EntryToWrite;
+	char *String[128];
+};
+
+
+internal void
+AddStringToWrite(job_system_queue *JobSystem, char *String)
+{
+	JobSystem->String[JobSystem->EntryToWrite] = String;
+
+	_WriteBarrier();
+
+	JobSystem->EntryToWrite++;
+}
+
+DWORD WINAPI
+ThreadProc(LPVOID lpParameter)
+{
+	job_system_queue *JobSystem = (job_system_queue *)lpParameter;
+
+	while(1)
+	{
+		if(JobSystem->EntryToRead < JobSystem->EntryToWrite)
+		{
+			OutputDebugStringA(JobSystem->String[JobSystem->EntryToRead++]);
+		}
+	}
+
+	return(0);
+}
+
 int CALLBACK
 WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
 {	
+	job_system_queue JobSystem = {};
+
+	u32 ThreadCount = 4;
+	for(u32 ThreadIndex = 0;
+		ThreadIndex < ThreadCount;
+		ThreadIndex++)
+	{
+		HANDLE ThreadHandle = CreateThread(0, 0, ThreadProc, &JobSystem, 0, 0);
+		CloseHandle(ThreadHandle);
+	}
+
+	AddStringToWrite(&JobSystem, "STRING0\n");
+	AddStringToWrite(&JobSystem, "STRING1\n");
+	AddStringToWrite(&JobSystem, "STRING2\n");
+	AddStringToWrite(&JobSystem, "STRING3\n");
+	AddStringToWrite(&JobSystem, "STRING4\n");
+	AddStringToWrite(&JobSystem, "STRING5\n");
+	AddStringToWrite(&JobSystem, "STRING6\n");
+	AddStringToWrite(&JobSystem, "STRING7\n");
+	AddStringToWrite(&JobSystem, "STRING8\n");
+	AddStringToWrite(&JobSystem, "STRING9\n");
+	AddStringToWrite(&JobSystem, "STRING10\n");
+	AddStringToWrite(&JobSystem, "STRING11\n");
+	AddStringToWrite(&JobSystem, "STRING12\n");
+	AddStringToWrite(&JobSystem, "STRING13\n");
+	AddStringToWrite(&JobSystem, "STRING14\n");
+	AddStringToWrite(&JobSystem, "STRING15\n");
+	AddStringToWrite(&JobSystem, "STRING16\n");
+	AddStringToWrite(&JobSystem, "STRING17\n");
+	AddStringToWrite(&JobSystem, "STRING18\n");
+	AddStringToWrite(&JobSystem, "STRING19\n");
+	AddStringToWrite(&JobSystem, "STRING20\n");
+
 	QueryPerformanceFrequency(&GlobalPerformanceFrequency);
 
 	WNDCLASS WindowClass = {};
