@@ -1,4 +1,5 @@
 #include "voxel_engine.h"
+#include "voxel_engine_asset.hpp"
 #include "voxel_engine_world.hpp"
 #include "voxel_engine_sim_region.hpp"
 
@@ -237,6 +238,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 	game_state *GameState = (game_state *)Memory->PermanentStorage;
 	if (!GameState->IsInitialized)
 	{
+		PlatformAddEntry = Memory->PlatformAddEntry;
+		PlatformCompleteAllWork = Memory->PlatformCompleteAllWork;
 		PlatformReadEntireFile = Memory->PlatformReadEntireFile;
 		PlatformFreeFileMemory = Memory->PlatformFreeFileMemory;
 		PlatformAllocateMemory = Memory->PlatformAllocateMemory;
@@ -356,8 +359,9 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 		TempState->IsInitialized = true;
 
-		// TempState->GameAssets = AllocateGameAssets(&TempState->Allocator, 500000);
-		TempState->GameAssets = AllocateGameAssets(&TempState->Allocator, Megabytes(64));
+		TempState->JobSystemQueue = Memory->JobSystemQueue;
+		// TempState->GameAssets = AllocateGameAssets(TempState, &TempState->Allocator, 500000);
+		TempState->GameAssets = AllocateGameAssets(TempState, &TempState->Allocator, Megabytes(64));
 	}
 
 	temporary_memory RenderMemory = BeginTemporaryMemory(&TempState->Allocator);

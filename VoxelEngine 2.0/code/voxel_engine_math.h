@@ -1,6 +1,5 @@
 #pragma once
 
-#include <math.h>
 #include <xmmintrin.h>
 
 #define PI 3.14159265358979323846f

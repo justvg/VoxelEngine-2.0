@@ -1,5 +1,20 @@
 #pragma once
 
+#if !defined(COMPILER_MSVC)
+	#define COMPILER_MSVC 0
+#endif
+
+#if !COMPILER_MSVC
+	#if _MSC_VER
+		#undef COMPILER_MSVC
+		#define COMPILER_MSVC 1
+	#endif
+#endif
+
+#if COMPILER_MSVC
+	#include <intrin.h>
+#endif
+
 #include <stdint.h>
 
 #define internal static
@@ -59,6 +74,12 @@ typedef ALLOCATE_MEMORY(allocate_memory);
 #define FREE_MEMORY(name) void name(void *Memory)
 typedef FREE_MEMORY(free_memory);
 
+struct platform_job_system_queue;
+#define PLATFORM_JOB_SYSTEM_CALLBACK(name) void name(platform_job_system_queue *JobSystem, void *Data)
+typedef PLATFORM_JOB_SYSTEM_CALLBACK(platform_job_system_callback);
+
+typedef void platform_add_entry(platform_job_system_queue *JobSystem, platform_job_system_callback *Callback, void *Data);
+typedef void platform_complete_all_work(platform_job_system_queue *JobSystem);
 
 struct game_input
 {
@@ -89,6 +110,10 @@ struct game_memory
 	u64 TemporaryStorageSize;
 	void *TemporaryStorage;
 
+	platform_job_system_queue *JobSystemQueue;
+
+	platform_add_entry *PlatformAddEntry;
+	platform_complete_all_work *PlatformCompleteAllWork;
 	read_entire_file *PlatformReadEntireFile;
 	free_file_memory *PlatformFreeFileMemory;
 	allocate_memory *PlatformAllocateMemory;

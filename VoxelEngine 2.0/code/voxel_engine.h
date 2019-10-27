@@ -1,5 +1,7 @@
 #pragma once
 
+global_variable platform_add_entry *PlatformAddEntry;
+global_variable platform_complete_all_work *PlatformCompleteAllWork;
 global_variable read_entire_file *PlatformReadEntireFile;
 global_variable free_file_memory *PlatformFreeFileMemory;
 global_variable allocate_memory *PlatformAllocateMemory;
@@ -88,6 +90,7 @@ ZeroSize(void *Ptr, u64 Size)
 	}
 }
 
+#include "voxel_engine_intrinsics.h"
 #include "voxel_engine_math.h"
 
 struct camera
@@ -332,6 +335,8 @@ struct temp_state
 	stack_allocator Allocator;
 
 	game_assets *GameAssets;
+
+	platform_job_system_queue *JobSystemQueue;
 };
 
 #define INVALID_POSITION INT32_MAX

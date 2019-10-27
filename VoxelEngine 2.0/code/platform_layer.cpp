@@ -2,8 +2,6 @@
 #include <gl\glew.h>
 #include <gl\wglew.h>
 
-#include <intrin.h>
-
 #include "voxel_engine_platform.h"
 #include "voxel_engine.hpp"
 
@@ -22,7 +20,10 @@ ALLOCATE_MEMORY(WinAllocateMemory)
 
 FREE_MEMORY(WinFreeMemory)
 {
-	VirtualFree(Memory, 0, MEM_RELEASE);
+	if(Memory)
+	{
+		VirtualFree(Memory, 0, MEM_RELEASE);
+	}
 }
 
 OUTPUT_DEBUG_STRING(WinOutputDebugString)
@@ -261,75 +262,112 @@ WinGetSecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End)
 	return(Result);
 }
 
-struct job_system_queue
+struct platform_job_system_entry
+{
+	platform_job_system_callback *Callback;
+	void *Data;	
+};
+struct platform_job_system_queue
 {
 	u32 volatile EntryToRead;
 	u32 volatile EntryToWrite;
-	char *String[128];
+	HANDLE Semaphore;
+	
+	platform_job_system_entry Entries[128];
 };
 
-
 internal void
-AddStringToWrite(job_system_queue *JobSystem, char *String)
+WinAddEntry(platform_job_system_queue *JobSystem, platform_job_system_callback *Callback, void *Data)
 {
-	JobSystem->String[JobSystem->EntryToWrite] = String;
+	u32 NewEntryToWrite = (JobSystem->EntryToWrite + 1) % ArrayCount(JobSystem->Entries);
+	Assert(NewEntryToWrite != JobSystem->EntryToRead);
+
+	platform_job_system_entry *Entry = JobSystem->Entries + JobSystem->EntryToWrite;
+	Entry->Callback = Callback;
+	Entry->Data = Data;
 
 	_WriteBarrier();
 
-	JobSystem->EntryToWrite++;
+	JobSystem->EntryToWrite = NewEntryToWrite;
+	ReleaseSemaphore(JobSystem->Semaphore, 1, 0);
+}
+
+internal bool32
+WinDoNextJobQueueEntry(platform_job_system_queue *JobSystem)
+{
+	bool32 Sleep = false;
+
+	u32 OriginalEntryToRead = JobSystem->EntryToRead;
+	u32 NewEntryToRead = (OriginalEntryToRead + 1) % ArrayCount(JobSystem->Entries);
+	if(JobSystem->EntryToRead != JobSystem->EntryToWrite)
+	{
+		u32 Index = InterlockedCompareExchange((LONG volatile *)&JobSystem->EntryToRead, NewEntryToRead, OriginalEntryToRead);
+
+		if(Index == OriginalEntryToRead)
+		{
+			platform_job_system_entry *Entry = JobSystem->Entries + Index;
+			Entry->Callback(JobSystem, Entry->Data);
+		}
+	}
+	else
+	{
+		Sleep = true;
+	}
+
+	return(Sleep);
+}
+
+inline void
+WinCompleteAllWork(platform_job_system_queue *JobSystem)
+{
+	for(;;)
+	{
+		if(WinDoNextJobQueueEntry(JobSystem))
+		{
+			break;
+		}
+	}
 }
 
 DWORD WINAPI
 ThreadProc(LPVOID lpParameter)
 {
-	job_system_queue *JobSystem = (job_system_queue *)lpParameter;
+	platform_job_system_queue *JobSystem = (platform_job_system_queue *)lpParameter;
 
 	while(1)
 	{
-		if(JobSystem->EntryToRead < JobSystem->EntryToWrite)
+		if(WinDoNextJobQueueEntry(JobSystem))
 		{
-			OutputDebugStringA(JobSystem->String[JobSystem->EntryToRead++]);
+			WaitForSingleObjectEx(JobSystem->Semaphore, INFINITE, false);
 		}
 	}
 
 	return(0);
 }
 
-int CALLBACK
-WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
-{	
-	job_system_queue JobSystem = {};
+internal void 
+WinInitializeJobSystem(platform_job_system_queue *JobSystem, u32 ThreadCount)
+{
+	JobSystem->EntryToRead = 0;
+	JobSystem->EntryToWrite = 0;
 
-	u32 ThreadCount = 4;
+	u32 InitialCount = 0;
+	JobSystem->Semaphore = CreateSemaphoreEx(0, InitialCount, INT_MAX, 0, 0, SEMAPHORE_ALL_ACCESS);
+
 	for(u32 ThreadIndex = 0;
 		ThreadIndex < ThreadCount;
 		ThreadIndex++)
 	{
-		HANDLE ThreadHandle = CreateThread(0, 0, ThreadProc, &JobSystem, 0, 0);
+		HANDLE ThreadHandle = CreateThread(0, 0, ThreadProc, JobSystem, 0, 0);
 		CloseHandle(ThreadHandle);
 	}
+}
 
-	AddStringToWrite(&JobSystem, "STRING0\n");
-	AddStringToWrite(&JobSystem, "STRING1\n");
-	AddStringToWrite(&JobSystem, "STRING2\n");
-	AddStringToWrite(&JobSystem, "STRING3\n");
-	AddStringToWrite(&JobSystem, "STRING4\n");
-	AddStringToWrite(&JobSystem, "STRING5\n");
-	AddStringToWrite(&JobSystem, "STRING6\n");
-	AddStringToWrite(&JobSystem, "STRING7\n");
-	AddStringToWrite(&JobSystem, "STRING8\n");
-	AddStringToWrite(&JobSystem, "STRING9\n");
-	AddStringToWrite(&JobSystem, "STRING10\n");
-	AddStringToWrite(&JobSystem, "STRING11\n");
-	AddStringToWrite(&JobSystem, "STRING12\n");
-	AddStringToWrite(&JobSystem, "STRING13\n");
-	AddStringToWrite(&JobSystem, "STRING14\n");
-	AddStringToWrite(&JobSystem, "STRING15\n");
-	AddStringToWrite(&JobSystem, "STRING16\n");
-	AddStringToWrite(&JobSystem, "STRING17\n");
-	AddStringToWrite(&JobSystem, "STRING18\n");
-	AddStringToWrite(&JobSystem, "STRING19\n");
-	AddStringToWrite(&JobSystem, "STRING20\n");
+int CALLBACK
+WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
+{	
+	platform_job_system_queue JobSystem;
+	WinInitializeJobSystem(&JobSystem, 3);
 
 	QueryPerformanceFrequency(&GlobalPerformanceFrequency);
 
@@ -373,6 +411,10 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			GameMemory.TemporaryStorageSize = Gigabytes(2);
 			GameMemory.TemporaryStorage = VirtualAlloc(0, GameMemory.TemporaryStorageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 #endif
+			GameMemory.JobSystemQueue = &JobSystem;
+
+			GameMemory.PlatformAddEntry = WinAddEntry;
+			GameMemory.PlatformCompleteAllWork = WinCompleteAllWork;
 			GameMemory.PlatformReadEntireFile = WinReadEntireFile;
 			GameMemory.PlatformFreeFileMemory = WinFreeFileMemory;
 			GameMemory.PlatformAllocateMemory = WinAllocateMemory;
