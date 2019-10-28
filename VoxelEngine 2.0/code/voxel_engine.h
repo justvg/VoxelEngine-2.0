@@ -236,7 +236,7 @@ UseShader(shader Shader)
 }
 
 inline void
-SetFloat(shader Shader, char *Name, real32 Value)
+SetFloat(shader Shader, char *Name, r32 Value)
 {
 	glUniform1f(glGetUniformLocation(Shader.ID, Name), Value);
 }
@@ -299,6 +299,49 @@ struct pairwise_collision_rule
 	bool32 CanCollide;
 };
 
+enum character_bone_id
+{
+	CharacterBone_Head,
+	CharacterBone_Shoulders,
+	CharacterBone_Body,
+	CharacterBone_Hand,
+	CharacterBone_Foot,
+
+	CharacterBone_Count
+};
+
+enum character_animation_type
+{
+	CharacterAnimation_Idle,
+
+	CharacterAnimation_Count
+};
+
+struct animation_key_frame
+{
+	r32 TimeStampInSeconds;
+	vec3 Translation[CharacterBone_Count];
+};
+
+struct animation
+{
+	r32 DurationInSeconds;
+	u32 KeyFrameCount;
+	animation_key_frame KeyFrames[4];
+};
+
+internal mat4
+GetBoneForAnimation(animation *Animations, character_animation_type AnimationType, 
+					character_bone_id BoneID, r64 Clock)
+{
+	animation *Animation = Animations + AnimationType;
+
+	r32 TimeInAnimation = (r32)Real64Modulo(Clock, Animation->DurationInSeconds);
+
+
+	return(Identity());
+}
+
 struct game_state
 {
 	bool32 IsInitialized;
@@ -315,12 +358,16 @@ struct game_state
 	sim_entity_collision_volume *FireballCollision;
 	sim_entity_collision_volume *TESTCubeCollision;
 
-	shader DefaultShader;
+	shader CharacterShader;
+	shader WorldShader;
 	shader BillboardShader;
 
 	hero Hero;
 	GLuint CubeVAO, CubeVBO;
 	GLuint QuadVAO, QuadVBO;
+
+	// TODO(georgy): That's bad I guess
+	r64 Clock;
 
 	u32 StoredEntityCount;
 	stored_entity StoredEntities[10000];
@@ -337,6 +384,8 @@ struct temp_state
 	game_assets *GameAssets;
 
 	platform_job_system_queue *JobSystemQueue;
+
+	animation CharacterAnimations[CharacterAnimation_Count];
 };
 
 #define INVALID_POSITION INT32_MAX
@@ -344,5 +393,5 @@ inline void
 MakeEntityNonSpatial(sim_entity *Entity)
 {
 	Entity->P = vec3((r32)INVALID_POSITION, (r32)INVALID_POSITION, (r32)INVALID_POSITION);
-	Entity->NonSpatial = true;
+	AddFlags(Entity, EntityFlag_NonSpatial);
 }

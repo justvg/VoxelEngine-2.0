@@ -30,20 +30,17 @@ IsValid(world_position P)
 internal void
 RecanonicalizeCoords(world *World, world_position *Pos)
 {
-	i32 ChunkXOffset = (i32)floorf(Pos->Offset.x() / World->ChunkDimInMeters);
+	i32 ChunkXOffset = (i32)FloorReal32ToInt32(Pos->Offset.x() / World->ChunkDimInMeters);
 	Pos->ChunkX += ChunkXOffset;
-	//Pos->Offset.x -= ChunkXOffset*World->ChunkDimInMeters;
-	Pos->Offset.SetX(Pos->Offset.x() - ChunkXOffset*World->ChunkDimInMeters);
 
-	i32 ChunkYOffset = (i32)floorf(Pos->Offset.y() / World->ChunkDimInMeters);
+	i32 ChunkYOffset = (i32)FloorReal32ToInt32(Pos->Offset.y() / World->ChunkDimInMeters);
 	Pos->ChunkY += ChunkYOffset;
-	//Pos->Offset.y -= ChunkYOffset*World->ChunkDimInMeters;
-	Pos->Offset.SetY(Pos->Offset.y() - ChunkYOffset*World->ChunkDimInMeters);
 
-	i32 ChunkZOffset = (i32)floorf(Pos->Offset.z() / World->ChunkDimInMeters);
+	i32 ChunkZOffset = (i32)FloorReal32ToInt32(Pos->Offset.z() / World->ChunkDimInMeters);
 	Pos->ChunkZ += ChunkZOffset;
-	//Pos->Offset.z -= ChunkZOffset*World->ChunkDimInMeters;
-	Pos->Offset.SetZ(Pos->Offset.z() - ChunkZOffset*World->ChunkDimInMeters);
+
+	vec3 ChunkOffset = vec3(ChunkXOffset, ChunkYOffset, ChunkZOffset);
+	Pos->Offset = Pos->Offset - ChunkOffset*World->ChunkDimInMeters;
 }
 
 internal world_position
@@ -152,7 +149,7 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 			{
 				if((BlockX == 0) || (BlockX == (CHUNK_DIM - 1)) || 
 					(BlockZ == 0) || (BlockZ == (CHUNK_DIM - 1)) ||
-					(BlockY == 0))
+					(BlockY == 0) || (BlockX == 1))
 				{
 					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true && !DEBUGEmptyChunk;
 					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = vec3(0.53f, 0.53f, 0.53f);
@@ -377,7 +374,7 @@ Substract(world *World, world_position *A, world_position *B)
 inline bool32
 AreInTheSameChunk(world *World, world_position *A, world_position *B)
 {
-	real32 Epsilon = 0.001f;
+	r32 Epsilon = 0.001f;
 	Assert(A->Offset.x() < World->ChunkDimInMeters + Epsilon);
 	Assert(A->Offset.y() < World->ChunkDimInMeters + Epsilon);
 	Assert(A->Offset.z() < World->ChunkDimInMeters + Epsilon);

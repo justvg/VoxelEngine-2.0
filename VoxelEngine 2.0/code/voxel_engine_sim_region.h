@@ -26,18 +26,22 @@ struct sim_entity_collision_volume
 	dynamic_array_vec3 VerticesP;
 };
 
+enum sim_entity_flags
+{
+	EntityFlag_Moveable = 1,
+	EntityFlag_OnGround = (1 << 1),
+	EntityFlag_NonSpatial = (1 << 2),
+	EntityFlag_Collides = (1 << 3),
+	EntityFlag_GravityAffected = (1 << 4),
+};
+
 struct sim_entity
 {
 	u32 StorageIndex;
 
 	entity_type Type;
 	bool32 Updatable;
-	// TODO(georgy): Change these to bit flags!
-	bool32 Moveable;
-	bool32 OnGround;
-	bool32 NonSpatial;
-	bool32 Collides;
-	bool32 GravityAffected;
+	u32 Flags;
 
 	i32 MaxHitPoints;
 	i32 HitPoints;
@@ -52,6 +56,26 @@ struct sim_entity
 
 	entity_reference Fireball;
 };
+
+inline bool32 
+IsSet(sim_entity *Entity, u32 Flag)
+{
+	bool32 Result = Entity->Flags & Flag;
+
+	return(Result);
+}
+
+inline void
+AddFlags(sim_entity *Entity, u32 Flag)
+{
+	Entity->Flags |= Flag;
+}
+
+inline void
+ClearFlags(sim_entity *Entity, u32 Flag)
+{
+	Entity->Flags &= ~Flag;
+}
 
 struct sim_region
 {

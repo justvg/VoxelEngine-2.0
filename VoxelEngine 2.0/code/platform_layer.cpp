@@ -6,6 +6,7 @@
 #include "voxel_engine.hpp"
 
 #include <Windows.h>
+#include <timeapi.h>
 #include <stdio.h>
 
 global_variable bool8 GlobalRunning;
@@ -371,6 +372,9 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 	QueryPerformanceFrequency(&GlobalPerformanceFrequency);
 
+	UINT DesiredSchedulerMS = 1;
+	bool32 SleepIsGranular = (timeBeginPeriod(DesiredSchedulerMS) == TIMERR_NOERROR);
+
 	WNDCLASS WindowClass = {};
 	WindowClass.style = CS_OWNDC | CS_VREDRAW | CS_HREDRAW;
 	WindowClass.lpfnWndProc = WinWindowCallback;
@@ -395,7 +399,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			{
 				RefreshRate = WinRefreshRate;
 			}
-			r32 TargetSecondsPerFrame = 1.0f / RefreshRate;
+			int GameRefreshRate = RefreshRate / 2;
+			r32 TargetSecondsPerFrame = 1.0f / GameRefreshRate;
 			ReleaseDC(Window, WindowDC);
 
 			game_memory GameMemory = {};
@@ -528,12 +533,31 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				window_dimension Dimension = WinGetWindowDimension(Window);
 				GameUpdate(&GameMemory, &GameInput, Dimension.Width, Dimension.Height);
 				
-				// TODO(georgy): Implement sleeping
 				r32 SecondsElapsedForFrame = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
+#if 0
 				while (SecondsElapsedForFrame < TargetSecondsPerFrame)
 				{
 					SecondsElapsedForFrame = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
 				}
+#else
+				if(SecondsElapsedForFrame < TargetSecondsPerFrame)
+				{
+					if(SleepIsGranular)
+					{
+						DWORD SleepMS = (DWORD)(1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
+
+						if(SleepMS > 0)
+						{
+							Sleep(SleepMS);
+						}
+					}
+
+					while (SecondsElapsedForFrame < TargetSecondsPerFrame)
+					{
+						SecondsElapsedForFrame = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
+					}
+				}
+#endif
 				LARGE_INTEGER EndCounter = WinGetPerformanceCounter();
 				r32 MSPerFrame = 1000.0f*WinGetSecondsElapsed(LastCounter, EndCounter);
 				LastCounter = EndCounter;

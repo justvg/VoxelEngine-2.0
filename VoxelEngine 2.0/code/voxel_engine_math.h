@@ -12,8 +12,8 @@
 #define SHUFFLE3(V, X, Y, Z) (vec3(_mm_shuffle_ps((V).m, (V).m, _MM_SHUFFLE(Z, Z, Y, X))))
 #define SHUFFLE4(V, X, Y, Z, W) (vec4(_mm_shuffle_ps((V).m, (V).m, _MM_SHUFFLE(W, Z, Y, X))))
 
-typedef float real32;
-typedef double real64;
+typedef float r32;
+typedef double r64;
 
 //
 // NOTE(georgy): vec3
@@ -24,38 +24,38 @@ struct vec3
 	__m128 m;
 
 	inline vec3() { m = _mm_set1_ps(0.0f); } // TODO(georgy): Do I always want to zero vec3??
-	inline explicit vec3(real32 *V) { m = _mm_set_ps(V[2], V[2], V[1], V[0]); }
-	inline explicit vec3(real32 X, real32 Y, real32 Z) { m = _mm_set_ps(Z, Z, Y, X); }
+	inline explicit vec3(r32 *V) { m = _mm_set_ps(V[2], V[2], V[1], V[0]); }
+	inline explicit vec3(r32 X, r32 Y, r32 Z) { m = _mm_set_ps(Z, Z, Y, X); }
 	inline explicit vec3(__m128 V) { m = V; }
-	inline vec3 __vectorcall vec3i(int32_t X, int32_t Y, int32_t Z) { return(vec3((real32)X, (real32)Y, (real32)Z)); }
+	inline vec3 __vectorcall vec3i(int32_t X, int32_t Y, int32_t Z) { return(vec3((r32)X, (r32)Y, (r32)Z)); }
 
-	inline real32 __vectorcall x() { return(_mm_cvtss_f32(m)); }
-	inline real32 __vectorcall y() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(1, 1, 1, 1)))); }
-	inline real32 __vectorcall z() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(2, 2, 2, 2)))); }
+	inline r32 __vectorcall x() { return(_mm_cvtss_f32(m)); }
+	inline r32 __vectorcall y() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(1, 1, 1, 1)))); }
+	inline r32 __vectorcall z() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(2, 2, 2, 2)))); }
 
 	inline vec3 __vectorcall yzx() { return(SHUFFLE3(*this, 1, 2, 0)); }
 	inline vec3 __vectorcall zxy() { return(SHUFFLE3(*this, 2, 0, 1)); }
 
-	void __vectorcall SetX(real32 X)
+	void __vectorcall SetX(r32 X)
 	{
 		m = _mm_move_ss(m, _mm_set_ss(X));
 	}
 
-	void __vectorcall SetY(real32 Y)
+	void __vectorcall SetY(r32 Y)
 	{
 		__m128 Temp = _mm_move_ss(m, _mm_set_ss(Y));
 		Temp = _mm_shuffle_ps(Temp, Temp, _MM_SHUFFLE(3, 2, 0, 0));
 		m = _mm_move_ss(Temp, m);
 	}
 
-	void __vectorcall SetZ(real32 Z)
+	void __vectorcall SetZ(r32 Z)
 	{
 		__m128 Temp = _mm_move_ss(m, _mm_set_ss(Z));
 		Temp = _mm_shuffle_ps(Temp, Temp, _MM_SHUFFLE(3, 0, 1, 0));
 		m = _mm_move_ss(Temp, m);
 	}
 
-	inline real32 operator[] (size_t I) { return(m.m128_f32[I]); };
+	inline r32 operator[] (size_t I) { return(m.m128_f32[I]); };
 };
 
 inline vec3 __vectorcall
@@ -80,28 +80,28 @@ Hadamard(vec3 A, vec3 B)
 }
 
 inline vec3 __vectorcall
-operator* (vec3 A, real32 B)
+operator* (vec3 A, r32 B)
 {
 	A.m = _mm_mul_ps(A.m, _mm_set1_ps(B));
 	return(A);
 }
 
 inline vec3 __vectorcall
-operator* (real32 B, vec3 A)
+operator* (r32 B, vec3 A)
 {
 	A = A * B;
 	return(A);
 }
 
 inline vec3 __vectorcall
-operator/ (vec3 A, real32 B)
+operator/ (vec3 A, r32 B)
 {
 	A = A * (1.0f / B);
 	return(A);
 }
 
 inline vec3 __vectorcall
-operator/ (real32 B, vec3 A)
+operator/ (r32 B, vec3 A)
 {
 	A.m = _mm_div_ps(_mm_set1_ps(B), A.m);
 	return(A);
@@ -122,7 +122,7 @@ operator-= (vec3 &A, vec3 B)
 }
 
 inline vec3 & __vectorcall
-operator*= (vec3 &A, real32 B)
+operator*= (vec3 &A, r32 B)
 {
 	A = A * B;
 	return(A);
@@ -162,24 +162,24 @@ Cross(vec3 A, vec3 B)
 	return(Result);
 }
 
-inline real32 __vectorcall
+inline r32 __vectorcall
 Dot(vec3 A, vec3 B)
 {
 	vec3 Temp = Hadamard(A, B);
-	real32 Result = Temp.x() + Temp.y() + Temp.z();
+	r32 Result = Temp.x() + Temp.y() + Temp.z();
 	return(Result);
 }
 
-inline real32 __vectorcall
+inline r32 __vectorcall
 LengthSq(vec3 A)
 {
 	return(Dot(A, A));
 }
 
-inline real32 __vectorcall
+inline r32 __vectorcall
 Length(vec3 A)
 {
-	return(sqrtf(Dot(A, A)));
+	return(SquareRoot(Dot(A, A)));
 }
 
 inline vec3 __vectorcall
@@ -189,7 +189,7 @@ Normalize(vec3 A)
 }
 
 inline vec3 __vectorcall
-Lerp(vec3 A, vec3 B, real32 t)
+Lerp(vec3 A, vec3 B, r32 t)
 {
 	return(A + t*(B - A));
 }
@@ -203,44 +203,44 @@ struct vec4
 	__m128 m;
 
 	inline vec4() {}
-	inline explicit vec4(real32 *V) { m = _mm_set_ps(V[3], V[2], V[1], V[0]); }
-	inline explicit vec4(real32 X, real32 Y, real32 Z, real32 W) { m = _mm_set_ps(W, Z, Y, X); }
+	inline explicit vec4(r32 *V) { m = _mm_set_ps(V[3], V[2], V[1], V[0]); }
+	inline explicit vec4(r32 X, r32 Y, r32 Z, r32 W) { m = _mm_set_ps(W, Z, Y, X); }
 	inline explicit vec4(__m128 V) { m = V; }
-	inline explicit vec4(vec3 V, real32 W) { m = V.m; SetW(W); }
-	inline vec4 __vectorcall vec4i(int32_t X, int32_t Y, int32_t Z, int32_t W) { return(vec4((real32)X, (real32)Y, (real32)Z, (real32)W)); }
+	inline explicit vec4(vec3 V, r32 W) { m = V.m; SetW(W); }
+	inline vec4 __vectorcall vec4i(int32_t X, int32_t Y, int32_t Z, int32_t W) { return(vec4((r32)X, (r32)Y, (r32)Z, (r32)W)); }
 
-	inline real32 __vectorcall x() { return(_mm_cvtss_f32(m)); }
-	inline real32 __vectorcall y() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(1, 1, 1, 1)))); }
-	inline real32 __vectorcall z() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(2, 2, 2, 2)))); }
-	inline real32 __vectorcall w() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(3, 3, 3, 3)))); }
+	inline r32 __vectorcall x() { return(_mm_cvtss_f32(m)); }
+	inline r32 __vectorcall y() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(1, 1, 1, 1)))); }
+	inline r32 __vectorcall z() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(2, 2, 2, 2)))); }
+	inline r32 __vectorcall w() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(3, 3, 3, 3)))); }
 
-	void __vectorcall SetX(real32 X)
+	void __vectorcall SetX(r32 X)
 	{
 		m = _mm_move_ss(m, _mm_set_ss(X));
 	}
 
-	void __vectorcall SetY(real32 Y)
+	void __vectorcall SetY(r32 Y)
 	{
 		__m128 Temp = _mm_move_ss(m, _mm_set_ss(Y));
 		Temp = _mm_shuffle_ps(Temp, Temp, _MM_SHUFFLE(3, 2, 0, 0));
 		m = _mm_move_ss(Temp, m);
 	}
 
-	void __vectorcall SetZ(real32 Z)
+	void __vectorcall SetZ(r32 Z)
 	{
 		__m128 Temp = _mm_move_ss(m, _mm_set_ss(Z));
 		Temp = _mm_shuffle_ps(Temp, Temp, _MM_SHUFFLE(3, 0, 1, 0));
 		m = _mm_move_ss(Temp, m);
 	}
 
-	void __vectorcall SetW(real32 W)
+	void __vectorcall SetW(r32 W)
 	{
 		__m128 Temp = _mm_move_ss(m, _mm_set_ss(W));
 		Temp = _mm_shuffle_ps(Temp, Temp, _MM_SHUFFLE(0, 2, 1, 0));
 		m = _mm_move_ss(Temp, m);
 	}
 
-	inline real32 operator[] (size_t I) { return(m.m128_f32[I]); };
+	inline r32 operator[] (size_t I) { return(m.m128_f32[I]); };
 };
 
 inline vec4 __vectorcall
@@ -265,14 +265,14 @@ Hadamard(vec4 A, vec4 B)
 }
 
 inline vec4 __vectorcall
-operator* (vec4 A, real32 B)
+operator* (vec4 A, r32 B)
 {
 	A.m = _mm_mul_ps(A.m, _mm_set1_ps(B));
 	return(A);
 }
 
 inline vec4 __vectorcall
-operator* (real32 B, vec4 A)
+operator* (r32 B, vec4 A)
 {
 	A = A * B;
 	return(A);
@@ -293,7 +293,7 @@ operator-= (vec4 &A, vec4 B)
 }
 
 inline vec4 & __vectorcall
-operator*= (vec4 &A, real32 B)
+operator*= (vec4 &A, r32 B)
 {
 	A = A * B;
 	return(A);
@@ -326,24 +326,24 @@ operator- (vec4 A)
 	return(A);
 }
 
-inline real32 __vectorcall
+inline r32 __vectorcall
 Dot(vec4 A, vec4 B)
 {
 	vec4 Temp = Hadamard(A, B);
-	real32 Result = Temp.x() + Temp.y() + Temp.z();
+	r32 Result = Temp.x() + Temp.y() + Temp.z();
 	return(Result);
 }
 
-inline real32 __vectorcall
+inline r32 __vectorcall
 LengthSq(vec4 A)
 {
 	return(Dot(A, A));
 }
 
-inline real32 __vectorcall
+inline r32 __vectorcall
 Length(vec4 A)
 {
-	return(sqrtf(Dot(A, A)));
+	return(SquareRoot(Dot(A, A)));
 }
 
 inline vec4 __vectorcall
@@ -353,7 +353,7 @@ Normalize(vec4 A)
 }
 
 inline vec4 __vectorcall
-Lerp(vec4 A, vec4 B, real32 t)
+Lerp(vec4 A, vec4 B, r32 t)
 {
 	return(A + t*(B - A));
 }
@@ -403,7 +403,7 @@ operator* (mat4 A, mat4 B)
 }
 
 inline mat4 __vectorcall
-Identity(real32 Diagonal = 1.0f)
+Identity(r32 Diagonal = 1.0f)
 {
 	mat4 Result;
 
@@ -429,7 +429,7 @@ Translate(vec3 Translation)
 }
 
 inline mat4 __vectorcall
-Scale(real32 ScaleFactor)
+Scale(r32 ScaleFactor)
 {
 	mat4 Result;
 
@@ -460,26 +460,26 @@ Rotate(r32 Angle, vec3 Axis)
 	mat4 Result;
 
 	r32 Radians = DEG2RAD(Angle);
-	r32 Cos = cosf(Radians);
-	r32 Sin = sinf(Radians);
+	r32 Cosine = Cos(Radians);
+	r32 Sine = Sin(Radians);
 
 	Axis = Normalize(Axis);
 	r32 AxisX = Axis.x();
 	r32 AxisY = Axis.y();
 	r32 AxisZ = Axis.z();
 
-	Result.FirstColumn = vec4(AxisX*AxisX*(1.0f - Cos) + Cos,
-							  AxisX*AxisY*(1.0f - Cos) + AxisZ*Sin,
-							  AxisX*AxisZ*(1.0f - Cos) - AxisY*Sin,
+	Result.FirstColumn = vec4(AxisX*AxisX*(1.0f - Cosine) + Cosine,
+							  AxisX*AxisY*(1.0f - Cosine) + AxisZ*Sine,
+							  AxisX*AxisZ*(1.0f - Cosine) - AxisY*Sine,
 							  0.0f);
-	Result.SecondColumn = vec4(AxisX*AxisY*(1.0f - Cos) - AxisZ*Sin,
-							   AxisY*AxisY*(1.0f - Cos) + Cos,
-							   AxisY*AxisZ*(1.0f - Cos) + AxisX*Sin,
+	Result.SecondColumn = vec4(AxisX*AxisY*(1.0f - Cosine) - AxisZ*Sine,
+							   AxisY*AxisY*(1.0f - Cosine) + Cosine,
+							   AxisY*AxisZ*(1.0f - Cosine) + AxisX*Sine,
 							   0.0f);
 
-	Result.ThirdColumn = vec4(AxisX*AxisZ*(1.0f - Cos) + AxisY*Sin,
-							  AxisY*AxisZ*(1.0f - Cos) - AxisX*Sin,
-							  AxisZ*AxisZ*(1.0f - Cos) + Cos,
+	Result.ThirdColumn = vec4(AxisX*AxisZ*(1.0f - Cosine) + AxisY*Sine,
+							  AxisY*AxisZ*(1.0f - Cosine) - AxisX*Sine,
+							  AxisZ*AxisZ*(1.0f - Cosine) + Cosine,
 							  0.0f);		
 	Result.FourthColumn = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
@@ -522,13 +522,13 @@ RotationMatrixFromDirection(vec3 Dir)
 }
 
 internal mat4 __vectorcall
-Perspective(real32 FoV, real32 AspectRatio, real32 Near, real32 Far)
+Perspective(r32 FoV, r32 AspectRatio, r32 Near, r32 Far)
 {
-	real32 Scale = tanf(DEG2RAD(FoV)*0.5f) * Near;
-	real32 Top = Scale;
-	real32 Bottom = -Top;
-	real32 Right = AspectRatio * Top;
-	real32 Left = -Right;
+	r32 Scale = tanf(DEG2RAD(FoV)*0.5f) * Near;
+	r32 Top = Scale;
+	r32 Bottom = -Top;
+	r32 Right = AspectRatio * Top;
+	r32 Left = -Right;
 
 	mat4 Result;
 
@@ -585,7 +585,7 @@ operator* (mat3 A, vec3 V)
 }
 
 inline mat3 __vectorcall
-Identity3x3(real32 Diagonal = 1.0f)
+Identity3x3(r32 Diagonal = 1.0f)
 {
 	mat3 Result;
 
@@ -597,7 +597,7 @@ Identity3x3(real32 Diagonal = 1.0f)
 }
 
 inline mat3 __vectorcall
-Scale3x3(real32 ScaleFactor)
+Scale3x3(r32 ScaleFactor)
 {
 	mat3 Result;
 
@@ -626,24 +626,23 @@ Rotate3x3(r32 Angle, vec3 Axis)
 	mat3 Result;
 
 	r32 Radians = DEG2RAD(Angle);
-	r32 Cos = cosf(Radians);
-	r32 Sin = sinf(Radians);
-
+	r32 Cosine = Cos(Radians);
+	r32 Sine = Sin(Radians);
 	Axis = Normalize(Axis);
 	r32 AxisX = Axis.x();
 	r32 AxisY = Axis.y();
 	r32 AxisZ = Axis.z();
 
-	Result.FirstColumn = vec3(AxisX*AxisX*(1.0f - Cos) + Cos,
-							  AxisX*AxisY*(1.0f - Cos) + AxisZ*Sin,
-							  AxisX*AxisZ*(1.0f - Cos) - AxisY*Sin);
-	Result.SecondColumn = vec3(AxisX*AxisY*(1.0f - Cos) - AxisZ*Sin,
-							  AxisY*AxisY*(1.0f - Cos) + Cos,
-							  AxisY*AxisZ*(1.0f - Cos) + AxisX*Sin);
+	Result.FirstColumn = vec3(AxisX*AxisX*(1.0f - Cosine) + Cosine,
+							  AxisX*AxisY*(1.0f - Cosine) + AxisZ*Sine,
+							  AxisX*AxisZ*(1.0f - Cosine) - AxisY*Sine);
+	Result.SecondColumn = vec3(AxisX*AxisY*(1.0f - Cosine) - AxisZ*Sine,
+							  AxisY*AxisY*(1.0f - Cosine) + Cosine,
+							  AxisY*AxisZ*(1.0f - Cosine) + AxisX*Sine);
 
-	Result.ThirdColumn = vec3(AxisX*AxisZ*(1.0f - Cos) + AxisY*Sin,
-							  AxisY*AxisZ*(1.0f - Cos) - AxisX*Sin,
-							  AxisZ*AxisZ*(1.0f - Cos) + Cos);
+	Result.ThirdColumn = vec3(AxisX*AxisZ*(1.0f - Cosine) + AxisY*Sine,
+							  AxisY*AxisZ*(1.0f - Cosine) - AxisX*Sine,
+							  AxisZ*AxisZ*(1.0f - Cosine) + Cosine);
 
 	return(Result);
 }
@@ -655,13 +654,13 @@ Rotate3x3(r32 Angle, vec3 Axis)
 union vec2
 {
 	vec2() {}
-	explicit vec2(real32 X, real32 Y) { x = X; y = Y; }
+	explicit vec2(r32 X, r32 Y) { x = X; y = Y; }
 
 	struct
 	{
-		real32 x, y;
+		r32 x, y;
 	};
-	real32 E[2];
+	r32 E[2];
 };
 
 inline vec2
@@ -689,7 +688,7 @@ Hadamard(vec2 A, vec2 B)
 }
 
 inline vec2
-operator* (vec2 A, real32 B)
+operator* (vec2 A, r32 B)
 {
 	A.x = A.x * B;
 	A.y = A.y * B;
@@ -697,7 +696,7 @@ operator* (vec2 A, real32 B)
 }
 
 inline vec2
-operator* (real32 B, vec2 A)
+operator* (r32 B, vec2 A)
 {
 	A = A * B;
 	return(A);
@@ -718,7 +717,7 @@ operator-= (vec2 &A, vec2 B)
 }
 
 inline vec2 &
-operator*= (vec2 &A, real32 B)
+operator*= (vec2 &A, r32 B)
 {
 	A = A * B;
 	return(A);
@@ -732,23 +731,23 @@ operator- (vec2 A)
 	return(A);
 }
 
-inline real32
+inline r32
 Dot(vec2 A, vec2 B)
 {
-	real32 Result = A.x*B.x + A.y*B.y;
+	r32 Result = A.x*B.x + A.y*B.y;
 	return(Result);
 }
 
-inline real32
+inline r32
 LengthSq(vec2 A)
 {
 	return (Dot(A, A));
 }
 
-inline real32
+inline r32
 Length(vec2 A)
 {
-	return (sqrtf(Dot(A, A)));
+	return (SquareRoot(Dot(A, A)));
 }
 
 inline vec2
@@ -767,13 +766,31 @@ Lerp(vec2 A, vec2 B, float t)
 // NOTE(georgy): Scalar
 //
 
-inline real32
-Clamp(real32 Value, real32 Min, real32 Max)
+inline r32
+Clamp(r32 Value, r32 Min, r32 Max)
 {
 	if (Value < Min) Value = Min;
 	if (Value > Max) Value = Max;
 
 	return(Value);
+}
+
+inline r32 
+Real32Modulo(r32 Numerator, r32 Denominator)
+{
+	r32 Coeff = (r32)(i32)(Numerator/Denominator);
+	r32 Result = Numerator - (Coeff*Denominator);
+
+	return(Result);
+}
+
+inline r64 
+Real64Modulo(r64 Numerator, r64 Denominator)
+{
+	r64 Coeff = (r64)(i64)(Numerator/Denominator);
+	r64 Result = Numerator - (Coeff*Denominator);
+
+	return(Result);
 }
 
 // 

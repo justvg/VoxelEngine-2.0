@@ -25,7 +25,7 @@ inline vec3
 GetSimSpaceP(sim_region *SimRegion, stored_entity *StoredEntity)
 {
 	vec3 Result = vec3((r32)INVALID_POSITION, (r32)INVALID_POSITION, (r32)INVALID_POSITION);
-	if(!StoredEntity->Sim.NonSpatial)
+	if(!IsSet(&StoredEntity->Sim, EntityFlag_NonSpatial))
 	{
 		Result = Substract(SimRegion->World, &StoredEntity->P, &SimRegion->Origin);
 	}
@@ -158,7 +158,7 @@ BeginSimulation(game_state *GameState, world *World, world_position Origin, rect
 						{
 							u32 StoredEntityIndex = Block->StoredEntityIndex[EntityIndexInBlock];
 							stored_entity *StoredEntity = GameState->StoredEntities + StoredEntityIndex;
-							if(!StoredEntity->Sim.NonSpatial)
+							if(!IsSet(&StoredEntity->Sim, EntityFlag_NonSpatial))
 							{
 								vec3 SimSpaceP = Substract(World, &StoredEntity->P, &Origin);
 								rect3 EntityAABB = RectCenterDim(SimSpaceP + StoredEntity->Sim.Collision->OffsetP, StoredEntity->Sim.Collision->Dim);
@@ -212,7 +212,7 @@ GetLowestRoot(r32 A, r32 B, r32 C, r32 *t)
 
 	if(Descriminant >= 0.0f)
 	{
-		r32 SqrtD = sqrtf(Descriminant);
+		r32 SqrtD = SquareRoot(Descriminant);
 		r32 R1 = (-B - SqrtD) / (2.0f*A);
 		r32 R2 = (-B + SqrtD) / (2.0f*A);
 		
@@ -435,7 +435,7 @@ CanCollide(game_state *GameState, sim_entity *A, sim_entity *B)
 
 	if(A != B)
 	{
-		if(A->Collides && B->Collides)
+		if(IsSet(A, EntityFlag_Collides) && IsSet(B, EntityFlag_Collides))
 		{
 			if (A->StorageIndex > B->StorageIndex)
 			{
@@ -444,7 +444,7 @@ CanCollide(game_state *GameState, sim_entity *A, sim_entity *B)
 				B = Temp;
 			}
 
-			if(!A->NonSpatial && !B->NonSpatial)
+			if(!IsSet(A, EntityFlag_NonSpatial) && !IsSet(B, EntityFlag_NonSpatial))
 			{
 				Result = true;
 			}
@@ -744,16 +744,16 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 					vec3 SlidingPlaneNormal = Normalize(ESpaceP - CollisionP);
 					if(Gravity && (SlidingPlaneNormal.y() >= 0.95f))
 					{
-						Entity->OnGround = true;
+						AddFlags(Entity, EntityFlag_OnGround);
 					}
-					ESpaceEntityDelta = ESpaceEntityDelta - 1.01f*Dot(SlidingPlaneNormal, ESpaceEntityDelta)*SlidingPlaneNormal;
+					ESpaceEntityDelta = ESpaceEntityDelta - 1.1f*Dot(SlidingPlaneNormal, ESpaceEntityDelta)*SlidingPlaneNormal;
 					Entity->dP = Entity->dP - (1.01f*Dot(EllipsoidToWorld * SlidingPlaneNormal, Entity->dP)) *
 													  (EllipsoidToWorld * SlidingPlaneNormal);
 				}
 			}
 			else if(Gravity && Iteration == 0)
 			{
-				Entity->OnGround = false;
+				ClearFlags(Entity, EntityFlag_OnGround);
 			}
 		}
 	}

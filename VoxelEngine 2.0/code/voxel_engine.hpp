@@ -148,8 +148,7 @@ TESTAddCube(game_state *GameState, world_position P, vec3 Dim, u32 VerticesCount
 	StoredEntity->Sim.Type = (entity_type)10000;
 	StoredEntity->Sim.Collision = GameState->TESTCubeCollision;
 	StoredEntity->P = InvalidPosition();
-	StoredEntity->Sim.Moveable = true;
-	StoredEntity->Sim.Collides = true;
+	AddFlags(&StoredEntity->Sim, EntityFlag_Moveable | EntityFlag_Collides);
 
 	StoredEntity->Sim.MaxHitPoints = 30;
 	StoredEntity->Sim.HitPoints = 30;
@@ -188,9 +187,7 @@ AddFireball(game_state *GameState)
 {
 	add_stored_entity_result Entity = AddStoredEntity(GameState, EntityType_Fireball, InvalidPosition());
 
-	Entity.StoredEntity->Sim.Moveable = true;
-	Entity.StoredEntity->Sim.NonSpatial = true;
-	Entity.StoredEntity->Sim.Collides = true;
+	AddFlags(&Entity.StoredEntity->Sim, EntityFlag_Moveable | EntityFlag_NonSpatial | EntityFlag_Collides);
 	Entity.StoredEntity->Sim.Rotation = 0.0f;
 	Entity.StoredEntity->Sim.Collision = GameState->FireballCollision;
 
@@ -202,9 +199,7 @@ AddHero(game_state *GameState, world_position P)
 {
 	add_stored_entity_result Entity = AddStoredEntity(GameState, EntityType_Hero, P);
 
-	Entity.StoredEntity->Sim.Moveable = true;
-	Entity.StoredEntity->Sim.Collides = true;
-	Entity.StoredEntity->Sim.GravityAffected = true;
+	AddFlags(&Entity.StoredEntity->Sim, EntityFlag_Moveable | EntityFlag_Collides | EntityFlag_GravityAffected);
 	Entity.StoredEntity->Sim.Rotation = 0.0f;
 	Entity.StoredEntity->Sim.Collision = GameState->HeroCollision;
 	Entity.StoredEntity->Sim.Fireball.StorageIndex = AddFireball(GameState);
@@ -262,7 +257,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		GameState->FireballCollision = MakeSimpleCollision(GameState, vec3(0.25f, 0.25f, 0.25f));
 		GameState->TESTCubeCollision = MakeSimpleCollision(GameState, vec3(1.0f, 1.0f, 1.0f));
 
-		CompileShader(&GameState->DefaultShader, "data/shaders/DefaultVS.glsl", "data/shaders/DefaultFS.glsl");
+		CompileShader(&GameState->CharacterShader, "data/shaders/CharacterVS.glsl", "data/shaders/CharacterFS.glsl");
+		CompileShader(&GameState->WorldShader, "data/shaders/WorldVS.glsl", "data/shaders/WorldFS.glsl");
 		CompileShader(&GameState->BillboardShader, "data/shaders/BillboardVS.glsl", "data/shaders/BillboardFS.glsl");
 
 		r32 CubeVertices[] = {
@@ -347,8 +343,12 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		HeroP.Offset = vec3(0.3f, 5.0f, 3.0f);
 		GameState->Hero.Entity = AddHero(GameState, HeroP);
 
+		GameState->Clock = 0.0;
+
 		GameState->IsInitialized = true;
 	}
+
+	GameState->Clock += (r64)Input->dt;
 
 	Assert(sizeof(temp_state) <= Memory->TemporaryStorageSize);
 	temp_state *TempState = (temp_state *)Memory->TemporaryStorage;
@@ -362,6 +362,21 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		TempState->JobSystemQueue = Memory->JobSystemQueue;
 		// TempState->GameAssets = AllocateGameAssets(TempState, &TempState->Allocator, 500000);
 		TempState->GameAssets = AllocateGameAssets(TempState, &TempState->Allocator, Megabytes(64));
+
+		TempState->CharacterAnimations[CharacterAnimation_Idle].DurationInSeconds = 1.0f;
+		TempState->CharacterAnimations[CharacterAnimation_Idle].KeyFrameCount = 2;
+		TempState->CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].TimeStampInSeconds = 0.0f;
+		TempState->CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Translation[CharacterBone_Head] = vec3(0.0f, 0.0f, 0.0f);
+		TempState->CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Translation[CharacterBone_Shoulders] = vec3(0.0f, 0.0f, 0.0f);
+		TempState->CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Translation[CharacterBone_Body] = vec3(0.0f, 0.0f, 0.0f);
+		TempState->CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Translation[CharacterBone_Hand] = vec3(0.0f, 0.0f, 0.0f);
+		TempState->CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Translation[CharacterBone_Foot] = vec3(0.0f, 0.0f, 0.0f);
+		TempState->CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].TimeStampInSeconds = 1.0f;
+		TempState->CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Translation[CharacterBone_Head] = vec3(0.05f, 0.05f, 0.05f);
+		TempState->CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Translation[CharacterBone_Shoulders] = vec3(0.05f, 0.05f, 0.05f);
+		TempState->CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Translation[CharacterBone_Body] = vec3(0.0f, 0.0f, 0.0f);
+		TempState->CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Translation[CharacterBone_Hand] = vec3(0.05f, 0.05f, 0.05f);
+		TempState->CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Translation[CharacterBone_Foot] = vec3(0.0f, 0.0f, 0.0f);
 	}
 
 	temporary_memory RenderMemory = BeginTemporaryMemory(&TempState->Allocator);
@@ -379,23 +394,23 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 	r32 PitchRadians = DEG2RAD(Camera->Pitch);
 	r32 HeadRadians = DEG2RAD(Camera->Head);
-	r32 HorizontalDistanceFromHero = Camera->DistanceFromHero*cosf(-PitchRadians);
-	r32 XOffsetFromHero = -HorizontalDistanceFromHero * sinf(HeadRadians);
-	r32 YOffsetFromHero = Camera->DistanceFromHero*sinf(-PitchRadians);
-	r32 ZOffsetFromHero = HorizontalDistanceFromHero * cosf(HeadRadians);
+	r32 HorizontalDistanceFromHero = Camera->DistanceFromHero*Cos(-PitchRadians);
+	r32 XOffsetFromHero = -HorizontalDistanceFromHero * Sin(HeadRadians);
+	r32 YOffsetFromHero = Camera->DistanceFromHero*Sin(-PitchRadians);
+	r32 ZOffsetFromHero = HorizontalDistanceFromHero * Cos(HeadRadians);
 	Camera->OffsetFromHero = vec3(XOffsetFromHero, YOffsetFromHero, ZOffsetFromHero);
 
 #if 0
-	r32 CameraTargetDirX = sinf(DEG2RAD(Camera->Head))*cosf(DEG2RAD(Camera->Pitch));
-	r32 CameraTargetDirY = sinf(DEG2RAD(Camera->Pitch));
-	r32 CameraTargetDirZ = -cosf(DEG2RAD(Camera->Head))*cosf(DEG2RAD(Camera->Pitch));
+	r32 CameraTargetDirX = Sin(DEG2RAD(Camera->Head))*Cos(DEG2RAD(Camera->Pitch));
+	r32 CameraTargetDirY = Sin(DEG2RAD(Camera->Pitch));
+	r32 CameraTargetDirZ = -Cos(DEG2RAD(Camera->Head))*Cos(DEG2RAD(Camera->Pitch));
 	Camera->Front = Normalize(vec3(CameraTargetDirX, CameraTargetDirY, CameraTargetDirZ));
 #endif
 
 	vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), 0.0f, -Camera->OffsetFromHero.z()));
 	// vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), -Camera->OffsetFromHero.y(), -Camera->OffsetFromHero.z()));
 	vec3 Right = Normalize(Cross(Forward, vec3(0.0f, 1.0f, 0.0f)));
-	r32 Theta = -RAD2DEG(atan2f(Forward.z(), Forward.x())) + 90.0f;
+	r32 Theta = -RAD2DEG(ATan2(Forward.z(), Forward.x())) + 90.0f;
 	GameState->Hero.ddP = vec3(0.0f, 0.0f, 0.0f);
 	if (Input->MoveForward)
 	{
@@ -450,11 +465,14 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	UseShader(GameState->DefaultShader);	
+	UseShader(GameState->WorldShader);	
 	mat4 View = RotationMatrixFromDirection(Camera->OffsetFromHero) * Translate(-Camera->OffsetFromHero);
 	mat4 Projection = Perspective(45.0f, (r32)Width/Height, 0.1f, 100.0f);
-	SetMat4(GameState->DefaultShader, "View", View);
-	SetMat4(GameState->DefaultShader, "Projection", Projection);
+	SetMat4(GameState->WorldShader, "View", View);
+	SetMat4(GameState->WorldShader, "Projection", Projection);
+	UseShader(GameState->CharacterShader);	
+	SetMat4(GameState->CharacterShader, "View", View);
+	SetMat4(GameState->CharacterShader, "Projection", Projection);
 	UseShader(GameState->BillboardShader);
 	SetMat4(GameState->BillboardShader, "View", View);
 	SetMat4(GameState->BillboardShader, "Projection", Projection);
@@ -467,7 +485,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		r32 dt = Input->dt;
 		if(Entity->Updatable)
 		{
-			UseShader(GameState->DefaultShader);	
+			UseShader(GameState->WorldShader);	
 			
 			vec3 ddP = {};
 			r32 Drag = 0.0f;
@@ -477,7 +495,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 				{
 					ddP = GameState->Hero.ddP;
 					Drag = 2.0f;
-					if(GameState->Hero.dY)
+					if(GameState->Hero.dY && IsSet(Entity, EntityFlag_OnGround))
 					{
 						Entity->dP.SetY(GameState->Hero.dY);
 					}
@@ -487,9 +505,9 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 					if(GameState->Hero.Fireball)
 					{
 						sim_entity *Fireball = Entity->Fireball.SimPtr;
-						if(Fireball && Fireball->NonSpatial)
+						if(Fireball && IsSet(Fireball, EntityFlag_NonSpatial))
 						{
-							Fireball->NonSpatial = false;
+							ClearFlags(Fireball, EntityFlag_NonSpatial);
 							Fireball->DistanceLimit = 8.0f;
 							Fireball->P = Entity->P + vec3(0.0f, 0.5f, 0.0f);
 							Fireball->dP = vec3(Entity->dP.x(), 0.0f, Entity->dP.z()) + 5.0f*Forward;
@@ -519,10 +537,10 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 				} break;
 			}
 
-			if(Entity->Moveable && !Entity->NonSpatial)
+			if(IsSet(Entity, EntityFlag_Moveable) && !IsSet(Entity, EntityFlag_NonSpatial))
 			{
 				MoveEntity(GameState, SimRegion, Entity, ddP, Drag, dt, false);
-				if(Entity->GravityAffected)
+				if(IsSet(Entity, EntityFlag_GravityAffected))
 				{
 					MoveEntity(GameState, SimRegion, Entity, ddP, Drag, dt, true);
 				}
@@ -532,24 +550,45 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 			{
 				case EntityType_Hero:
 				{
-					r32 HeroRotRadians = DEG2RAD(Entity->Rotation);
-					vec3 FacingDir = vec3(sinf(HeroRotRadians), 0.0f, cosf(HeroRotRadians));
-					vec3 HeroRight = Normalize(Cross(FacingDir, vec3(0.0f, 1.0f, 0.0f))); 
+					UseShader(GameState->CharacterShader);
 
+					mat4 BoneTransformations[CharacterBone_Count];
+					for(u32 BoneIndex = 0;
+						BoneIndex < CharacterBone_Count;
+						BoneIndex++)
+					{
+						BoneTransformations[BoneIndex] = GetBoneForAnimation(TempState->CharacterAnimations, CharacterAnimation_Idle, 
+																			 (character_bone_id)BoneIndex, GameState->Clock);
+					}
+
+					SetMat4(GameState->CharacterShader, "BoneTransformations[0]", BoneTransformations[CharacterBone_Head]);
+					SetMat4(GameState->CharacterShader, "BoneTransformations[1]", BoneTransformations[CharacterBone_Shoulders]);
+					SetMat4(GameState->CharacterShader, "BoneTransformations[2]", BoneTransformations[CharacterBone_Body]);
+					SetMat4(GameState->CharacterShader, "BoneTransformations[3]", BoneTransformations[CharacterBone_Hand]);
+					SetMat4(GameState->CharacterShader, "BoneTransformations[4]", BoneTransformations[CharacterBone_Foot]);
+
+					r32 HeroRotRadians = DEG2RAD(Entity->Rotation);
+					vec3 FacingDir = vec3(Sin(HeroRotRadians), 0.0f, Cos(HeroRotRadians));
+					vec3 HeroRight = Normalize(Cross(FacingDir, vec3(0.0f, 1.0f, 0.0f))); 
 					asset_tag_vector MatchVector = { 1.0f };
 					u32 HeadIndex = GetBestMatchAsset(TempState->GameAssets, AssetType_Head, &MatchVector);
-					DrawModel(GameState->DefaultShader, TempState->GameAssets, HeadIndex, Entity->Rotation, HeroRight);
-					DrawModel(GameState->DefaultShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Shoulders].FirstAssetIndex, 
+					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Head);
+					DrawModel(GameState->CharacterShader, TempState->GameAssets, HeadIndex, Entity->Rotation, HeroRight);
+					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Shoulders);
+					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Shoulders].FirstAssetIndex, 
 							  Entity->Rotation, HeroRight);
-					DrawModel(GameState->DefaultShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Body].FirstAssetIndex,
+					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Body);
+					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Body].FirstAssetIndex,
 							  Entity->Rotation, HeroRight);
-					DrawModel(GameState->DefaultShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Hand].FirstAssetIndex, 
+					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Hand);
+					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Hand].FirstAssetIndex, 
 							  Entity->Rotation, HeroRight);
-					DrawModel(GameState->DefaultShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Hand].FirstAssetIndex,
+					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Hand].FirstAssetIndex,
 							  Entity->Rotation, -HeroRight);
-					DrawModel(GameState->DefaultShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Foot].FirstAssetIndex, 
+					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Foot);
+					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Foot].FirstAssetIndex, 
 							  Entity->Rotation, HeroRight);
-					DrawModel(GameState->DefaultShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Foot].FirstAssetIndex,
+					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Foot].FirstAssetIndex,
 							  Entity->Rotation, -HeroRight);
 				} break;
 
@@ -557,7 +596,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 				{
 					glBindVertexArray(GameState->CubeVAO);
 					mat4 Model = Translate(vec3(0.0f, 0.5f*0.25f, 0.0f) + Entity->P) * Scale(vec3(0.25f, 0.25f, 0.25f));
-					SetMat4(GameState->DefaultShader, "Model", Model);
+					SetMat4(GameState->WorldShader, "Model", Model);
 					glDrawArrays(GL_TRIANGLES, 0, 36);
 					glBindVertexArray(0);
 				} break;
@@ -567,7 +606,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 				{
 					glBindVertexArray(GameState->CubeVAO);
 					mat4 Model = Translate(vec3(0.0f, 0.5f, 0.0f) + Entity->P);
-					SetMat4(GameState->DefaultShader, "Model", Model);
+					SetMat4(GameState->WorldShader, "Model", Model);
 					glDrawArrays(GL_TRIANGLES, 0, 36);
 					glBindVertexArray(0);
 
@@ -585,7 +624,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		}
 	}
 	
-	RenderChunks(&GameState->World, GameState->DefaultShader);
+	RenderChunks(&GameState->World, GameState->WorldShader);
 	
 	EndSimulation(GameState, SimRegion, &GameState->WorldAllocator);
 	EndTemporaryMemory(RenderMemory);
