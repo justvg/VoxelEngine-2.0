@@ -43,6 +43,8 @@ struct sim_entity
 	bool32 Updatable;
 	u32 Flags;
 
+	entity_animation_state AnimationState;
+
 	i32 MaxHitPoints;
 	i32 HitPoints;
 

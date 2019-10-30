@@ -14,7 +14,7 @@ out vs_out
 
 const vec3 DirLightDirection = normalize(vec3(0.9, -0.5, -0.3));
 
-uniform mat4 BoneTransformations[5];
+uniform mat4 BoneTransformations[7];
 uniform int BoneID;
 
 uniform mat4 Model = mat4(1.0);
@@ -24,6 +24,7 @@ uniform mat4 Projection = mat4(1.0);
 void main()
 {
 	vec4 LocalP = BoneTransformations[BoneID] * vec4(aPos, 1.0);
+
 	vec3 LocalNormal = normalize(mat3(BoneTransformations[BoneID]) * aNormal);
 
 	vec4 ViewPos = View * Model * LocalP; 

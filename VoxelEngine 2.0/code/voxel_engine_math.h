@@ -544,7 +544,7 @@ Perspective(r32 FoV, r32 AspectRatio, r32 Near, r32 Far)
 }
 
 //
-// NOTE(georgy): mat4
+// NOTE(georgy): mat3
 //
 struct mat3
 {
@@ -757,14 +757,140 @@ Normalize(vec2 A)
 }
 
 inline vec2
-Lerp(vec2 A, vec2 B, float t)
+Lerp(vec2 A, vec2 B, r32 t)
 {
 	return (A + (B - A)*t);
+}
+
+// 
+// NOTE(georgy): Quaternion 
+// 
+
+struct quaternion
+{
+	r32 w;
+	vec3 v;
+};
+
+inline quaternion __vectorcall
+Quaternion(r32 W, vec3 V)
+{
+	quaternion Result = { W, V };
+	return(Result);
+}
+
+inline quaternion __vectorcall
+operator+ (quaternion A, quaternion B)
+{
+	quaternion Result;
+	Result.w = A.w + B.w;
+	Result.v = A.v + B.v;
+
+	return(Result);
+}
+
+inline quaternion __vectorcall
+operator- (quaternion A)
+{
+	quaternion Result;
+	Result.w = -A.w;
+	Result.v = -A.v;
+
+	return(Result);
+}
+
+inline quaternion __vectorcall
+operator* (quaternion A, r32 B)
+{
+	quaternion Result;
+
+	Result.w = B*A.w;
+	Result.v = B*A.v;
+
+	return(Result);
+}
+
+inline quaternion __vectorcall
+operator* (r32 B, quaternion A)
+{
+	quaternion Result = A * B;
+	return(Result);
+}
+
+inline quaternion __vectorcall
+operator* (quaternion A, quaternion B)
+{
+	quaternion Result;
+
+	Result.w = A.w*B.w - Dot(A.v, B.v);
+	Result.v = A.w*B.v + B.w*A.v + Cross(A.v, B.v);
+
+	return(Result);
+}
+
+inline r32 __vectorcall
+Length(quaternion A)
+{
+	r32 Result = SquareRoot(A.w*A.w + LengthSq(A.v));
+	return(Result);
+}
+
+inline r32 __vectorcall
+Dot(quaternion A, quaternion B)
+{
+	r32 Result = A.w*B.w + Dot(A.v, B.v);
+	return(Result);
+}
+
+internal quaternion __vectorcall
+Slerp(quaternion A, quaternion B, r32 t)
+{
+	r32 Omega = acosf(Dot(A, B));
+	quaternion Result = ((Sin((1.0f - t)*Omega)/Sin(Omega))*A) +
+						((Sin(t*Omega)/Sin(Omega))*B);
+
+	return(Result);
+}
+
+internal mat4 __vectorcall
+QuaternionToMatrix(quaternion A)
+{
+	mat4 Result;
+
+	r32 W = A.w;
+	r32 X = A.v.x();
+	r32 Y = A.v.y();
+	r32 Z = A.v.z();
+
+	Result.FirstColumn = vec4(1.0f - 2.0f*Y*Y - 2.0f*Z*Z, 2.0f*X*Y + 2.0f*W*Z, 2.0f*X*Z - 2.0f*W*Y, 0.0f);
+	Result.SecondColumn = vec4(2.0f*X*Y - 2.0f*W*Z, 1.0f - 2.0f*X*X - 2.0f*Z*Z, 2.0f*Y*Z + 2.0f*W*X, 0.0f);
+	Result.ThirdColumn = vec4(2.0f*X*Z + 2.0f*W*Y, 2.0f*Y*Z - 2.0f*W*X, 1.0f - 2.0f*X*X - 2.0f*Y*Y, 0.0f);
+	Result.FourthColumn = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+
+	return(Result);
+}
+
+inline quaternion __vectorcall
+Conjugate(quaternion A)
+{
+	quaternion Result;
+
+	Result.w = A.w;
+	Result.v = -A.v;
+
+	return(Result);
 }
 
 //
 // NOTE(georgy): Scalar
 //
+
+inline r32
+Lerp(r32 A, r32 B, r32 t)
+{
+	r32 Result = A + (B - A)*t;
+	return(Result);
+}
 
 inline r32
 Clamp(r32 Value, r32 Min, r32 Max)

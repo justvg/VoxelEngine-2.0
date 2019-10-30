@@ -272,6 +272,7 @@ SetMat4(shader Shader, char *Name, mat4 Value)
 }
 
 #include "voxel_engine_asset.h"
+#include "voxel_engine_animation.h"
 #include "voxel_engine_world.h"
 #include "voxel_engine_sim_region.h"
 
@@ -299,49 +300,6 @@ struct pairwise_collision_rule
 	bool32 CanCollide;
 };
 
-enum character_bone_id
-{
-	CharacterBone_Head,
-	CharacterBone_Shoulders,
-	CharacterBone_Body,
-	CharacterBone_Hand,
-	CharacterBone_Foot,
-
-	CharacterBone_Count
-};
-
-enum character_animation_type
-{
-	CharacterAnimation_Idle,
-
-	CharacterAnimation_Count
-};
-
-struct animation_key_frame
-{
-	r32 TimeStampInSeconds;
-	vec3 Translation[CharacterBone_Count];
-};
-
-struct animation
-{
-	r32 DurationInSeconds;
-	u32 KeyFrameCount;
-	animation_key_frame KeyFrames[4];
-};
-
-internal mat4
-GetBoneForAnimation(animation *Animations, character_animation_type AnimationType, 
-					character_bone_id BoneID, r64 Clock)
-{
-	animation *Animation = Animations + AnimationType;
-
-	r32 TimeInAnimation = (r32)Real64Modulo(Clock, Animation->DurationInSeconds);
-
-
-	return(Identity());
-}
-
 struct game_state
 {
 	bool32 IsInitialized;
@@ -361,6 +319,8 @@ struct game_state
 	shader CharacterShader;
 	shader WorldShader;
 	shader BillboardShader;
+
+	animation CharacterAnimations[CharacterAnimation_Count];
 
 	hero Hero;
 	GLuint CubeVAO, CubeVBO;
@@ -384,8 +344,6 @@ struct temp_state
 	game_assets *GameAssets;
 
 	platform_job_system_queue *JobSystemQueue;
-
-	animation CharacterAnimations[CharacterAnimation_Count];
 };
 
 #define INVALID_POSITION INT32_MAX
