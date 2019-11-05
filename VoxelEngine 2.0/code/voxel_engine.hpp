@@ -228,7 +228,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 		GameState->StoredEntityCount = 0;
 
-		GameState->Camera.DistanceFromHero = 6.0f;
+		GameState->Camera.DistanceFromHero = 12.0f;
 		GameState->Camera.Pitch = GameState->Camera.Head = 0;
 		GameState->Camera.RotSensetivity = 0.05f;
 		GameState->Camera.OffsetFromHero = {};
@@ -316,16 +316,16 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		AddStoredEntity(GameState, EntityType_Null, InvalidPosition());
 
 		world_position TestP = {};
-		TestP.ChunkX = 10000;
-		TestP.ChunkY = 1;
-		TestP.ChunkZ = 10000;
+		TestP.ChunkX = 0;
+		TestP.ChunkY = MAX_CHUNKS_Y;
+		TestP.ChunkZ = 0;
 		TestP.Offset = vec3(0.0f, 0.0f, 3.0f);
 		TESTAddCube(GameState, TestP, vec3(1.0f, 1.0f, 1.0f), 36, CubeVertices);
 
 		world_position HeroP = {};
-		HeroP.ChunkX = 10000;
-		HeroP.ChunkY = 1;
-		HeroP.ChunkZ = 10000;
+		HeroP.ChunkX = 0;
+		HeroP.ChunkY = MAX_CHUNKS_Y;
+		HeroP.ChunkZ = 0;
 		HeroP.Offset = vec3(0.3f, 5.0f, 3.0f);
 		GameState->Hero.Entity = AddHero(GameState, HeroP);
 
@@ -350,7 +350,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 	temporary_memory RenderMemory = BeginTemporaryMemory(&TempState->Allocator);
 	
-	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-60.0f, -20.0f, -60.0f), vec3(60.0f, 20.0f, 60.0f));
+	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-100.0f, -20.0f, -100.0f), vec3(100.0f, 20.0f, 100.0f));
 	sim_region *SimRegion = BeginSimulation(GameState, &GameState->World, GameState->Hero.Entity->P, SimRegionUpdatableBounds, 
 											&GameState->WorldAllocator, &TempState->Allocator, Input->dt);
 
@@ -376,8 +376,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 	Camera->Front = Normalize(vec3(CameraTargetDirX, CameraTargetDirY, CameraTargetDirZ));
 #endif
 
-	vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), 0.0f, -Camera->OffsetFromHero.z()));
-	// vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), -Camera->OffsetFromHero.y(), -Camera->OffsetFromHero.z()));
+	// vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), 0.0f, -Camera->OffsetFromHero.z()));
+	vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), -Camera->OffsetFromHero.y(), -Camera->OffsetFromHero.z()));
 	vec3 Right = Normalize(Cross(Forward, vec3(0.0f, 1.0f, 0.0f)));
 	r32 Theta = -RAD2DEG(ATan2(Forward.z(), Forward.x())) + 90.0f;
 	GameState->Hero.ddP = vec3(0.0f, 0.0f, 0.0f);
@@ -434,7 +434,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	mat4 View = RotationMatrixFromDirection(Camera->OffsetFromHero) * Translate(-Camera->OffsetFromHero);
-	mat4 Projection = Perspective(45.0f, (r32)Width/Height, 0.1f, 100.0f);
+	mat4 Projection = Perspective(45.0f, (r32)Width/Height, 0.1f, 150.0f);
 	mat4 ViewProjection = Projection * View;
 	shader Shaders3D[] = {GameState->WorldShader, GameState->CharacterShader, GameState->BillboardShader};
 	Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), ViewProjection);
@@ -558,9 +558,10 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 			if(IsSet(Entity, EntityFlag_Moveable) && !IsSet(Entity, EntityFlag_NonSpatial))
 			{
 				MoveEntity(GameState, SimRegion, Entity, ddP, Drag, dt, false);
+				AddFlags(Entity, EntityFlag_OnGround);
 				if(IsSet(Entity, EntityFlag_GravityAffected))
 				{
-					MoveEntity(GameState, SimRegion, Entity, ddP, Drag, dt, true);
+					//MoveEntity(GameState, SimRegion, Entity, ddP, Drag, dt, true);
 				}
 			}
 

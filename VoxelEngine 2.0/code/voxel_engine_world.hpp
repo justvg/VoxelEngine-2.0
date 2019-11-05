@@ -122,6 +122,7 @@ internal void
 SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 DEBUGEmptyChunk)
 {
 	Chunk->IsSetup = true;
+	Chunk->IsNotEmpty = false;
 
 	if(!World->FirstFreeChunkBlocksInfo)
 	{
@@ -139,34 +140,57 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 		BlockZ < CHUNK_DIM;
 		BlockZ++)
 	{
-		for(u32 BlockY = 0;
-			BlockY < CHUNK_DIM;
-			BlockY++)
+		for(u32 BlockX = 0;
+			BlockX < CHUNK_DIM;
+			BlockX++)
 		{
-			for(u32 BlockX = 0;
-				BlockX < CHUNK_DIM;
-				BlockX++)
+			if(Chunk->Y < 0)
 			{
-#if 0
-				if((BlockX == 0) || (BlockX == (CHUNK_DIM - 1)) || 
-					(BlockZ == 0) || (BlockZ == (CHUNK_DIM - 1)) ||
-					(BlockY == 0) || (BlockX == 1))
+				for(u32 BlockY = 0;
+					BlockY < CHUNK_DIM;
+					BlockY++)
 				{
-					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true && !DEBUGEmptyChunk;
+					Chunk->IsNotEmpty = true;
+					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true;
 					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = vec3(0.53f, 0.53f, 0.53f);
+				}
+			}
+			else
+			{
+				r32 X = (Chunk->X * CHUNK_DIM) + (r32)BlockX + 0.5f;
+				r32 Z = (Chunk->Z * CHUNK_DIM) + (r32)BlockZ + 0.5f;
+				r32 NoiseValue = Clamp(PerlinNoise2D(0.0125f*vec2(X, Z)), 0.0f, 1.0f);
+				NoiseValue += 0.15f*Clamp(PerlinNoise2D(0.05f*vec2(X, Z)), 0.0f, 1.0f);
+				NoiseValue /= 1.1f;
+
+				NoiseValue = NoiseValue*NoiseValue*NoiseValue*NoiseValue;
+
+				r32 BiomeNoise = Clamp(PerlinNoise2D(0.0125f*vec2(X, Z)), 0.0f, 1.0f);
+				vec3 BiomeColor = vec3(0.0f, 0.0f, 0.0f);
+				if(NoiseValue < 0.01f)
+				{
+					BiomeColor = vec3(0.0f, 0.18f, 1.0f);
+				}
+				else if(NoiseValue < 0.013)
+				{
+					BiomeColor = vec3(0.97f, 0.81f, 0.6f);
 				}
 				else
 				{
-					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = false;
+					BiomeColor = vec3(0.53f, 0.53f, 0.53f);
 				}
-#else
-				r32 X = ((r32)Chunk->X * CHUNK_DIM) + (r32)BlockX + 0.5f;
-				r32 Y = ((r32)Chunk->Y * CHUNK_DIM) + (r32)BlockY + 50.0f + 0.5f;
-				r32 Z = ((r32)Chunk->Z * CHUNK_DIM) + (r32)BlockZ + 0.5f;
-				r32 NoiseValue = PerlinNoise3D(vec3(X, Y, Z));
-				Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = (NoiseValue > 0.0f) && !DEBUGEmptyChunk;
-				Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = vec3(0.53f, 0.53f, 0.53f);
-#endif
+
+				u32 Height = (u32)roundf(CHUNK_DIM * MAX_CHUNKS_Y * NoiseValue);
+				Height++;
+				u32 HeightForThisChunk = (u32)Clamp((r32)Height - (r32)Chunk->Y*CHUNK_DIM, 0.0f, CHUNK_DIM);
+				for(u32 BlockY = 0;
+					BlockY < HeightForThisChunk;
+					BlockY++)
+				{
+					Chunk->IsNotEmpty = true;
+					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true;
+					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = BiomeColor;
+				}
 			}
 		}
 	}

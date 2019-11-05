@@ -1,6 +1,7 @@
 #pragma once
 
-#define CHUNK_DIM 16
+#define CHUNK_DIM 32
+#define MAX_CHUNKS_Y 3
 #define IsBlockActive(Blocks, X, Y, Z) ((Blocks[(Z)*CHUNK_DIM*CHUNK_DIM + (Y)*CHUNK_DIM + (X)]).Active) 
 
 struct world_entity_block
@@ -28,6 +29,8 @@ struct chunk
 
 	bool32 IsSetup;
 	bool32 IsLoaded;
+
+	bool32 IsNotEmpty;
 
 	chunk_blocks_info *BlocksInfo;
 

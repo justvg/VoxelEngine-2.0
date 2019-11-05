@@ -101,7 +101,7 @@ BeginSimulation(game_state *GameState, world *World, world_position Origin, rect
 	world_position MinChunkP = MapIntoChunkSpace(World, &Origin, Bounds.Min);
 	MinChunkP.ChunkY = -1;
 	world_position MaxChunkP = MapIntoChunkSpace(World, &Origin, Bounds.Max);
-	MaxChunkP.ChunkY = 1;
+	MaxChunkP.ChunkY = MAX_CHUNKS_Y;
 
 	for(i32 ChunkZ = MinChunkP.ChunkZ;
 		ChunkZ <= MaxChunkP.ChunkZ;
@@ -128,7 +128,7 @@ BeginSimulation(game_state *GameState, world *World, world_position Origin, rect
 
 					if(!Chunk->IsSetup)
 					{
-						bool32 DEBUGEmptyChunk = (ChunkY == 1);
+						bool32 DEBUGEmptyChunk = (ChunkY == MAX_CHUNKS_Y);
 						SetupChunk(World, Chunk, WorldAllocator, DEBUGEmptyChunk);
 					}
 
@@ -137,7 +137,7 @@ BeginSimulation(game_state *GameState, world *World, world_position Origin, rect
 						LoadChunk(Chunk);
 					}
 
-					if(Chunk->IsSetup && Chunk->IsLoaded)
+					if(Chunk->IsSetup && Chunk->IsLoaded && Chunk->IsNotEmpty)
 					{
 						chunk *ChunkToRender = PushStruct(TempAllocator, chunk);
 						*ChunkToRender = *Chunk;
@@ -537,7 +537,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 		{
 			ddP = Normalize(ddP);
 		}
-		ddP *= 7.0f;
+		ddP *= 15.0f;
 		vec3 DragV = -Drag*Entity->dP;
 		DragV.SetY(0.0f);
 		ddP += DragV;
