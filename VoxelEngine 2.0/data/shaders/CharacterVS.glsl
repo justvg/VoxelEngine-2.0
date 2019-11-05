@@ -5,7 +5,7 @@ layout (location = 2) in vec3 aColor;
 
 out vs_out
 {	
-	vec3 FragPosView;
+	vec3 FragPosSim;
 	vec3 Normal;
 	vec3 Color;
 
@@ -18,21 +18,19 @@ uniform mat4 BoneTransformations[7];
 uniform int BoneID;
 
 uniform mat4 Model = mat4(1.0);
-uniform mat4 View = mat4(1.0);
-uniform mat4 Projection = mat4(1.0);
+uniform mat4 ViewProjection = mat4(1.0);
 
 void main()
 {
 	vec4 LocalP = BoneTransformations[BoneID] * vec4(aPos, 1.0);
-
 	vec3 LocalNormal = normalize(mat3(BoneTransformations[BoneID]) * aNormal);
 
-	vec4 ViewPos = View * Model * LocalP; 
-	Output.FragPosView = vec3(ViewPos);
-	Output.Normal = normalize(mat3(View * Model) * LocalNormal);
+	vec4 SimPos = Model * LocalP; 
+	Output.FragPosSim = vec3(SimPos);
+	Output.Normal = normalize(mat3(Model) * LocalNormal);
 	Output.Color = aColor;
 
-	Output.DirLight = normalize(mat3(View) * DirLightDirection);
+	Output.DirLight = normalize(DirLightDirection);
 
-	gl_Position = Projection * ViewPos;
+	gl_Position = ViewProjection * SimPos;
 }

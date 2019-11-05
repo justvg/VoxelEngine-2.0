@@ -6,8 +6,7 @@ uniform vec3 CameraRight;
 uniform vec3 BillboardSimCenterP;;
 uniform vec2 Scale;
 
-uniform mat4 View = mat4(1.0);
-uniform mat4 Projection = mat4(1.0);
+uniform mat4 ViewProjection = mat4(1.0);
 
 void main()
 {
@@ -17,5 +16,5 @@ void main()
     Pos = Pos.x * CameraRight + Pos.y * CameraUp;
     Pos = Pos + BillboardSimCenterP;
 
-    gl_Position = Projection * View * vec4(Pos, 1.0);
+    gl_Position = ViewProjection * vec4(Pos, 1.0);
 }

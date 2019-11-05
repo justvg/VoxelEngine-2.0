@@ -845,7 +845,7 @@ Dot(quaternion A, quaternion B)
 internal quaternion __vectorcall
 Slerp(quaternion A, quaternion B, r32 t)
 {
-	r32 Omega = acosf(Dot(A, B));
+	r32 Omega = ArcCos(Dot(A, B));
 	quaternion Result = ((Sin((1.0f - t)*Omega)/Sin(Omega))*A) +
 						((Sin(t*Omega)/Sin(Omega))*B);
 
@@ -889,6 +889,14 @@ inline r32
 Lerp(r32 A, r32 B, r32 t)
 {
 	r32 Result = A + (B - A)*t;
+	return(Result);
+}
+
+inline r32
+QuinticInterpolation(r32 A, r32 B, r32 t)
+{
+	r32 s = t*t*t*(t*(6.0f*t - 15.0f) + 10.0f);
+	r32 Result = A + (B - A)*s;
 	return(Result);
 }
 
@@ -1115,6 +1123,177 @@ IsPointInTriangle(vec3 P, vec3 A, vec3 B, vec3 C)
 	bool32 Result = ((Dot(Cross(B - A, P - A), Cross(B - A, C - A)) >= 0.0f) &&
 					 (Dot(Cross(C - B, P - B), Cross(C - B, A - B)) >= 0.0f) &&
 					 (Dot(Cross(A - C, P - C), Cross(A - C, B - C)) >= 0.0f));
+
+	return(Result);
+}
+
+//
+// NOTE(georgy): Perlin noise
+//
+
+global_variable vec2 Gradients2D[8] = 
+{
+	vec2(0.0f, 1.0f),
+	vec2(-0.7071f, 0.7071),
+	vec2(-1.0f, 0.0f),
+	vec2(-0.7071f, -0.7071),
+	vec2(0.0f, -1.0f),
+	vec2(0.7071f, -0.7071),
+	vec2(1.0f, 0.0f),
+	vec2(0.7071f, 0.7071)
+};
+
+global_variable vec3 Gradients3D[12] = 
+{
+	vec3(0.7071f,0.7071f, 0.0f),
+	vec3(-0.7071f, 0.7071f, 0.0f),
+	vec3(0.7071f, -0.7071f, 0.0f),
+	vec3(-0.7071f, -0.7071f, 0.0f),
+	vec3(0.7071f, 0.0f, 0.7071f),
+	vec3(-0.7071f, 0.0f, 0.7071f),
+	vec3(0.7071f, 0.0f, -0.7071f),
+	vec3(-0.7071f, 0.0f, -0.7071f),
+	vec3(0.0f, 0.7071f, 0.7071f),
+	vec3(0.0f, -0.7071f, 0.7071f),
+	vec3(0.0f, 0.7071f, -0.7071f),
+	vec3(0.0f, -0.7071f, -0.7071f)
+};
+
+// NOTE(georgy): Must be a power of 2!
+global_variable u32 PermutationTable[512] = 
+{
+	151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,
+	8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,
+	35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,
+	134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,
+	55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208, 89,
+	18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,
+	250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,
+	189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,
+	172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,
+	228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,
+	107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,
+	138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180,
+
+	151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,
+	8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,
+	35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,
+	134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,
+	55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208, 89,
+	18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,
+	250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,
+	189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,
+	172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,
+	228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,
+	107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,
+	138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180
+};
+
+// NOTE(georgy): This returns ~[-0.7, 0.7]
+internal r32 
+PerlinNoise2D(vec2 P)
+{
+	i32 I = FloorReal32ToInt32(P.x);
+	i32 J = FloorReal32ToInt32(P.y);
+
+	u32 Gradient00Index = (PermutationTable[(J + PermutationTable[I % ArrayCount(PermutationTable)]) % ArrayCount(PermutationTable)]) %
+						   ArrayCount(Gradients2D);
+	vec2 Gradient00 = Gradients2D[Gradient00Index];
+	u32 Gradient10Index = (PermutationTable[(J + PermutationTable[(I + 1) % ArrayCount(PermutationTable)]) % ArrayCount(PermutationTable)]) %
+						   ArrayCount(Gradients2D);
+	vec2 Gradient10 = Gradients2D[Gradient10Index];
+	u32 Gradient01Index = (PermutationTable[(J + 1 + PermutationTable[I % ArrayCount(PermutationTable)]) % ArrayCount(PermutationTable)]) %
+						   ArrayCount(Gradients2D);
+	vec2 Gradient01 = Gradients2D[Gradient01Index];
+	u32 Gradient11Index = (PermutationTable[(J + 1 + PermutationTable[(I + 1) % ArrayCount(PermutationTable)]) % ArrayCount(PermutationTable)]) %
+						   ArrayCount(Gradients2D);
+	vec2 Gradient11 = Gradients2D[Gradient11Index];
+
+	r32 U = P.x - I;
+	r32 V = P.y - J;
+
+	r32 GradientRamp00 = Dot(Gradient00, vec2(U, V));
+	r32 GradientRamp10 = Dot(Gradient10, vec2(U - 1.0f, V));
+	r32 GradientRamp01 = Dot(Gradient01, vec2(U, V - 1.0f));
+	r32 GradientRamp11 = Dot(Gradient11, vec2(U - 1.0f, V - 1.0f));
+
+	r32 InterpolatedX0 = QuinticInterpolation(GradientRamp00, GradientRamp10, U);
+	r32 InterpolatedX1 = QuinticInterpolation(GradientRamp01, GradientRamp11, U);
+	r32 Result = QuinticInterpolation(InterpolatedX0, InterpolatedX1, V);
+
+	return(Result);
+}
+
+internal r32 
+PerlinNoise3D(vec3 P)
+{
+	i32 I = FloorReal32ToInt32(P.x());
+	i32 J = FloorReal32ToInt32(P.y());
+	i32 K = FloorReal32ToInt32(P.z());
+
+	u32 PermutationForI = PermutationTable[I & (ArrayCount(PermutationTable) - 1)];
+	u32 PermutationForI1 = PermutationTable[(I + 1) & (ArrayCount(PermutationTable) - 1)];
+	u32 PermutationForJI = PermutationTable[(J + PermutationForI) & (ArrayCount(PermutationTable) - 1)];
+	u32 PermutationForJ1I = PermutationTable[((J + 1) + PermutationForI) & (ArrayCount(PermutationTable) - 1)];
+	u32 PermutationForJI1 = PermutationTable[(J + PermutationForI1) & (ArrayCount(PermutationTable) - 1)];
+	u32 PermulationForJ1I1 = PermutationTable[((J + 1) + PermutationForI1) & (ArrayCount(PermutationTable) - 1)];
+
+	u32 Gradient000Index = PermutationTable[(K + PermutationForJI) & (ArrayCount(PermutationTable) - 1)] %
+						   ArrayCount(Gradients3D);
+	vec3 Gradient000 = Gradients3D[Gradient000Index];
+
+	u32 Gradient100Index = PermutationTable[(K + PermutationForJI1) & (ArrayCount(PermutationTable) - 1)] %
+						   ArrayCount(Gradients3D);
+	vec3 Gradient100 = Gradients3D[Gradient100Index];
+
+	u32 Gradient010Index = PermutationTable[(K + PermutationForJ1I) & (ArrayCount(PermutationTable) - 1)] %
+						   ArrayCount(Gradients3D);
+	vec3 Gradient010 = Gradients3D[Gradient010Index];
+
+	u32 Gradient110Index = PermutationTable[(K + PermulationForJ1I1) & (ArrayCount(PermutationTable) - 1)] %
+						   ArrayCount(Gradients3D);
+	vec3 Gradient110 = Gradients3D[Gradient110Index];
+
+	u32 Gradient001Index = PermutationTable[((K + 1) + PermutationForJI) & (ArrayCount(PermutationTable) - 1)] %
+						   ArrayCount(Gradients3D);
+	vec3 Gradient001 = Gradients3D[Gradient001Index];
+
+	u32 Gradient101Index = PermutationTable[((K + 1) + PermutationForJI1) & (ArrayCount(PermutationTable) - 1)] %
+						   ArrayCount(Gradients3D);
+	vec3 Gradient101 = Gradients3D[Gradient101Index];
+
+	u32 Gradient011Index = PermutationTable[((K + 1) + PermutationForJ1I) & (ArrayCount(PermutationTable) - 1)] %
+						   ArrayCount(Gradients3D);
+	vec3 Gradient011 = Gradients3D[Gradient011Index];
+
+	u32 Gradient111Index = PermutationTable[((K + 1) + PermulationForJ1I1) & (ArrayCount(PermutationTable) - 1)] %
+						   ArrayCount(Gradients3D);
+	vec3 Gradient111 = Gradients3D[Gradient111Index];
+
+	r32 U = P.x() - I;
+	r32 V = P.y() - J;
+	r32 T = P.z() - K;
+
+	r32 GradientRamp000 = Dot(Gradient000, vec3(U, V, T));
+	r32 GradientRamp100 = Dot(Gradient100, vec3(U - 1.0f, V, T));
+	r32 GradientRamp010 = Dot(Gradient010, vec3(U, V - 1.0f, T));
+	r32 GradientRamp110 = Dot(Gradient110, vec3(U - 1.0f, V - 1.0f, T));
+	r32 GradientRamp001 = Dot(Gradient001, vec3(U, V, 1.0f - T));
+	r32 GradientRamp101 = Dot(Gradient101, vec3(U - 1.0f, V, 1.0f - T));
+	r32 GradientRamp011 = Dot(Gradient011, vec3(U, V - 1.0f, 1.0f - T));
+	r32 GradientRamp111 = Dot(Gradient111, vec3(U - 1.0f, V - 1.0f, 1.0f - T));
+
+	r32 QuinticFactorForU = U*U*U*(U*(6.0f*U - 15.0f) + 10.0f);
+	r32 QuinticFactorForV = V*V*V*(V*(6.0f*V - 15.0f) + 10.0f);
+	r32 InterpolatedX00 = Lerp(GradientRamp000, GradientRamp100, QuinticFactorForU);
+	r32 InterpolatedX10 = Lerp(GradientRamp010, GradientRamp110, QuinticFactorForU);
+	r32 InterpolatedY0 = Lerp(InterpolatedX00, InterpolatedX10, QuinticFactorForV);
+
+	r32 InterpolatedX01 = Lerp(GradientRamp001, GradientRamp101, QuinticFactorForU);
+	r32 InterpolatedX11 = Lerp(GradientRamp011, GradientRamp111, QuinticFactorForU);
+	r32 InterpolatedY1 = Lerp(InterpolatedX01, InterpolatedX11, QuinticFactorForV);
+
+	r32 Result = QuinticInterpolation(InterpolatedY0, InterpolatedY1, T);
 
 	return(Result);
 }

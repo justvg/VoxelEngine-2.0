@@ -1,5 +1,6 @@
 #include "voxel_engine.h"
 #include "voxel_engine_asset.hpp"
+#include "voxel_engine_render.hpp"
 #include "voxel_engine_world.hpp"
 #include "voxel_engine_sim_region.hpp"
 
@@ -208,25 +209,6 @@ AddHero(game_state *GameState, world_position P)
 }
 
 internal void
-DrawModel(shader Shader, game_assets *GameAssets, u32 AssetIndex, r32 Rotation, r32 Scaling, vec3 Right)
-{
-	loaded_model *Model = GetModel(GameAssets, AssetIndex);
-	if(Model)
-	{
-		glBindVertexArray(Model->VAO);
-		mat4 ModelMatrix = Translate(Model->Alignment + Model->AlignmentX*Right) * 
-						   Rotate(Rotation, vec3(0.0f, 1.0f, 0.0f)) * Scale(Scaling);
-		SetMat4(Shader, "Model", ModelMatrix);
-		glDrawArrays(GL_TRIANGLES, 0, Model->VerticesCount);
-		glBindVertexArray(0);
-	}
-	else
-	{
-		LoadModel(GameAssets, AssetIndex);
-	}
-}
-
-internal void
 GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 {
 	Assert(sizeof(game_state) <= Memory->PermanentStorageSize);
@@ -334,23 +316,23 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		AddStoredEntity(GameState, EntityType_Null, InvalidPosition());
 
 		world_position TestP = {};
+		TestP.ChunkX = 10000;
 		TestP.ChunkY = 1;
+		TestP.ChunkZ = 10000;
 		TestP.Offset = vec3(0.0f, 0.0f, 3.0f);
 		TESTAddCube(GameState, TestP, vec3(1.0f, 1.0f, 1.0f), 36, CubeVertices);
 
 		world_position HeroP = {};
+		HeroP.ChunkX = 10000;
 		HeroP.ChunkY = 1;
+		HeroP.ChunkZ = 10000;
 		HeroP.Offset = vec3(0.3f, 5.0f, 3.0f);
 		GameState->Hero.Entity = AddHero(GameState, HeroP);
-
-		GameState->Clock = 0.0;
 
 		InitializeDefaultAnimations(GameState->CharacterAnimations);
 
 		GameState->IsInitialized = true;
 	}
-
-	GameState->Clock += (r64)Input->dt;
 
 	Assert(sizeof(temp_state) <= Memory->TemporaryStorageSize);
 	temp_state *TempState = (temp_state *)Memory->TemporaryStorage;
@@ -449,20 +431,13 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		GameState->Hero.AdditionalRotation = Theta;
 	}
 
-
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	UseShader(GameState->WorldShader);	
 	mat4 View = RotationMatrixFromDirection(Camera->OffsetFromHero) * Translate(-Camera->OffsetFromHero);
 	mat4 Projection = Perspective(45.0f, (r32)Width/Height, 0.1f, 100.0f);
-	SetMat4(GameState->WorldShader, "View", View);
-	SetMat4(GameState->WorldShader, "Projection", Projection);
-	UseShader(GameState->CharacterShader);	
-	SetMat4(GameState->CharacterShader, "View", View);
-	SetMat4(GameState->CharacterShader, "Projection", Projection);
-	UseShader(GameState->BillboardShader);
-	SetMat4(GameState->BillboardShader, "View", View);
-	SetMat4(GameState->BillboardShader, "Projection", Projection);
+	mat4 ViewProjection = Projection * View;
+	shader Shaders3D[] = {GameState->WorldShader, GameState->CharacterShader, GameState->BillboardShader};
+	Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), ViewProjection);
 
 	for(u32 EntityIndex = 0;
 		EntityIndex < SimRegion->EntityCount;
@@ -556,38 +531,6 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 					}
 
 					Entity->AnimationState.Time += AnimationTimeStep;
-
-#if 0
-					if(Length(vec3(Entity->dP.x(), 0.0f, Entity->dP.z())) > 0.12f)
-					{
-						if ((Entity->AnimationState.Type != CharacterAnimation_Run))
-						{
-							Entity->AnimationState.Type = CharacterAnimation_Run;
-							Entity->AnimationState.Time = 0.0f;
-						}
-						else
-						{
-							AnimationTimeStep = 2.0f*Length(vec3(Entity->dP.x(), 0.0f, Entity->dP.z()))*Input->dt;
-						}
-					}
-					else 
-					{
-						if((Entity->dP.y() > 0.1f) && (Entity->AnimationState.Type != CharacterAnimation_Jump))
-						{
-							Entity->AnimationState.Type = CharacterAnimation_Jump;
-							Entity->AnimationState.Time = 0.0f;
-						}
-						else if(Entity->AnimationState.Type != CharacterAnimation_Idle)
-						{
-							Entity->AnimationState.Type = CharacterAnimation_Idle;	
-							Entity->AnimationState.Time = 0.0f;
-						}
-						else
-						{
-							AnimationTimeStep = Input->dt;
-						}
-					}
-#endif
 				} break;
 
 				case EntityType_Fireball:
@@ -682,23 +625,17 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 				case EntityType_Fireball:
 				{
-					glBindVertexArray(GameState->CubeVAO);
 					mat4 Model = Translate(vec3(0.0f, 0.5f*0.25f, 0.0f) + Entity->P) * Scale(vec3(0.25f, 0.25f, 0.25f));
 					SetMat4(GameState->WorldShader, "Model", Model);
-					glDrawArrays(GL_TRIANGLES, 0, 36);
-					glBindVertexArray(0);
+					DrawFromVAO(GameState->CubeVAO, 36);
 				} break;
 
 				// TEST
 				default:
 				{
-					glBindVertexArray(GameState->CubeVAO);
-					//quaternion Quat = Quaternion(Cos(GameState->Clock/2.0f), Sin(GameState->Clock/2.0f)*vec3(0.0f, 1.0f, 0.0f));
-					//mat4 Model = Translate(vec3(0.0f, 0.5f, 0.0f) + Entity->P) * QuaternionToMatrix(Quat);
 					mat4 Model = Translate(vec3(0.0f, 0.5f, 0.0f) + Entity->P);
 					SetMat4(GameState->WorldShader, "Model", Model);
-					glDrawArrays(GL_TRIANGLES, 0, 36);
-					glBindVertexArray(0);
+					DrawFromVAO(GameState->CubeVAO, 36);
 
 					UseShader(GameState->BillboardShader);
 					SetVec3(GameState->BillboardShader, "Color", vec3(1.0f, 0.0f, 0.0f));

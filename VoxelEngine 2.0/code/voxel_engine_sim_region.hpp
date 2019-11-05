@@ -735,23 +735,26 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 			ESpaceP += t*ESpaceEntityDelta;
 			DistanceRemaining -= t*EntityDeltaLengthWorld;
 			ESpaceEntityDelta = ESpaceDesiredP - ESpaceP;
+			bool32 SlidingPlaneNormalIsGround = false;
 			if(HitEntityType)
 			{
 				bool32 StopOnCollision = HandleCollision(GameState, Entity, HitEntity, Entity->Type, HitEntityType);
 
 				if(StopOnCollision)
 				{
-					vec3 SlidingPlaneNormal = Normalize(ESpaceP - CollisionP);
+					vec3 SlidingPlaneNormal = Normalize((ESpaceP - CollisionP));
 					if(Gravity && (SlidingPlaneNormal.y() >= 0.95f))
 					{
+						SlidingPlaneNormalIsGround = true;
 						AddFlags(Entity, EntityFlag_OnGround);
 					}
 					ESpaceEntityDelta = ESpaceEntityDelta - 1.1f*Dot(SlidingPlaneNormal, ESpaceEntityDelta)*SlidingPlaneNormal;
-					Entity->dP = Entity->dP - (1.01f*Dot(EllipsoidToWorld * SlidingPlaneNormal, Entity->dP)) *
+					Entity->dP = Entity->dP - (1.1f*Dot(EllipsoidToWorld * SlidingPlaneNormal, Entity->dP)) *
 													  (EllipsoidToWorld * SlidingPlaneNormal);
 				}
 			}
-			else if(Gravity && Iteration == 0)
+			
+			if((Gravity && Iteration == 0) && (!HitEntityType || !SlidingPlaneNormalIsGround))
 			{
 				ClearFlags(Entity, EntityFlag_OnGround);
 			}

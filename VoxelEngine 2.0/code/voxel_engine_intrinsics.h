@@ -23,7 +23,11 @@ SquareRoot(r32 Value)
 inline i32
 FloorReal32ToInt32(r32 Value)
 {
-    i32 Result = (i32)floorf(Value);
+    i32 Result = (i32)Value;
+    if((r32)Result > Value)
+    {
+        Result--;
+    }
     return(Result);
 }
 
@@ -38,6 +42,13 @@ inline r32
 Cos(r32 Angle)
 {
     r32 Result = cosf(Angle);
+    return(Result);
+}
+
+inline r32
+ArcCos(r32 Value) 
+{
+    r32 Result = acosf(Value);
     return(Result);
 }
 

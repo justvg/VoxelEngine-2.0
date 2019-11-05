@@ -2,8 +2,6 @@
 #include <gl\glew.h>
 #include <gl\wglew.h>
 
-
-
 #include <Windows.h>
 #include <timeapi.h>
 #include <stdio.h>

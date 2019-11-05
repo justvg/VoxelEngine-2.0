@@ -5,7 +5,7 @@ layout (location = 2) in vec3 aColor;
 
 out vs_out
 {	
-	vec3 FragPosView;
+	vec3 FragPosSim;
 	vec3 Normal;
 	vec3 Color;
 
@@ -15,17 +15,16 @@ out vs_out
 const vec3 DirLightDirection = normalize(vec3(0.9, -0.5, -0.3));
 
 uniform mat4 Model = mat4(1.0);
-uniform mat4 View = mat4(1.0);
-uniform mat4 Projection = mat4(1.0);
+uniform mat4 ViewProjection = mat4(1.0);
 
 void main()
 {
-	vec4 ViewPos = View * Model * vec4(aPos, 1.0); 
-	Output.FragPosView = vec3(ViewPos);
-	Output.Normal = normalize(mat3(View * Model) * aNormal);
+	vec4 SimPos = Model * vec4(aPos, 1.0); 
+	Output.FragPosSim = vec3(SimPos);
+	Output.Normal = normalize(mat3(Model) * aNormal);
 	Output.Color = aColor;
 
-	Output.DirLight = normalize(mat3(View) * DirLightDirection);
+	Output.DirLight = normalize(DirLightDirection);
 
-	gl_Position = Projection * ViewPos;
+	gl_Position = ViewProjection * SimPos;
 }

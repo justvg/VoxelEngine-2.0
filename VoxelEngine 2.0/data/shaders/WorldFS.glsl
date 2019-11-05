@@ -3,7 +3,7 @@ out vec4 FragColor;
 
 in vs_out
 {	
-	vec3 FragPosView;
+	vec3 FragPosSim;
 	vec3 Normal;
 	vec3 Color;
 

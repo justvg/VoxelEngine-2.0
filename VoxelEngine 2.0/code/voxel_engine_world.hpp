@@ -147,6 +147,7 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 				BlockX < CHUNK_DIM;
 				BlockX++)
 			{
+#if 0
 				if((BlockX == 0) || (BlockX == (CHUNK_DIM - 1)) || 
 					(BlockZ == 0) || (BlockZ == (CHUNK_DIM - 1)) ||
 					(BlockY == 0) || (BlockX == 1))
@@ -158,6 +159,14 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 				{
 					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = false;
 				}
+#else
+				r32 X = ((r32)Chunk->X * CHUNK_DIM) + (r32)BlockX + 0.5f;
+				r32 Y = ((r32)Chunk->Y * CHUNK_DIM) + (r32)BlockY + 50.0f + 0.5f;
+				r32 Z = ((r32)Chunk->Z * CHUNK_DIM) + (r32)BlockZ + 0.5f;
+				r32 NoiseValue = PerlinNoise3D(vec3(X, Y, Z));
+				Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = (NoiseValue > 0.0f) && !DEBUGEmptyChunk;
+				Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = vec3(0.53f, 0.53f, 0.53f);
+#endif
 			}
 		}
 	}
@@ -353,13 +362,10 @@ RenderChunks(world *World, shader Shader)
 		Chunk;
 		Chunk = Chunk->Next)
 	{
-		glBindVertexArray(Chunk->VAO);
 		mat4 Model = Translate(Chunk->Translation);
 		SetMat4(Shader, "Model", Model);
-		glDrawArrays(GL_TRIANGLES, 0, Chunk->VerticesP.EntriesCount);
+		DrawFromVAO(Chunk->VAO, Chunk->VerticesP.EntriesCount);
 	}
-
-	glBindVertexArray(0);
 }
 
 inline vec3
