@@ -9,9 +9,11 @@
 #include "voxel_engine_platform.h"
 #include "voxel_engine.hpp"
 
+
+
 global_variable bool8 GlobalRunning;
-global_variable LARGE_INTEGER GlobalPerformanceFrequency;
 global_variable bool8 GlobalCursorShouldBeClipped;
+global_variable LARGE_INTEGER GlobalPerformanceFrequency;
 
 ALLOCATE_MEMORY(WinAllocateMemory)
 {
@@ -67,6 +69,21 @@ READ_ENTIRE_FILE(WinReadEntireFile)
 		CloseHandle(FileHandle);
 	}
 
+	return(Result);
+}
+
+inline LARGE_INTEGER
+WinGetPerformanceCounter()
+{
+	LARGE_INTEGER Result;
+	QueryPerformanceCounter(&Result);
+	return(Result);
+}
+
+inline r32
+WinGetSecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End)
+{
+	r32 Result = (End.QuadPart - Start.QuadPart) / (r32)GlobalPerformanceFrequency.QuadPart;
 	return(Result);
 }
 
@@ -170,15 +187,6 @@ WinInitOpenGL(HWND Window, HINSTANCE Instance, LPCSTR WindowClassName)
 	}
 }
 
-internal void
-WinUpdateWindow(HDC DeviceContext, int WindowWidth, int WindowHeight)
-{
-	glViewport(0, 0, WindowWidth, WindowHeight);
-	glClearColor(1.0f, 0.0f, 1.0f, 0.0f);
-	//glClear(GL_COLOR_BUFFER_BIT);
-	SwapBuffers(DeviceContext);
-}
-
 struct window_dimension
 {
 	int Width;
@@ -196,6 +204,15 @@ WinGetWindowDimension(HWND Window)
 	Result.Height = Rect.bottom - Rect.top;
 
 	return(Result);
+}
+
+internal void
+WinUpdateWindow(HDC DeviceContext, int WindowWidth, int WindowHeight)
+{
+	glViewport(0, 0, WindowWidth, WindowHeight);
+	glClearColor(1.0f, 0.0f, 1.0f, 0.0f);
+	
+	SwapBuffers(DeviceContext);
 }
 
 LRESULT CALLBACK 
@@ -235,7 +252,7 @@ WinWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 
 			window_dimension Dimension = WinGetWindowDimension(Window);
 
-			WinUpdateWindow(DeviceContext, Dimension.Width, Dimension.Height);
+			//WinUpdateWindow(DeviceContext, Dimension.Width, Dimension.Height);
 			EndPaint(Window, &Paint);
 		} break;
 
@@ -248,20 +265,7 @@ WinWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 	return(Result);
 }
 
-inline LARGE_INTEGER
-WinGetPerformanceCounter()
-{
-	LARGE_INTEGER Result;
-	QueryPerformanceCounter(&Result);
-	return(Result);
-}
 
-inline r32
-WinGetSecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End)
-{
-	r32 Result = (End.QuadPart - Start.QuadPart) / (r32)GlobalPerformanceFrequency.QuadPart;
-	return(Result);
-}
 
 struct platform_job_system_entry
 {
@@ -399,19 +403,19 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			{
 				RefreshRate = WinRefreshRate;
 			}
-			int GameRefreshRate = RefreshRate / 2;
+			int GameRefreshRate = RefreshRate;
 			r32 TargetSecondsPerFrame = 1.0f / GameRefreshRate;
 			ReleaseDC(Window, WindowDC);
 
 			game_memory GameMemory = {};
 #if 0
-			GameMemory.PermanentStorageSize = Gigabytes(1);
+			GameMemory.PermanentStorageSize = Gigabytes(4);
 			GameMemory.TemporaryStorageSize = Gigabytes(2);
 			GameMemory.PermanentStorage = VirtualAlloc(0, GameMemory.PermanentStorageSize + GameMemory.TemporaryStorageSize, 
 													   MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 			GameMemory.TemporaryStorage = (u8 *)GameMemory.PermanentStorage + GameMemory.PermanentStorageSize;
 #else
-			GameMemory.PermanentStorageSize = Gigabytes(1);
+			GameMemory.PermanentStorageSize = Gigabytes(3);
 			GameMemory.PermanentStorage = VirtualAlloc(0, GameMemory.PermanentStorageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 			GameMemory.TemporaryStorageSize = Gigabytes(2);
 			GameMemory.TemporaryStorage = VirtualAlloc(0, GameMemory.TemporaryStorageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -532,14 +536,13 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 				window_dimension Dimension = WinGetWindowDimension(Window);
 				GameUpdate(&GameMemory, &GameInput, Dimension.Width, Dimension.Height);
-				
+
+				HDC DeviceContext = GetDC(Window);
+				WinUpdateWindow(DeviceContext, Dimension.Width, Dimension.Height);
+				ReleaseDC(Window, DeviceContext);
+
+#if 1
 				r32 SecondsElapsedForFrame = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
-#if 0
-				while (SecondsElapsedForFrame < TargetSecondsPerFrame)
-				{
-					SecondsElapsedForFrame = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
-				}
-#else
 				if(SecondsElapsedForFrame < TargetSecondsPerFrame)
 				{
 					if(SleepIsGranular)
@@ -558,17 +561,14 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					}
 				}
 #endif
-				LARGE_INTEGER EndCounter = WinGetPerformanceCounter();
-				r32 MSPerFrame = 1000.0f*WinGetSecondsElapsed(LastCounter, EndCounter);
-				LastCounter = EndCounter;
 
-				HDC DeviceContext = GetDC(Window);
-				WinUpdateWindow(DeviceContext, Dimension.Width, Dimension.Height);
-				ReleaseDC(Window, DeviceContext);
+				LARGE_INTEGER EndCounter = WinGetPerformanceCounter();
+				r32 MSPerFrame = 1000.0f * WinGetSecondsElapsed(LastCounter, EndCounter);
+				LastCounter = EndCounter;
 				
 #if 0
 				char MSBuffer[256];
-				_snprintf_s(MSBuffer, sizeof(MSBuffer), "%.02fms/f\n", MSPerFrame);
+				_snprintf_s(MSBuffer, sizeof(MSBuffer), "All frame: %.02fms/f\n", MSPerFrame);
 				OutputDebugString(MSBuffer);
 #endif
 			}

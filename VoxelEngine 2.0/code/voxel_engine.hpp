@@ -209,6 +209,15 @@ AddHero(game_state *GameState, world_position P)
 }
 
 internal void
+AddTree(game_state *GameState, world_position P)
+{
+	add_stored_entity_result Entity = AddStoredEntity(GameState, EntityType_Tree, P);
+
+	AddFlags(&Entity.StoredEntity->Sim, EntityFlag_Collides);
+	Entity.StoredEntity->Sim.Collision = GameState->TreeCollision;
+}
+
+internal void
 GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 {
 	Assert(sizeof(game_state) <= Memory->PermanentStorageSize);
@@ -228,15 +237,16 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 		GameState->StoredEntityCount = 0;
 
-		GameState->Camera.DistanceFromHero = 12.0f;
+		GameState->Camera.DistanceFromHero = 8.0f;
 		GameState->Camera.Pitch = GameState->Camera.Head = 0;
-		GameState->Camera.RotSensetivity = 0.05f;
+		GameState->Camera.RotSensetivity = 0.1f;
 		GameState->Camera.OffsetFromHero = {};
 
 		InitializeWorld(&GameState->World);
 
 		GameState->HeroCollision = MakeSimpleCollision(GameState, vec3(0.54f, 0.54f, 0.48f));
 		GameState->FireballCollision = MakeSimpleCollision(GameState, vec3(0.25f, 0.25f, 0.25f));
+		GameState->TreeCollision = MakeSimpleCollision(GameState, vec3(0.5f, 0.5f, 0.5f));
 		GameState->TESTCubeCollision = MakeSimpleCollision(GameState, vec3(1.0f, 1.0f, 1.0f));
 
 		CompileShader(&GameState->CharacterShader, "data/shaders/CharacterVS.glsl", "data/shaders/CharacterFS.glsl");
@@ -329,6 +339,13 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		HeroP.Offset = vec3(0.3f, 5.0f, 3.0f);
 		GameState->Hero.Entity = AddHero(GameState, HeroP);
 
+		world_position TestTreeP = {};
+		TestTreeP.ChunkX = 0;
+		TestTreeP.ChunkY = MAX_CHUNKS_Y;
+		TestTreeP.ChunkZ = 0;
+		TestTreeP.Offset = vec3(0.0f, 2.0f, 3.0f);
+		AddTree(GameState, TestTreeP);
+
 		InitializeDefaultAnimations(GameState->CharacterAnimations);
 
 		GameState->IsInitialized = true;
@@ -341,18 +358,12 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		InitializeStackAllocator(&TempState->Allocator, Memory->TemporaryStorageSize - sizeof(temp_state),
 														(u8 *)Memory->TemporaryStorage + sizeof(temp_state));
 
-		TempState->IsInitialized = true;
-
 		TempState->JobSystemQueue = Memory->JobSystemQueue;
 		// TempState->GameAssets = AllocateGameAssets(TempState, &TempState->Allocator, 500000);
 		TempState->GameAssets = AllocateGameAssets(TempState, &TempState->Allocator, Megabytes(64));
-	}
 
-	temporary_memory RenderMemory = BeginTemporaryMemory(&TempState->Allocator);
-	
-	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-100.0f, -20.0f, -100.0f), vec3(100.0f, 20.0f, 100.0f));
-	sim_region *SimRegion = BeginSimulation(GameState, &GameState->World, GameState->Hero.Entity->P, SimRegionUpdatableBounds, 
-											&GameState->WorldAllocator, &TempState->Allocator, Input->dt);
+		TempState->IsInitialized = true;
+	}
 
 	camera *Camera = &GameState->Camera;
 	Camera->Pitch -= Input->MouseYDisplacement*Camera->RotSensetivity;
@@ -376,8 +387,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 	Camera->Front = Normalize(vec3(CameraTargetDirX, CameraTargetDirY, CameraTargetDirZ));
 #endif
 
-	// vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), 0.0f, -Camera->OffsetFromHero.z()));
-	vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), -Camera->OffsetFromHero.y(), -Camera->OffsetFromHero.z()));
+	vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), 0.0f, -Camera->OffsetFromHero.z()));
+	// vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), -Camera->OffsetFromHero.y(), -Camera->OffsetFromHero.z()));
 	vec3 Right = Normalize(Cross(Forward, vec3(0.0f, 1.0f, 0.0f)));
 	r32 Theta = -RAD2DEG(ATan2(Forward.z(), Forward.x())) + 90.0f;
 	GameState->Hero.ddP = vec3(0.0f, 0.0f, 0.0f);
@@ -430,6 +441,12 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 	{
 		GameState->Hero.AdditionalRotation = Theta;
 	}
+	
+	temporary_memory RenderMemory = BeginTemporaryMemory(&TempState->Allocator);
+
+	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-100.0f, -20.0f, -100.0f), vec3(100.0f, 20.0f, 100.0f));
+	sim_region *SimRegion = BeginSimulation(GameState, &GameState->World, GameState->Hero.Entity->P, Forward, SimRegionUpdatableBounds, 
+											&GameState->WorldAllocator, &TempState->Allocator, Input->dt);											
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -558,10 +575,9 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 			if(IsSet(Entity, EntityFlag_Moveable) && !IsSet(Entity, EntityFlag_NonSpatial))
 			{
 				MoveEntity(GameState, SimRegion, Entity, ddP, Drag, dt, false);
-				AddFlags(Entity, EntityFlag_OnGround);
 				if(IsSet(Entity, EntityFlag_GravityAffected))
 				{
-					//MoveEntity(GameState, SimRegion, Entity, ddP, Drag, dt, true);
+					MoveEntity(GameState, SimRegion, Entity, ddP, Drag, dt, true);
 				}
 			}
 
@@ -631,6 +647,12 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 					DrawFromVAO(GameState->CubeVAO, 36);
 				} break;
 
+				case EntityType_Tree:
+				{
+					DrawModel(GameState->WorldShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Tree].FirstAssetIndex,
+							  0.0f, 1.0f, vec3(0.0f, 0.0f, 0.0f), Entity->P);
+				} break;
+
 				// TEST
 				default:
 				{
@@ -651,11 +673,15 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 			}
 		}
 	}
-	
-	RenderChunks(&GameState->World, GameState->WorldShader);
-	
+
+	RenderChunks(&GameState->World, GameState->WorldShader, ViewProjection);
+
 	EndSimulation(GameState, SimRegion, &GameState->WorldAllocator);
 	EndTemporaryMemory(RenderMemory);
 
 	UnloadAssetsIfNecessary(TempState->GameAssets);
+
+	char MSBuffer[256];
+	_snprintf_s(MSBuffer, sizeof(MSBuffer), "%u\n", GameState->WorldAllocator.Size - GameState->WorldAllocator.Used);
+	OutputDebugString(MSBuffer);
 }

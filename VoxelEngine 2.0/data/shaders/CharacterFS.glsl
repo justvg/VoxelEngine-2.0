@@ -18,6 +18,6 @@ void main()
 	vec3 Ambient = 0.3 * Input.Color;
 	vec3 Diffuse = max(dot(LightDir, Normal), 0.0) * Input.Color;
 
-	vec3 FinalColor = Ambient + Diffuse;
+	vec3 FinalColor = sqrt(Ambient + Diffuse);
 	FragColor = vec4(FinalColor, 1.0);
 }

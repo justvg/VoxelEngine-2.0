@@ -117,12 +117,13 @@ DrawFromVAO(GLuint VAO, u32 VerticesCount)
 }
 
 internal void
-DrawModel(shader Shader, game_assets *GameAssets, u32 AssetIndex, r32 Rotation, r32 Scaling, vec3 Right)
+DrawModel(shader Shader, game_assets *GameAssets, u32 AssetIndex, r32 Rotation = 0.0f, 
+		  r32 Scaling = 1.0f, vec3 Right = vec3(0.0f, 0.0f, 0.0f), vec3 Translation = vec3(0.0f, 0.0f, 0.0f))
 {
 	loaded_model *Model = GetModel(GameAssets, AssetIndex);
 	if(Model)
 	{
-		mat4 ModelMatrix = Translate(Model->Alignment + Model->AlignmentX*Right) * 
+		mat4 ModelMatrix = Translate(Model->Alignment + Model->AlignmentX*Right + Translation) * 
 						   Rotate(Rotation, vec3(0.0f, 1.0f, 0.0f)) * Scale(Scaling);
 		SetMat4(Shader, "Model", ModelMatrix);
 		DrawFromVAO(Model->VAO, Model->VerticesCount);

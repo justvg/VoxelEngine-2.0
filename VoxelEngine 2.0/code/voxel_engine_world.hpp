@@ -6,7 +6,6 @@ InitializeWorld(world *World)
 	World->ChunkDimInMeters = CHUNK_DIM / 2.0f;
 	World->BlockDimInMeters = World->ChunkDimInMeters / CHUNK_DIM;
 	World->RecentlyUsedCount = 0;
-	World->RecentlyUsedChunks = 0;
 	World->ChunksToRender = 0;
 	World->FirstFreeChunkBlocksInfo = 0;
 	World->FirstFreeWorldEntityBlock = 0;
@@ -83,6 +82,8 @@ GetChunk(world *World, i32 ChunkX, i32 ChunkY, i32 ChunkZ, stack_allocator *Allo
 		Chunk->Y = ChunkY;
 		Chunk->Z = ChunkZ;
 
+		Chunk->IsRecentlyUsed = false;
+
 		Chunk->IsSetup = false;
 		Chunk->IsLoaded = false;
 		Chunk->BlocksInfo = 0;
@@ -96,7 +97,7 @@ GetChunk(world *World, i32 ChunkX, i32 ChunkY, i32 ChunkZ, stack_allocator *Allo
 
 	return(Chunk);
 }
-
+#if 0
 internal bool32
 IsRecentlyUsed(world *World, chunk *ChunkToCheck)
 {
@@ -116,6 +117,16 @@ IsRecentlyUsed(world *World, chunk *ChunkToCheck)
 
 	return(Result);
 }
+#endif
+enum world_biome_type
+{
+	WorldBiome_Water,
+	WorldBiome_Beach,
+	WorldBiome_Scorched,
+	WorldBiome_Tundra,
+	WorldBiome_Snow,
+	WorldBiome_Grassland,
+};
 
 // TODO(georgy): Should I use EBO here??
 internal void
@@ -159,25 +170,42 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 			{
 				r32 X = (Chunk->X * CHUNK_DIM) + (r32)BlockX + 0.5f;
 				r32 Z = (Chunk->Z * CHUNK_DIM) + (r32)BlockZ + 0.5f;
-				r32 NoiseValue = Clamp(PerlinNoise2D(0.0125f*vec2(X, Z)), 0.0f, 1.0f);
-				NoiseValue += 0.15f*Clamp(PerlinNoise2D(0.05f*vec2(X, Z)), 0.0f, 1.0f);
-				NoiseValue /= 1.1f;
+				r32 NoiseValue = Clamp(PerlinNoise2D(0.01f*vec2(X, Z)), 0.0f, 1.0f);
+				NoiseValue += 0.15f*Clamp(PerlinNoise2D(0.05f*vec2(X, Z)), 0.0f, 1.0f)*NoiseValue;
+				NoiseValue = NoiseValue*NoiseValue*NoiseValue*NoiseValue*NoiseValue;
 
-				NoiseValue = NoiseValue*NoiseValue*NoiseValue*NoiseValue;
+				r32 BiomeNoise = Clamp(PerlinNoise2D(0.007f*vec2(X, Z)), 0.0f, 1.0f);
+				BiomeNoise += 0.5f*Clamp(PerlinNoise2D(0.03f*vec2(X, Z)), 0.0f, 1.0f);
+				BiomeNoise += 0.25f*Clamp(PerlinNoise2D(0.06f*vec2(X, Z)), 0.0f, 1.0f);
+				BiomeNoise /= 1.75f;
 
-				r32 BiomeNoise = Clamp(PerlinNoise2D(0.0125f*vec2(X, Z)), 0.0f, 1.0f);
-				vec3 BiomeColor = vec3(0.0f, 0.0f, 0.0f);
-				if(NoiseValue < 0.01f)
+				world_biome_type BiomeType = WorldBiome_Grassland;
+				if(NoiseValue < 0.008f)
 				{
-					BiomeColor = vec3(0.0f, 0.18f, 1.0f);
+					BiomeType = WorldBiome_Water;
 				}
-				else if(NoiseValue < 0.013)
+				else if(NoiseValue < 0.011f)
 				{
-					BiomeColor = vec3(0.97f, 0.81f, 0.6f);
+					BiomeType = WorldBiome_Beach;
 				}
-				else
+				else if(NoiseValue > 0.7f)
 				{
-					BiomeColor = vec3(0.53f, 0.53f, 0.53f);
+					if(BiomeNoise < 0.3f)
+					{
+						BiomeType = WorldBiome_Scorched;
+					}
+					else if(BiomeNoise < 0.4f)
+					{
+						BiomeType = WorldBiome_Tundra;
+					}
+					else
+					{
+						BiomeType = WorldBiome_Snow;
+					}
+				}
+				else 
+				{
+					BiomeType = WorldBiome_Grassland;
 				}
 
 				u32 Height = (u32)roundf(CHUNK_DIM * MAX_CHUNKS_Y * NoiseValue);
@@ -187,9 +215,59 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 					BlockY < HeightForThisChunk;
 					BlockY++)
 				{
-					Chunk->IsNotEmpty = true;
-					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true;
-					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = BiomeColor;
+					r32 Y = (Chunk->Y * CHUNK_DIM) + (r32)BlockY + 0.5f;
+					if((NoiseValue > 0.2f) && (NoiseValue < 0.55f))
+					{
+						r32 CaveNoise = Clamp(PerlinNoise3D(0.02f*vec3(X, 2.0f*(Y + 10.0f), Z)), 0.0f, 1.0f);
+						CaveNoise = CaveNoise*CaveNoise*CaveNoise;
+						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = (CaveNoise < 0.475f);
+					}
+					else
+					{
+						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true;
+					}
+
+					if(IsBlockActive(Blocks, BlockX, BlockY, BlockZ))
+					{
+						Chunk->IsNotEmpty = true;
+					}
+
+					r32 ColorNoise = Clamp(PerlinNoise3D(0.02f*vec3(X, Y, Z)), 0.0f, 1.0f);
+					ColorNoise *= ColorNoise;
+					vec3 Color = vec3(0.0f, 0.0f, 0.0f);
+					switch(BiomeType)
+					{
+						case WorldBiome_Water:
+						{
+							Color = Lerp(vec3(0.0f, 0.25f, 0.8f), vec3(0.0f, 0.18f, 1.0f), ColorNoise);
+						} break;
+
+						case WorldBiome_Beach:
+						{
+							Color = Lerp(vec3(0.9f, 0.85f, 0.7f), vec3(1.0f, 0.819f, 0.6f), ColorNoise);
+						} break;
+
+						case WorldBiome_Scorched:
+						{
+							Color = Lerp(vec3(0.55f, 0.36f, 0.172f), vec3(0.63f, 0.4f, 0.172f), ColorNoise);
+						} break;
+
+						case WorldBiome_Tundra:
+						{
+							Color = Lerp(vec3(0.78f, 0.925f, 0.54f), vec3(0.815f, 0.925f, 0.59f), ColorNoise);
+						} break;
+
+						case WorldBiome_Snow:
+						{
+							Color = Lerp(vec3(0.75f, 0.75f, 0.85f), vec3(0.67f, 0.55f, 1.0f), ColorNoise);
+						} break;
+
+						case WorldBiome_Grassland:
+						{
+							Color = Lerp(vec3(0.0f, 0.56f, 0.16f), vec3(0.65f, 0.9f, 0.0f), ColorNoise);
+						} break;
+					}
+					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = Color;
 				}
 			}
 		}
@@ -198,7 +276,7 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 	InitializeDynamicArray(&Chunk->VerticesP);
 	InitializeDynamicArray(&Chunk->VerticesNormals);
 	InitializeDynamicArray(&Chunk->VerticesColors);
-	
+
 	for(u32 BlockZ = 0;
 		BlockZ < CHUNK_DIM;
 		BlockZ++)
@@ -354,41 +432,196 @@ UnloadChunk(world *World, chunk *Chunk)
 internal void
 UnloadChunks(world *World, world_position *MinChunkP, world_position *MaxChunkP)
 {
-	chunk **ChunkPtr = &World->RecentlyUsedChunks;
-	chunk *Chunk = *ChunkPtr;
-	while(Chunk)
+	u32 MaxChunksToUnloadPerFrame = 6;
+	u32 ChunksUnloaded = 0;
+	for(u32 ChunkHashBucket = 0;
+	   (ChunkHashBucket < ArrayCount(World->ChunkHash)) && (ChunksUnloaded < MaxChunksToUnloadPerFrame);
+		ChunkHashBucket++)
 	{
-		if(Chunk->X < (MinChunkP->ChunkX - 2) ||
-		   Chunk->Y < (MinChunkP->ChunkY - 2) ||
-		   Chunk->Z < (MinChunkP->ChunkZ - 2) ||
-		   Chunk->X > (MaxChunkP->ChunkX + 2) ||
-		   Chunk->Y > (MaxChunkP->ChunkY + 2) ||
-		   Chunk->Z > (MaxChunkP->ChunkZ + 2))
+		chunk *Chunk = World->ChunkHash[ChunkHashBucket];
+		while(Chunk && (ChunksUnloaded < MaxChunksToUnloadPerFrame))
 		{
-			UnloadChunk(World, Chunk);
+			if(Chunk->IsRecentlyUsed)
+			{
+				if(Chunk->X < (MinChunkP->ChunkX - 2) ||
+				   Chunk->Y < (MinChunkP->ChunkY - 2) ||
+				   Chunk->Z < (MinChunkP->ChunkZ - 2) ||
+				   Chunk->X > (MaxChunkP->ChunkX + 2) ||
+				   Chunk->Y > (MaxChunkP->ChunkY + 2) ||
+				   Chunk->Z > (MaxChunkP->ChunkZ + 2))
+				{
+					Chunk->IsRecentlyUsed = false;
+					ChunksUnloaded++;
+ 					UnloadChunk(World, Chunk);
+				}
+			}
 
-			*ChunkPtr = Chunk->NextRecentlyUsed;
+			Chunk = Chunk->Next;
 		}
-		else
-		{
-			ChunkPtr = &Chunk->NextRecentlyUsed;
-		}
-
-		Chunk = *ChunkPtr;
 	}
 }
 
+internal chunk *
+SortedMerge(chunk *A, chunk *B)
+{
+	chunk DummyNode;
+	chunk *Tail = &DummyNode;
+	Tail->Next = 0;
+
+	while(1)
+	{
+		if(A == 0)
+		{
+			Tail->Next = B;
+			break;
+		}
+		else if(B == 0)
+		{
+			Tail->Next = A;
+			break;
+		}
+		
+		if(A->LengthSqTranslation <= B->LengthSqTranslation)
+		{
+			chunk *Temp = A;
+			A = A->Next;
+			Tail->Next = Temp;
+			Temp->Next = 0;
+		}
+		else
+		{
+			chunk *Temp = B;
+			B = B->Next;
+			Tail->Next = Temp;
+			Temp->Next = 0;
+		}
+
+		Tail = Tail->Next;
+	}
+
+	return(DummyNode.Next);
+}
+
 internal void
-RenderChunks(world *World, shader Shader)
+SplitLists(chunk *Chunk, chunk **A, chunk **B)
+{
+	chunk *Slow = Chunk;
+	chunk *Fast = Chunk->Next;
+
+	while(Fast)
+	{
+		Fast = Fast->Next;
+		if(Fast)
+		{
+			Fast = Fast->Next;
+			Slow = Slow->Next;
+		}
+	}
+
+	*A = Chunk;
+	*B = Slow->Next;
+	Slow->Next = 0;
+}
+
+internal void 
+MergeSort(chunk **ChunkPtr)
+{
+	chunk *Chunk = *ChunkPtr;
+	chunk *A, *B;
+
+	if((Chunk == 0) || (Chunk->Next == 0))
+	{
+		return;
+	}
+
+	SplitLists(Chunk, &A, &B);
+
+	MergeSort(&A);
+	MergeSort(&B);
+
+	*ChunkPtr = SortedMerge(A, B);
+}
+
+// NOTE(georgy): This function is optimized for Min to be vec3(0.0f, 0.0f, 0.0f) what is nice for chunks!
+internal bool32
+ChunkFrustumCulling(mat4 MVP, vec3 Min, vec3 Dim)
+{
+	u64 StartCycles = __rdtsc();
+	vec4 Points[8];
+
+	r32 X = Dim.x();
+	r32 Y = Dim.y();
+	r32 Z = Dim.z();
+	Points[0] = MVP.FourthColumn;
+	Points[1] = Y * MVP.SecondColumn + MVP.FourthColumn;
+	Points[2] = Z * MVP.ThirdColumn + MVP.FourthColumn;
+	Points[3] = Y * MVP.SecondColumn + Z * MVP.ThirdColumn + MVP.FourthColumn;
+	Points[4] = X * MVP.FirstColumn + MVP.FourthColumn;
+	Points[5] = X * MVP.FirstColumn + Y * MVP.SecondColumn + MVP.FourthColumn;
+	Points[6] = X * MVP.FirstColumn + Z * MVP.ThirdColumn + MVP.FourthColumn;
+	Points[7] = X * MVP.FirstColumn + Y * MVP.SecondColumn + Z * MVP.ThirdColumn + MVP.FourthColumn;
+
+	vec4 W0P = vec4(Points[0].w(), Points[1].w(), Points[2].w(), Points[3].w());
+	vec4 W1P = vec4(Points[4].w(), Points[5].w(), Points[6].w(), Points[7].w());
+	vec4 W0N = -W0P;
+	vec4 W1N = -W1P;
+
+	vec4 X0 = vec4(Points[0].x(), Points[1].x(), Points[2].x(), Points[3].x());
+	vec4 X1 = vec4(Points[4].x(), Points[5].x(), Points[6].x(), Points[7].x());
+
+	vec4 Y0 = vec4(Points[0].y(), Points[1].y(), Points[2].y(), Points[3].y());
+	vec4 Y1 = vec4(Points[4].y(), Points[5].y(), Points[6].y(), Points[7].y());
+
+	vec4 Z0 = vec4(Points[0].z(), Points[1].z(), Points[2].z(), Points[3].z());
+	vec4 Z1 = vec4(Points[4].z(), Points[5].z(), Points[6].z(), Points[7].z());
+
+	if(All(X0 > W0P) && All(X1 > W1P))
+	{
+		return(false);
+	}
+	if(All(X0 < W0N) && All(X1 < W1N))
+	{
+		return(false);
+	}
+
+	if(All(Y0 > W0P) && All(Y1 > W1P))
+	{
+		return(false);
+	}
+	if(All(Y0 < W0N) && All(Y1 < W1N))
+	{
+		return(false);
+	}
+
+	if(All(Z0 > W0P) && All(Z1 > W1P))
+	{
+		return(false);
+	}
+	if(All(Z0 < W0N) && All(Z1 < W1N))
+	{
+		return(false);
+	}
+
+	return(true);
+}
+
+internal void
+RenderChunks(world *World, shader Shader, mat4 VP)
 {
 	UseShader(Shader);
+	
+	MergeSort(&World->ChunksToRender);
+
 	for(chunk *Chunk = World->ChunksToRender;
 		Chunk;
 		Chunk = Chunk->Next)
 	{
 		mat4 Model = Translate(Chunk->Translation);
-		SetMat4(Shader, "Model", Model);
-		DrawFromVAO(Chunk->VAO, Chunk->VerticesP.EntriesCount);
+		if(ChunkFrustumCulling(VP * Model, vec3(0.0f, 0.0f, 0.0f), vec3(World->ChunkDimInMeters, World->ChunkDimInMeters, World->ChunkDimInMeters)))
+		{
+			SetMat4(Shader, "Model", Model);
+			DrawFromVAO(Chunk->VAO, Chunk->VerticesP.EntriesCount);
+		}
 	}
 }
 

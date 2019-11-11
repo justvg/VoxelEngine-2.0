@@ -27,6 +27,8 @@ struct chunk
 {
 	i32 X, Y, Z;
 
+	bool32 IsRecentlyUsed;
+
 	bool32 IsSetup;
 	bool32 IsLoaded;
 
@@ -41,11 +43,11 @@ struct chunk
 	GLuint VAO, PVBO, NormalsVBO, ColorsVBO;
 
 	vec3 Translation;
+	r32 LengthSqTranslation;
 
 	world_entity_block FirstEntityBlock;
 
 	chunk *Next;
-	chunk *NextRecentlyUsed;
 };
 
 struct world
@@ -54,7 +56,6 @@ struct world
 	r32 BlockDimInMeters;
  
 	u32 RecentlyUsedCount;
-	chunk *RecentlyUsedChunks;
 	chunk *ChunksToRender;
 
 	chunk_blocks_info *FirstFreeChunkBlocksInfo;

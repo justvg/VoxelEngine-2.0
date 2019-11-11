@@ -216,6 +216,7 @@ struct game_state
 
 	sim_entity_collision_volume *HeroCollision;
 	sim_entity_collision_volume *FireballCollision;
+	sim_entity_collision_volume *TreeCollision;
 	sim_entity_collision_volume *TESTCubeCollision;
 
 	shader CharacterShader;

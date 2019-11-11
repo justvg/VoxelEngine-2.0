@@ -9,6 +9,7 @@ enum entity_type
 
 	EntityType_Hero,
 	EntityType_Fireball,
+	EntityType_Tree,
 };
 
 struct sim_entity;

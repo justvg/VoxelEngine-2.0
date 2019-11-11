@@ -129,6 +129,41 @@ operator*= (vec3 &A, r32 B)
 }
 
 inline vec3 __vectorcall
+operator< (vec3 A, vec3 B)
+{
+	A.m = _mm_cmplt_ps(A.m, B.m);
+	return(A);
+}
+
+inline vec3 __vectorcall
+operator> (vec3 A, vec3 B)
+{
+	A.m = _mm_cmpgt_ps(A.m, B.m);
+	return(A);
+}
+
+inline u32 __vectorcall
+Mask(vec3 V)
+{
+	u32 Result = _mm_movemask_ps(V.m) & 7;
+	return(Result);
+}
+
+inline bool32 __vectorcall
+Any(vec3 V)
+{
+	bool32 Result = (Mask(V) != 0);
+	return(Result);
+}
+
+inline bool32 __vectorcall
+All(vec3 V)
+{
+	bool32 Result = (Mask(V) == 7);
+	return(Result);
+}
+
+inline vec3 __vectorcall
 Min(vec3 A, vec3 B)
 {
 	A.m = _mm_min_ps(A.m, B.m);
@@ -140,6 +175,14 @@ Max(vec3 A, vec3 B)
 {
 	A.m = _mm_max_ps(A.m, B.m);
 	return(A);
+}
+
+inline r32 __vectorcall
+HMin(vec3 A)
+{
+	A = Min(A, SHUFFLE3(A, 1, 0, 2));
+	r32 Result = Min(A, SHUFFLE3(A, 2, 0, 1)).x();
+	return(Result);
 }
 
 inline vec3 __vectorcall
@@ -300,6 +343,41 @@ operator*= (vec4 &A, r32 B)
 }
 
 inline vec4 __vectorcall
+operator< (vec4 A, vec4 B)
+{
+	A.m = _mm_cmplt_ps(A.m, B.m);
+	return(A);
+}
+
+inline vec4 __vectorcall
+operator> (vec4 A, vec4 B)
+{
+	A.m = _mm_cmpgt_ps(A.m, B.m);
+	return(A);
+}
+
+inline u32 __vectorcall
+Mask(vec4 V)
+{
+	u32 Result = _mm_movemask_ps(V.m) & 15;
+	return(Result);
+}
+
+inline bool32 __vectorcall
+Any(vec4 V)
+{
+	bool32 Result = (Mask(V) != 0);
+	return(Result);
+}
+
+inline bool32 __vectorcall
+All(vec4 V)
+{
+	bool32 Result = (Mask(V) == 15);
+	return(Result);
+}
+
+inline vec4 __vectorcall
 Min(vec4 A, vec4 B)
 {
 	A.m = _mm_min_ps(A.m, B.m);
@@ -398,6 +476,14 @@ operator* (mat4 A, mat4 B)
 	Result.FourthColumn += Hadamard(A.SecondColumn, SHUFFLE4(B.FourthColumn, 1, 1, 1, 1));
 	Result.FourthColumn += Hadamard(A.ThirdColumn, SHUFFLE4(B.FourthColumn, 2, 2, 2, 2));
 	Result.FourthColumn += Hadamard(A.FourthColumn, SHUFFLE4(B.FourthColumn, 3, 3, 3, 3));
+
+	return(Result);
+}
+
+inline vec4 __vectorcall
+operator* (mat4 A, vec4 V)
+{
+	vec4 Result = V.x() * A.FirstColumn + V.y() * A.SecondColumn + V.z() * A.ThirdColumn + V.w() * A.FourthColumn;
 
 	return(Result);
 }
@@ -936,12 +1022,29 @@ struct box
 	vec3 Points[8];
 };
 
-internal box
+internal box __vectorcall
 ConstructBoxDim(vec3 Dim)
 {
 	box Result;
 
 	Result.Points[0] = -0.5f*Dim;
+	Result.Points[1] = Result.Points[0] + vec3(0.0f, Dim.y(), 0.0f);
+	Result.Points[2] = Result.Points[0] + vec3(0.0f, 0.0f, Dim.z());
+	Result.Points[3] = Result.Points[0] + vec3(0.0f, Dim.y(), Dim.z());
+	Result.Points[4] = Result.Points[0] + vec3(Dim.x(), 0.0f, 0.0f);
+	Result.Points[5] = Result.Points[0] + vec3(Dim.x(), Dim.y(), 0.0f);
+	Result.Points[6] = Result.Points[0] + vec3(Dim.x(), 0.0f, Dim.z());
+	Result.Points[7] = Result.Points[0] + vec3(Dim.x(), Dim.y(), Dim.z());
+
+	return(Result);
+}
+
+internal box __vectorcall
+ConstructBoxMinDim(vec3 Min, vec3 Dim)
+{
+	box Result;
+
+	Result.Points[0] = Min;
 	Result.Points[1] = Result.Points[0] + vec3(0.0f, Dim.y(), 0.0f);
 	Result.Points[2] = Result.Points[0] + vec3(0.0f, 0.0f, Dim.z());
 	Result.Points[3] = Result.Points[0] + vec3(0.0f, Dim.y(), Dim.z());

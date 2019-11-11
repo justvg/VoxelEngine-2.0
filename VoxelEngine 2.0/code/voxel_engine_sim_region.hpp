@@ -77,7 +77,7 @@ AddEntity(game_state *GameState, sim_region *SimRegion, stored_entity *StoredEnt
 }
 
 internal sim_region *
-BeginSimulation(game_state *GameState, world *World, world_position Origin, rect3 Bounds, 
+BeginSimulation(game_state *GameState, world *World, world_position Origin, vec3 OriginForward, rect3 Bounds, 
 				stack_allocator *WorldAllocator, stack_allocator *TempAllocator, r32 dt)
 {
 	sim_region *SimRegion = PushStruct(TempAllocator, sim_region);
@@ -118,11 +118,9 @@ BeginSimulation(game_state *GameState, world *World, world_position Origin, rect
 				chunk *Chunk = GetChunk(World, ChunkX, ChunkY, ChunkZ, WorldAllocator);
 				if(Chunk)
 				{
-					if(!IsRecentlyUsed(World, Chunk))
+					if(!Chunk->IsRecentlyUsed)
 					{
-						Chunk->NextRecentlyUsed = World->RecentlyUsedChunks;
-						World->RecentlyUsedChunks = Chunk;
-
+						Chunk->IsRecentlyUsed = true;
 						World->RecentlyUsedCount++;
 					}
 
@@ -139,13 +137,19 @@ BeginSimulation(game_state *GameState, world *World, world_position Origin, rect
 
 					if(Chunk->IsSetup && Chunk->IsLoaded && Chunk->IsNotEmpty)
 					{
-						chunk *ChunkToRender = PushStruct(TempAllocator, chunk);
-						*ChunkToRender = *Chunk;
 						world_position ChunkPosition = { ChunkX, ChunkY, ChunkZ, vec3(0.0f, 0.0f, 0.0f) };
-						ChunkToRender->Translation = Substract(World, &ChunkPosition, &Origin);
-						Chunk->Translation = ChunkToRender->Translation;
-						ChunkToRender->Next = World->ChunksToRender;
-						World->ChunksToRender = ChunkToRender;
+						Chunk->Translation =  Substract(World, &ChunkPosition, &Origin);
+
+						// TODO(georgy): This is kind of cheesy pre-frustum culling. Think about it!
+						if(!((Length(vec3(Chunk->Translation.x(), 0.0f, Chunk->Translation.z())) > 3.0f*World->ChunkDimInMeters) &&
+							(Dot(Chunk->Translation, OriginForward) < -0.25f)))
+						{
+							chunk *ChunkToRender = PushStruct(TempAllocator, chunk);
+							*ChunkToRender = *Chunk;
+							ChunkToRender->LengthSqTranslation = LengthSq(ChunkToRender->Translation);
+							ChunkToRender->Next = World->ChunksToRender;
+							World->ChunksToRender = ChunkToRender;
+						}
 					}
 
 					for(world_entity_block *Block = &Chunk->FirstEntityBlock;
@@ -537,7 +541,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 		{
 			ddP = Normalize(ddP);
 		}
-		ddP *= 15.0f;
+		ddP *= 8.0f;
 		vec3 DragV = -Drag*Entity->dP;
 		DragV.SetY(0.0f);
 		ddP += DragV;
@@ -668,38 +672,36 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 				ChunkIndex < CollideChunksCount;
 				ChunkIndex++)
 			{
+				chunk *Chunk = CollideChunks[ChunkIndex].Chunk;
+				vec3* Vertices = Chunk->VerticesP.Entries;
+				r32 BlockDimInMeters = SimRegion->World->BlockDimInMeters;
+				vec3 MinChunkP = CollideChunks[ChunkIndex].Min - vec3(BlockDimInMeters, BlockDimInMeters, BlockDimInMeters);
+				vec3 MaxChunkP = CollideChunks[ChunkIndex].Max + vec3(BlockDimInMeters, BlockDimInMeters, BlockDimInMeters);
 				for(u32 TriangleIndex = 0;
 					TriangleIndex < (CollideChunks[ChunkIndex].Chunk->VerticesP.EntriesCount / 3);
 					TriangleIndex++)
 				{
-					chunk *Chunk = CollideChunks[ChunkIndex].Chunk;
-					vec3 Min = CollideChunks[ChunkIndex].Min;
-					vec3 Max = CollideChunks[ChunkIndex].Max;
-					vec3 P1 = Chunk->VerticesP.Entries[TriangleIndex*3];
-					vec3 P2 = Chunk->VerticesP.Entries[TriangleIndex*3 + 1];
-					vec3 P3 = Chunk->VerticesP.Entries[TriangleIndex*3 + 2];
+					u32 FirstVertexIndex = TriangleIndex * 3;
+					vec3 P1 = Vertices[FirstVertexIndex];
+					vec3 P2 = Vertices[FirstVertexIndex + 1];
+					vec3 P3 = Vertices[FirstVertexIndex + 2];
 
-					if(!((P1.x() > Max.x() + 0.5f) || (P1.x() < Min.x() - 0.5f)) || 
-					   !((P2.x() > Max.x() + 0.5f) || (P2.x() < Min.x() - 0.5f)) || 
-					   !((P3.x() > Max.x() + 0.5f) || (P3.x() < Min.x() - 0.5f)))
+					vec3 MinP = Min(Min(P1, P2), P3);
+					vec3 MaxP = Max(Max(P1, P2), P3);
+					
+					// if(((MinP.x() < MaxChunkP.x() + BlockDimInMeters) && (MaxP.x() > MinChunkP.x() - BlockDimInMeters)) &&
+					//    ((MinP.y() < MaxChunkP.y() + BlockDimInMeters) && (MaxP.y() > MinChunkP.y() - BlockDimInMeters)) && 
+					//    ((MinP.z() < MaxChunkP.z() + BlockDimInMeters) && (MaxP.z() > MinChunkP.z() - BlockDimInMeters)))
+					if(All(MinP < MaxChunkP) &&
+					   All(MaxP > MinChunkP))
 					{
-						if(!((P1.y() > Max.y() + 0.5f) || (P1.y() < Min.y() - 0.5f)) || 
-					   	   !((P2.y() > Max.y() + 0.5f) || (P2.y() < Min.y() - 0.5f)) || 
-					   	   !((P3.y() > Max.y() + 0.5f) || (P3.y() < Min.y() - 0.5f)))
+						P1 += Chunk->Translation;
+						P2 += Chunk->Translation;
+						P3 += Chunk->Translation;
+						if(NarrowPhaseCollisionDetection(P1, P2, P3, WorldToEllipsoid, NormalizedESpaceEntityDelta,
+														 ESpaceP, ESpaceEntityDelta, &t, &CollisionP))
 						{
-							if(!((P1.z() > Max.z() + 0.5f) || (P1.z() < Min.z() - 0.5f)) || 
-					   	   	   !((P2.z() > Max.z() + 0.5f) || (P2.z() < Min.z() - 0.5f)) || 
-					   	  	   !((P3.z() > Max.z() + 0.5f) || (P3.z() < Min.z() - 0.5f)))
-							{
-								P1 += Chunk->Translation;
-								P2 += Chunk->Translation;
-								P3 += Chunk->Translation;
-								if(NarrowPhaseCollisionDetection(P1, P2, P3, WorldToEllipsoid, NormalizedESpaceEntityDelta,
-																ESpaceP, ESpaceEntityDelta, &t, &CollisionP))
-								{
-									HitEntityType = EntityType_Chunk;
-								}
-							}
+							HitEntityType = EntityType_Chunk;
 						}
 					}
 				}

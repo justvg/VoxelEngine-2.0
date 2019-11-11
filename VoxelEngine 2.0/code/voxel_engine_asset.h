@@ -22,6 +22,8 @@ enum asset_type_id
 	AssetType_Hand,
 	AssetType_Foot,
 
+	AssetType_Tree,
+
 	AssetType_Count
 };
 

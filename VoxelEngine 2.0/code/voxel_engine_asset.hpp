@@ -350,6 +350,10 @@ AllocateGameAssets(temp_state *TempState, stack_allocator *Allocator, u64 Size)
 	AddAsset(GameAssets, "data/models/foot.cub", 0.0f, 0.15f);
 	EndAssetType(GameAssets);
 
+	BeginAssetType(GameAssets, AssetType_Tree);
+	AddAsset(GameAssets, "data/models/tree.cub", 0.0f, 0.0f);
+	EndAssetType(GameAssets);
+
 	return(GameAssets);
 }
 
