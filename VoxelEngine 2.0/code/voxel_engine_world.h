@@ -19,6 +19,7 @@ struct block
 struct chunk_blocks_info
 {
 	block Blocks[CHUNK_DIM*CHUNK_DIM*CHUNK_DIM];
+	// TODO(georgy): Can I delete Colors from here? I can allocate them in stack in SetupChunk()
 	vec3 Colors[CHUNK_DIM*CHUNK_DIM*CHUNK_DIM];
 
 	chunk_blocks_info *Next;
@@ -29,13 +30,16 @@ struct chunk
 
 	bool32 IsRecentlyUsed;
 
-	bool32 IsSetup;
+	bool32 IsSetupBlocks;
+	bool32 IsFullySetup;
 	bool32 IsLoaded;
 
 	bool32 IsNotEmpty;
 
 	chunk_blocks_info *BlocksInfo;
 
+	// TODO(georgy): Do I want collapse these in one dynamic array? (AoS)
+	// NOTE(georg): VerticesP vectors' w component stores AO value
 	dynamic_array_vec3 VerticesP;
 	dynamic_array_vec3 VerticesNormals;
 	dynamic_array_vec3 VerticesColors;

@@ -137,6 +137,8 @@ WinInitOpenGL(HWND Window, HINSTANCE Instance, LPCSTR WindowClassName)
 					WGL_COLOR_BITS_ARB, 32,
 					WGL_DEPTH_BITS_ARB, 24,
 					WGL_STENCIL_BITS_ARB, 8,
+					WGL_SAMPLE_BUFFERS_ARB, 1,
+					WGL_SAMPLES_ARB, 4,
 					0
 				};
 				int ContextAttributes[] =
@@ -158,6 +160,7 @@ WinInitOpenGL(HWND Window, HINSTANCE Instance, LPCSTR WindowClassName)
 					wglSwapIntervalEXT(1);
 					glEnable(GL_DEPTH_TEST);
 					glEnable(GL_CULL_FACE);
+					glEnable(GL_MULTISAMPLE);
 					// glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 				}
 				else
@@ -210,7 +213,7 @@ internal void
 WinUpdateWindow(HDC DeviceContext, int WindowWidth, int WindowHeight)
 {
 	glViewport(0, 0, WindowWidth, WindowHeight);
-	glClearColor(1.0f, 0.0f, 1.0f, 0.0f);
+	glClearColor(0.0f, 0.175f, 0.375f, 1.0f);
 	
 	SwapBuffers(DeviceContext);
 }
@@ -449,10 +452,15 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					RECT WindowRect, ClientRect;
 					GetWindowRect(Window, &WindowRect);
 					LONG WindowRectHeight = WindowRect.bottom - WindowRect.top;
+					LONG WindowRectWidth = WindowRect.right - WindowRect.left;
 					GetClientRect(Window, &ClientRect);
 					LONG ClientRectHeight = ClientRect.bottom - ClientRect.top;
-					LONG Diff = WindowRectHeight - ClientRectHeight;
-					WindowRect.top += Diff;
+					LONG ClientRectWidth = ClientRect.right - ClientRect.left;
+					LONG DiffHeight = WindowRectHeight - ClientRectHeight;
+					LONG DiffWidth = WindowRectWidth - ClientRectWidth;
+					WindowRect.top += DiffHeight;
+					WindowRect.left += DiffWidth / 2;
+					WindowRect.right -= DiffWidth / 2;
 					ClipCursor(&WindowRect);
 				}
 				else
@@ -566,7 +574,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				r32 MSPerFrame = 1000.0f * WinGetSecondsElapsed(LastCounter, EndCounter);
 				LastCounter = EndCounter;
 				
-#if 0
+#if 1
 				char MSBuffer[256];
 				_snprintf_s(MSBuffer, sizeof(MSBuffer), "All frame: %.02fms/f\n", MSPerFrame);
 				OutputDebugString(MSBuffer);

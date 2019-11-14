@@ -237,7 +237,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 		GameState->StoredEntityCount = 0;
 
-		GameState->Camera.DistanceFromHero = 8.0f;
+		GameState->Camera.DistanceFromHero = 9.0f;
 		GameState->Camera.Pitch = GameState->Camera.Head = 0;
 		GameState->Camera.RotSensetivity = 0.1f;
 		GameState->Camera.OffsetFromHero = {};
@@ -680,8 +680,4 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 	EndTemporaryMemory(RenderMemory);
 
 	UnloadAssetsIfNecessary(TempState->GameAssets);
-
-	char MSBuffer[256];
-	_snprintf_s(MSBuffer, sizeof(MSBuffer), "%u\n", GameState->WorldAllocator.Size - GameState->WorldAllocator.Used);
-	OutputDebugString(MSBuffer);
 }

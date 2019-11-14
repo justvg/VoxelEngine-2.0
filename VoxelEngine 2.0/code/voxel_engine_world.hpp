@@ -11,6 +11,112 @@ InitializeWorld(world *World)
 	World->FirstFreeWorldEntityBlock = 0;
 }
 
+internal chunk *
+GetChunk(world *World, i32 ChunkX, i32 ChunkY, i32 ChunkZ, stack_allocator *Allocator = 0)
+{
+	u32 HashValue = 19*ChunkX + 3*ChunkY + 7*ChunkZ;
+	u32 HashSlot = HashValue & (ArrayCount(World->ChunkHash) - 1);
+	Assert(HashSlot < ArrayCount(World->ChunkHash));
+
+	chunk **ChunkPtr = World->ChunkHash + HashSlot;
+	chunk *Chunk = *ChunkPtr;
+	while(Chunk)
+	{
+		if((Chunk->X == ChunkX) &&
+		   (Chunk->Y == ChunkY) &&
+		   (Chunk->Z == ChunkZ))
+		{
+			break;
+		}
+
+		ChunkPtr = &Chunk->Next;
+		Chunk = *ChunkPtr;
+	}
+
+	if(!Chunk && Allocator)
+	{
+		Chunk = PushStruct(Allocator, chunk);
+		Chunk->X = ChunkX;
+		Chunk->Y = ChunkY;
+		Chunk->Z = ChunkZ;
+
+		Chunk->IsRecentlyUsed = false;
+
+		Chunk->IsSetupBlocks= false;
+		Chunk->IsFullySetup = false;
+		Chunk->IsLoaded = false;
+		Chunk->BlocksInfo = 0;
+
+		Chunk->FirstEntityBlock.StoredEntityCount = 0;
+
+		Chunk->Next = 0;
+
+		*ChunkPtr = Chunk;
+	}
+
+	return(Chunk);
+}
+
+inline bool32
+IsBlockActiveBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z)
+{
+	bool32 Result = false;
+
+	if((X >=0) && (X < CHUNK_DIM) &&
+	   (Y >=0) && (Y < CHUNK_DIM) &&
+	   (Z >=0) && (Z < CHUNK_DIM))
+	{
+		Result = IsBlockActive(Chunk->BlocksInfo->Blocks, X, Y, Z);
+	}
+	else
+	{
+		i32 NewChunkX = Chunk->X;
+		i32 NewChunkY = Chunk->Y;
+		i32 NewChunkZ = Chunk->Z;
+		if(X < 0)
+		{
+			X = CHUNK_DIM + X;
+			NewChunkX--;
+		}
+		else if(X >= CHUNK_DIM)
+		{
+			X = X - CHUNK_DIM;
+			NewChunkX++;
+		}
+
+		if(Y < 0)
+		{
+			Y = CHUNK_DIM + Y;
+			NewChunkY--;
+		}
+		else if(Y >= CHUNK_DIM)
+		{
+			Y = Y - CHUNK_DIM;
+			NewChunkY++;
+		}
+
+		if(Z < 0)
+		{
+			Z = CHUNK_DIM + Z;
+			NewChunkZ--;
+		}
+		else if(Z >= CHUNK_DIM)
+		{
+			Z = Z - CHUNK_DIM;
+			NewChunkZ++;
+		}
+		
+		chunk *NewChunk = GetChunk(World, NewChunkX, NewChunkY, NewChunkZ);
+		if(NewChunk)
+		{
+			Assert(NewChunk->IsSetupBlocks);
+			Result = IsBlockActive(NewChunk->BlocksInfo->Blocks, X, Y, Z);
+		}
+	}
+
+	return(Result);
+}
+
 inline world_position
 InvalidPosition(void)
 {
@@ -53,71 +159,6 @@ MapIntoChunkSpace(world *World, world_position *Pos, vec3 Offset)
 	return(Result);
 }
 
-internal chunk *
-GetChunk(world *World, i32 ChunkX, i32 ChunkY, i32 ChunkZ, stack_allocator *Allocator = 0)
-{
-	u32 HashValue = 19*ChunkX + 3*ChunkY + 7*ChunkZ;
-	u32 HashSlot = HashValue & (ArrayCount(World->ChunkHash) - 1);
-	Assert(HashSlot < ArrayCount(World->ChunkHash));
-
-	chunk **ChunkPtr = World->ChunkHash + HashSlot;
-	chunk *Chunk = *ChunkPtr;
-	while(Chunk)
-	{
-		if((Chunk->X == ChunkX) &&
-		   (Chunk->Y == ChunkY) &&
-		   (Chunk->Z == ChunkZ))
-		{
-			break;
-		}
-
-		ChunkPtr = &Chunk->Next;
-		Chunk = *ChunkPtr;
-	}
-
-	if(!Chunk && Allocator)
-	{
-		Chunk = PushStruct(Allocator, chunk);
-		Chunk->X = ChunkX;
-		Chunk->Y = ChunkY;
-		Chunk->Z = ChunkZ;
-
-		Chunk->IsRecentlyUsed = false;
-
-		Chunk->IsSetup = false;
-		Chunk->IsLoaded = false;
-		Chunk->BlocksInfo = 0;
-
-		Chunk->FirstEntityBlock.StoredEntityCount = 0;
-
-		Chunk->Next = 0;
-
-		*ChunkPtr = Chunk;
-	}
-
-	return(Chunk);
-}
-#if 0
-internal bool32
-IsRecentlyUsed(world *World, chunk *ChunkToCheck)
-{
-	bool32 Result = false;
-	for(chunk *Chunk = World->RecentlyUsedChunks;
-		Chunk;
-		Chunk = Chunk->NextRecentlyUsed)
-	{
-		if((Chunk->X == ChunkToCheck->X) &&
-		   (Chunk->Y == ChunkToCheck->Y) &&
-		   (Chunk->Z == ChunkToCheck->Z))
-		{
-			Result = true;
-			break;
-		}
-	}
-
-	return(Result);
-}
-#endif
 enum world_biome_type
 {
 	WorldBiome_Water,
@@ -128,11 +169,21 @@ enum world_biome_type
 	WorldBiome_Grassland,
 };
 
+inline r32
+VertexAO(bool32 Side1, bool32 Side2, bool32 Corner)
+{
+	r32 AOValues[] = { 1.0f, 0.8f, 0.6f, 0.15f};
+	r32 Result = AOValues[Side1 + Side2 + Corner];
+
+	return(Result);
+}
+
+
 // TODO(georgy): Should I use EBO here??
 internal void
-SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 DEBUGEmptyChunk)
+SetupChunkBlocks(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 DEBUGEmptyChunk)
 {
-	Chunk->IsSetup = true;
+	Chunk->IsSetupBlocks = true;
 	Chunk->IsNotEmpty = false;
 
 	if(!World->FirstFreeChunkBlocksInfo)
@@ -272,20 +323,29 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 			}
 		}
 	}
+}
+
+internal void
+SetupChunkVertices(world *World, chunk *Chunk)
+{
+	Chunk->IsFullySetup = true;
 
 	InitializeDynamicArray(&Chunk->VerticesP);
 	InitializeDynamicArray(&Chunk->VerticesNormals);
 	InitializeDynamicArray(&Chunk->VerticesColors);
 
-	for(u32 BlockZ = 0;
+	block *Blocks = Chunk->BlocksInfo->Blocks;
+	vec3 *Colors = Chunk->BlocksInfo->Colors;
+
+	for(i32 BlockZ = 0;
 		BlockZ < CHUNK_DIM;
 		BlockZ++)
 	{
-		for(u32 BlockY = 0;
+		for(i32 BlockY = 0;
 			BlockY < CHUNK_DIM;
 			BlockY++)
 		{
-			for(u32 BlockX = 0;
+			for(i32 BlockX = 0;
 				BlockX < CHUNK_DIM;
 				BlockX++)
 			{
@@ -302,11 +362,41 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 					if ((BlockX == 0) || !IsBlockActive(Blocks, BlockX - 1, BlockY, BlockZ))
 					{
 						A = vec3(X, Y, Z);
+						bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ);
+						bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ - 1);
+						bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ - 1);
+						A.SetW(VertexAO(Side1, Side2, Corner));
+
 						B = vec3(X, Y, Z + BlockDimInMeters);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ + 1);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ + 1);
+						B.SetW(VertexAO(Side1, Side2, Corner));
+
 						C = vec3(X, Y + BlockDimInMeters, Z);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ - 1);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ - 1);
+						C.SetW(VertexAO(Side1, Side2, Corner));
+
 						D = vec3(X, Y + BlockDimInMeters, Z + BlockDimInMeters);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ + 1);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ + 1);
+						D.SetW(VertexAO(Side1, Side2, Corner));
+
+						if((C.w() + B.w()) < (A.w() + D.w()))
+						{
+							AddTriangle(&Chunk->VerticesP, A, B, D);
+							AddTriangle(&Chunk->VerticesP, A, D, C);
+						}
+						else
+						{
+							AddTriangle(&Chunk->VerticesP, A, B, C);
+							AddTriangle(&Chunk->VerticesP, C, B, D);
+						}
+
 						vec3 N = vec3(-1.0f, 0.0f, 0.0f);
-						AddQuad(&Chunk->VerticesP, A, B, C, D);
 						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
 						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
 					}
@@ -314,11 +404,41 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 					if ((BlockX == CHUNK_DIM - 1) || !IsBlockActive(Blocks, BlockX + 1, BlockY, BlockZ))
 					{
 						A = vec3(X + BlockDimInMeters, Y, Z);
+						bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ);
+						bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ - 1);
+						bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ - 1);
+						A.SetW(VertexAO(Side1, Side2, Corner));
+
 						B = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ - 1);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ - 1);
+						B.SetW(VertexAO(Side1, Side2, Corner));
+						
 						C = vec3(X + BlockDimInMeters, Y, Z + BlockDimInMeters);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ + 1);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ + 1);
+						C.SetW(VertexAO(Side1, Side2, Corner));
+
 						D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z + BlockDimInMeters);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ + 1);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ + 1);
+						D.SetW(VertexAO(Side1, Side2, Corner));
+
+						if((C.w() + B.w()) < (A.w() + D.w()))
+						{
+							AddTriangle(&Chunk->VerticesP, A, B, D);
+							AddTriangle(&Chunk->VerticesP, A, D, C);
+						}
+						else
+						{
+							AddTriangle(&Chunk->VerticesP, A, B, C);
+							AddTriangle(&Chunk->VerticesP, C, B, D);
+						}
+
 						vec3 N = vec3(1.0f, 0.0f, 0.0f);
-						AddQuad(&Chunk->VerticesP, A, B, C, D);
 						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
 						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
 					}
@@ -326,11 +446,45 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 					if ((BlockZ == 0) || !IsBlockActive(Blocks, BlockX, BlockY, BlockZ - 1))
 					{
 						A = vec3(X, Y, Z);
+						bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ - 1);
+						bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ - 1);
+						bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ - 1);
+						r32 AAO = VertexAO(Side1, Side2, Corner);
+						A.SetW(AAO);
+
 						B = vec3(X, Y + BlockDimInMeters, Z);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY + 1, BlockZ - 1);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ - 1);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ - 1);
+						r32 BAO = VertexAO(Side1, Side2, Corner); 
+						B.SetW(BAO);
+
 						C = vec3(X + BlockDimInMeters, Y, Z);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ - 1);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ - 1);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ - 1);
+						r32 CAO = VertexAO(Side1, Side2, Corner); 
+						C.SetW(CAO);
+
 						D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY + 1, BlockZ - 1);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ - 1);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ - 1);
+						r32 DAO = VertexAO(Side1, Side2, Corner); 
+						D.SetW(DAO);
+
+						if((CAO + BAO) < (AAO + DAO))
+						{
+							AddTriangle(&Chunk->VerticesP, A, B, D);
+							AddTriangle(&Chunk->VerticesP, A, D, C);
+						}
+						else
+						{
+							AddTriangle(&Chunk->VerticesP, A, B, C);
+							AddTriangle(&Chunk->VerticesP, C, B, D);
+						}
+
 						vec3 N = vec3(0.0f, 0.0f, -1.0f);
-						AddQuad(&Chunk->VerticesP, A, B, C, D);
 						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
 						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
 					}
@@ -338,11 +492,45 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 					if ((BlockZ == CHUNK_DIM - 1) || !IsBlockActive(Blocks, BlockX, BlockY, BlockZ + 1))
 					{
 						A = vec3(X, Y, Z + BlockDimInMeters);
+						bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ + 1);
+						bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ + 1);
+						bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ + 1);
+						r32 AAO = VertexAO(Side1, Side2, Corner);
+						A.SetW(AAO);
+
 						B = vec3(X + BlockDimInMeters, Y, Z + BlockDimInMeters);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ + 1);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ + 1);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ + 1);
+						r32 BAO = VertexAO(Side1, Side2, Corner); 
+						B.SetW(BAO);
+
 						C = vec3(X, Y + BlockDimInMeters, Z + BlockDimInMeters);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY + 1, BlockZ + 1);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ + 1);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ + 1);
+						r32 CAO = VertexAO(Side1, Side2, Corner); 
+						C.SetW(CAO);
+
 						D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z + BlockDimInMeters);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY + 1, BlockZ + 1);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ + 1);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ + 1);
+						r32 DAO = VertexAO(Side1, Side2, Corner); 
+						D.SetW(DAO);
+
+						if((CAO + BAO) < (AAO + DAO))
+						{
+							AddTriangle(&Chunk->VerticesP, A, B, D);
+							AddTriangle(&Chunk->VerticesP, A, D, C);
+						}
+						else
+						{
+							AddTriangle(&Chunk->VerticesP, A, B, C);
+							AddTriangle(&Chunk->VerticesP, C, B, D);
+						}
+
 						vec3 N = vec3(0.0f, 0.0f, 1.0f);
-						AddQuad(&Chunk->VerticesP, A, B, C, D);
 						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
 						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
 					}
@@ -350,11 +538,45 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 					if ((BlockY == 0) || (!IsBlockActive(Blocks, BlockX, BlockY - 1, BlockZ)))
 					{
 						A = vec3(X, Y, Z);
+						bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ - 1);
+						bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ);
+						bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ - 1);
+						r32 AAO = VertexAO(Side1, Side2, Corner);
+						A.SetW(AAO);
+
 						B = vec3(X + BlockDimInMeters, Y, Z);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ - 1);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ - 1);
+						r32 BAO = VertexAO(Side1, Side2, Corner); 
+						B.SetW(BAO);
+
 						C = vec3(X, Y, Z + BlockDimInMeters);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ + 1);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ + 1);
+						r32 CAO = VertexAO(Side1, Side2, Corner); 
+						C.SetW(CAO);
+
 						D = vec3(X + BlockDimInMeters, Y, Z + BlockDimInMeters);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ + 1);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ + 1);
+						r32 DAO = VertexAO(Side1, Side2, Corner); 
+						D.SetW(DAO);
+
+						if((CAO + BAO) < (AAO + DAO))
+						{
+							AddTriangle(&Chunk->VerticesP, A, B, D);
+							AddTriangle(&Chunk->VerticesP, A, D, C);
+						}
+						else
+						{
+							AddTriangle(&Chunk->VerticesP, A, B, C);
+							AddTriangle(&Chunk->VerticesP, C, B, D);
+						}
+
 						vec3 N = vec3(0.0f, -1.0f, 0.0f);
-						AddQuad(&Chunk->VerticesP, A, B, C, D);
 						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
 						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
 					}
@@ -362,11 +584,45 @@ SetupChunk(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 D
 					if ((BlockY == CHUNK_DIM - 1) || (!IsBlockActive(Blocks, BlockX, BlockY + 1, BlockZ)))
 					{
 						A = vec3(X, Y + BlockDimInMeters, Z);
+						bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX, BlockY + 1, BlockZ - 1);
+						bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ);
+						bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ - 1);
+						r32 AAO = VertexAO(Side1, Side2, Corner);
+						A.SetW(AAO);
+
 						B = vec3(X, Y + BlockDimInMeters, Z + BlockDimInMeters);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX, BlockY + 1, BlockZ + 1);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ + 1);
+						r32 BAO = VertexAO(Side1, Side2, Corner); 
+						B.SetW(BAO);
+
 						C = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX, BlockY + 1, BlockZ - 1);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ - 1);
+						r32 CAO = VertexAO(Side1, Side2, Corner); 
+						C.SetW(CAO);
+
 						D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z + BlockDimInMeters);
+						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX, BlockY + 1, BlockZ + 1);
+						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ);
+						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ + 1);
+						r32 DAO = VertexAO(Side1, Side2, Corner); 
+						D.SetW(DAO);
+
+						if((CAO + BAO) < (AAO + DAO))
+						{
+							AddTriangle(&Chunk->VerticesP, A, B, D);
+							AddTriangle(&Chunk->VerticesP, A, D, C);
+						}
+						else
+						{
+							AddTriangle(&Chunk->VerticesP, A, B, C);
+							AddTriangle(&Chunk->VerticesP, C, B, D);
+						}
+
 						vec3 N = vec3(0.0f, 1.0f, 0.0f);
-						AddQuad(&Chunk->VerticesP, A, B, C, D);
 						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
 						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
 					}
@@ -387,7 +643,7 @@ LoadChunk(chunk *Chunk)
 	glBindBuffer(GL_ARRAY_BUFFER, Chunk->PVBO);
 	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesP.EntriesCount*sizeof(vec3), Chunk->VerticesP.Entries, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
+	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
 	glGenBuffers(1, &Chunk->NormalsVBO);
 	glBindBuffer(GL_ARRAY_BUFFER, Chunk->NormalsVBO);
 	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesNormals.EntriesCount*sizeof(vec3), Chunk->VerticesNormals.Entries, GL_STATIC_DRAW);
@@ -406,16 +662,21 @@ UnloadChunk(world *World, chunk *Chunk)
 {
 	World->RecentlyUsedCount--;
 
-	if(Chunk->IsSetup)
+	if(Chunk->IsSetupBlocks)
 	{
 		Chunk->BlocksInfo->Next = World->FirstFreeChunkBlocksInfo;
-		World->FirstFreeChunkBlocksInfo = Chunk->BlocksInfo->Next;
+		World->FirstFreeChunkBlocksInfo = Chunk->BlocksInfo;
 
+		Chunk->IsSetupBlocks = false;
+	}
+
+	if(Chunk->IsFullySetup)
+	{
 		FreeDynamicArray(&Chunk->VerticesP);
 		FreeDynamicArray(&Chunk->VerticesNormals);
 		FreeDynamicArray(&Chunk->VerticesColors);
 
-		Chunk->IsSetup = false;
+		Chunk->IsFullySetup = false;
 	}
 
 	if(Chunk->IsLoaded)
@@ -427,6 +688,8 @@ UnloadChunk(world *World, chunk *Chunk)
 
 		Chunk->IsLoaded = false;
 	}
+
+	// TODO(georgy): Should I free the chunk itself and than use its memory for new chunk in GetChunk? As I do e.g. with BlockInfo
 }
 
 internal void

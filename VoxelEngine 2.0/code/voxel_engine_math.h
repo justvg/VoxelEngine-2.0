@@ -32,6 +32,7 @@ struct vec3
 	inline r32 __vectorcall x() { return(_mm_cvtss_f32(m)); }
 	inline r32 __vectorcall y() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(1, 1, 1, 1)))); }
 	inline r32 __vectorcall z() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(2, 2, 2, 2)))); }
+	inline r32 __vectorcall w() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(3, 3, 3, 3)))); }
 
 	inline vec3 __vectorcall yzx() { return(SHUFFLE3(*this, 1, 2, 0)); }
 	inline vec3 __vectorcall zxy() { return(SHUFFLE3(*this, 2, 0, 1)); }
@@ -52,6 +53,13 @@ struct vec3
 	{
 		__m128 Temp = _mm_move_ss(m, _mm_set_ss(Z));
 		Temp = _mm_shuffle_ps(Temp, Temp, _MM_SHUFFLE(3, 0, 1, 0));
+		m = _mm_move_ss(Temp, m);
+	}
+
+	void __vectorcall SetW(r32 W)
+	{
+		__m128 Temp = _mm_move_ss(m, _mm_set_ss(W));
+		Temp = _mm_shuffle_ps(Temp, Temp, _MM_SHUFFLE(0, 2, 1, 0));
 		m = _mm_move_ss(Temp, m);
 	}
 

@@ -8,11 +8,7 @@ out vs_out
 	vec3 FragPosSim;
 	vec3 Normal;
 	vec3 Color;
-
-	vec3 DirLight;
 } Output;
-
-const vec3 DirLightDirection = normalize(vec3(0.9, -0.5, -0.3));
 
 uniform mat4 BoneTransformations[7];
 uniform int BoneID;
@@ -29,8 +25,6 @@ void main()
 	Output.FragPosSim = vec3(SimPos);
 	Output.Normal = normalize(mat3(Model) * LocalNormal);
 	Output.Color = aColor;
-
-	Output.DirLight = normalize(DirLightDirection);
 
 	gl_Position = ViewProjection * SimPos;
 }

@@ -103,6 +103,37 @@ BeginSimulation(game_state *GameState, world *World, world_position Origin, vec3
 	world_position MaxChunkP = MapIntoChunkSpace(World, &Origin, Bounds.Max);
 	MaxChunkP.ChunkY = MAX_CHUNKS_Y;
 
+	for(i32 ChunkZ = MinChunkP.ChunkZ - 1;
+		ChunkZ <= MaxChunkP.ChunkZ + 1;
+		ChunkZ++)
+	{
+		for(i32 ChunkY = MinChunkP.ChunkY;
+			ChunkY <= MaxChunkP.ChunkY;
+			ChunkY++)
+		{
+			for(i32 ChunkX = MinChunkP.ChunkX - 1;
+				ChunkX <= MaxChunkP.ChunkX + 1;
+				ChunkX++)
+			{
+				chunk *Chunk = GetChunk(World, ChunkX, ChunkY, ChunkZ, WorldAllocator);
+				if(Chunk)
+				{
+					if(!Chunk->IsRecentlyUsed)
+					{
+						Chunk->IsRecentlyUsed = true;
+						World->RecentlyUsedCount++;
+					}
+
+					if(!Chunk->IsSetupBlocks)
+					{
+						bool32 DEBUGEmptyChunk = (ChunkY == MAX_CHUNKS_Y);
+						SetupChunkBlocks(World, Chunk, WorldAllocator, DEBUGEmptyChunk);
+					}
+				}
+			}
+		}
+	}
+
 	for(i32 ChunkZ = MinChunkP.ChunkZ;
 		ChunkZ <= MaxChunkP.ChunkZ;
 		ChunkZ++)
@@ -118,24 +149,17 @@ BeginSimulation(game_state *GameState, world *World, world_position Origin, vec3
 				chunk *Chunk = GetChunk(World, ChunkX, ChunkY, ChunkZ, WorldAllocator);
 				if(Chunk)
 				{
-					if(!Chunk->IsRecentlyUsed)
+					if(Chunk->IsSetupBlocks && !Chunk->IsFullySetup)
 					{
-						Chunk->IsRecentlyUsed = true;
-						World->RecentlyUsedCount++;
+						SetupChunkVertices(World, Chunk);
 					}
 
-					if(!Chunk->IsSetup)
-					{
-						bool32 DEBUGEmptyChunk = (ChunkY == MAX_CHUNKS_Y);
-						SetupChunk(World, Chunk, WorldAllocator, DEBUGEmptyChunk);
-					}
-
-					if(Chunk->IsSetup && !Chunk->IsLoaded)
+					if(Chunk->IsFullySetup && !Chunk->IsLoaded)
 					{
 						LoadChunk(Chunk);
 					}
 
-					if(Chunk->IsSetup && Chunk->IsLoaded && Chunk->IsNotEmpty)
+					if(Chunk->IsFullySetup && Chunk->IsLoaded && Chunk->IsNotEmpty)
 					{
 						world_position ChunkPosition = { ChunkX, ChunkY, ChunkZ, vec3(0.0f, 0.0f, 0.0f) };
 						Chunk->Translation =  Substract(World, &ChunkPosition, &Origin);

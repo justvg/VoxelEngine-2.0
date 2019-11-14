@@ -161,15 +161,19 @@ FreeDynamicArray(dynamic_array_vec3 *Array)
 	Array->EntriesCount = 0;
 }
 
-internal void
-AddQuad(dynamic_array_vec3 *Array, vec3 A, vec3 B, vec3 C, vec3 D)
+inline void
+AddTriangle(dynamic_array_vec3 *Array, vec3 A, vec3 B, vec3 C)
 {
 	PushEntry(Array, A);
 	PushEntry(Array, B);
 	PushEntry(Array, C);
-	PushEntry(Array, C);
-	PushEntry(Array, B);
-	PushEntry(Array, D);
+}
+
+inline void
+AddQuad(dynamic_array_vec3 *Array, vec3 A, vec3 B, vec3 C, vec3 D)
+{
+	AddTriangle(Array, A, B, C);
+	AddTriangle(Array, C, B, D);
 }
 
 #include "voxel_engine_asset.h"
