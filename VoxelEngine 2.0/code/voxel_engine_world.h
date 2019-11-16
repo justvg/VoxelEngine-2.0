@@ -1,6 +1,7 @@
 #pragma once
 
 #define CHUNK_DIM 32
+#define MIN_CHUNKS_Y -1
 #define MAX_CHUNKS_Y 3
 #define IsBlockActive(Blocks, X, Y, Z) ((Blocks[(Z)*CHUNK_DIM*CHUNK_DIM + (Y)*CHUNK_DIM + (X)]).Active) 
 
@@ -54,6 +55,9 @@ struct chunk
 	chunk *Next;
 };
 
+#define MAX_CHUNKS_TO_SETUP_BLOCKS 8
+#define MAX_CHUNKS_TO_SETUP_FULLY 8
+#define MAX_CHUNKS_TO_LOAD 8
 struct world
 {
 	r32 ChunkDimInMeters;
@@ -68,7 +72,37 @@ struct world
 
 	// NOTE(georgy): Must be a power of 2!
 	chunk *ChunkHash[4096];
+
+	u32 Lock;
+
+	u32 ChunksToSetupBlocksThisFrameCount; 
+	chunk *ChunksToSetupBlocks[MAX_CHUNKS_TO_SETUP_BLOCKS];
+
+	u32 ChunksToSetupFullyThisFrameCount; 
+	chunk *ChunksToSetupFully[MAX_CHUNKS_TO_SETUP_FULLY];
+
+	u32 ChunksToLoadThisFrameCount;
+	chunk *ChunksToLoad[MAX_CHUNKS_TO_LOAD];
 };
+
+inline void
+BeginWorldLock(world *World)
+{
+	for(;;)
+	{
+		if(AtomicCompareExchangeU32(&World->Lock, 1, 0) == 0)
+		{
+			break;
+		}
+	}
+}
+
+inline void
+EndWorldLock(world *World)
+{
+	CompletePreviousWritesBeforeFutureWrites;
+	World->Lock = 0;
+}
 
 struct world_position
 {

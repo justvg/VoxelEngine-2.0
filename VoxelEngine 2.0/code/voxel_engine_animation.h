@@ -16,6 +16,7 @@ enum character_bone_id
 enum character_animation_type
 {
 	CharacterAnimation_Null,
+
 	CharacterAnimation_Idle,
 	CharacterAnimation_Run,
 	CharacterAnimation_Jump,
@@ -55,7 +56,7 @@ GetBoneForEntity(animation *Animations, entity_animation_state *EntityAnimationS
 		animation *Animation = Animations + EntityAnimationState->Type;
 
 		r32 DurationInSeconds = Animation->DurationInSeconds;
-		r32 TimeInAnimation = (r32)Real64Modulo(EntityAnimationState->Time, DurationInSeconds);
+		r32 TimeInAnimation = Real32Modulo(EntityAnimationState->Time, DurationInSeconds);
 
 		u32 FirstKeyFrameIndex = 0;
 		for(u32 KeyFrameIndex = 0;

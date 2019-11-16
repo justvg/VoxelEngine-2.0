@@ -1,5 +1,12 @@
 #pragma once
 
+struct move_spec
+{
+	vec3 ddP;
+	r32 Speed;
+	r32 Drag;
+};
+
 enum entity_type
 {
 	EntityType_Null,

@@ -77,9 +77,12 @@ AddEntity(game_state *GameState, sim_region *SimRegion, stored_entity *StoredEnt
 }
 
 internal sim_region *
-BeginSimulation(game_state *GameState, world *World, world_position Origin, vec3 OriginForward, rect3 Bounds, 
-				stack_allocator *WorldAllocator, stack_allocator *TempAllocator, r32 dt)
+BeginSimulation(game_state *GameState, world_position Origin, vec3 OriginForward, 
+				rect3 Bounds, stack_allocator *TempAllocator, r32 dt)
 {
+	world *World = &GameState->World;
+	stack_allocator *WorldAllocator = &GameState->WorldAllocator;
+
 	sim_region *SimRegion = PushStruct(TempAllocator, sim_region);
 	SimRegion->World = World;
 	SimRegion->Origin = Origin;
@@ -94,15 +97,16 @@ BeginSimulation(game_state *GameState, world *World, world_position Origin, vec3
 	
 	SimRegion->MaxEntityCount = 4096;
 	SimRegion->EntityCount = 0;
-	SimRegion->Entities = PushArray(TempAllocator, SimRegion->MaxEntityCount, sim_entity, 16);
+	SimRegion->Entities = PushArray(TempAllocator, SimRegion->MaxEntityCount, sim_entity);
 
 	ZeroArray(SimRegion->Hash, ArrayCount(SimRegion->Hash));
 
 	world_position MinChunkP = MapIntoChunkSpace(World, &Origin, Bounds.Min);
-	MinChunkP.ChunkY = -1;
+	MinChunkP.ChunkY = MIN_CHUNKS_Y;
 	world_position MaxChunkP = MapIntoChunkSpace(World, &Origin, Bounds.Max);
 	MaxChunkP.ChunkY = MAX_CHUNKS_Y;
 
+	// NOTE(georgy): We add one extra boundary in Z and X to have ambient occlusion in all visible chunks
 	for(i32 ChunkZ = MinChunkP.ChunkZ - 1;
 		ChunkZ <= MaxChunkP.ChunkZ + 1;
 		ChunkZ++)
@@ -124,75 +128,65 @@ BeginSimulation(game_state *GameState, world *World, world_position Origin, vec3
 						World->RecentlyUsedCount++;
 					}
 
-					if(!Chunk->IsSetupBlocks)
+					if((World->ChunksToSetupBlocksThisFrameCount < MAX_CHUNKS_TO_SETUP_BLOCKS) && 
+					   (!Chunk->IsSetupBlocks))
 					{
-						bool32 DEBUGEmptyChunk = (ChunkY == MAX_CHUNKS_Y);
-						SetupChunkBlocks(World, Chunk, WorldAllocator, DEBUGEmptyChunk);
-					}
-				}
-			}
-		}
-	}
-
-	for(i32 ChunkZ = MinChunkP.ChunkZ;
-		ChunkZ <= MaxChunkP.ChunkZ;
-		ChunkZ++)
-	{
-		for(i32 ChunkY = MinChunkP.ChunkY;
-			ChunkY <= MaxChunkP.ChunkY;
-			ChunkY++)
-		{
-			for(i32 ChunkX = MinChunkP.ChunkX;
-				ChunkX <= MaxChunkP.ChunkX;
-				ChunkX++)
-			{
-				chunk *Chunk = GetChunk(World, ChunkX, ChunkY, ChunkZ, WorldAllocator);
-				if(Chunk)
-				{
-					if(Chunk->IsSetupBlocks && !Chunk->IsFullySetup)
-					{
-						SetupChunkVertices(World, Chunk);
+						World->ChunksToSetupBlocks[World->ChunksToSetupBlocksThisFrameCount++] = Chunk;
 					}
 
-					if(Chunk->IsFullySetup && !Chunk->IsLoaded)
+					if((ChunkX > MinChunkP.ChunkX - 1) && (ChunkX < MaxChunkP.ChunkX + 1) &&
+					   (ChunkZ > MinChunkP.ChunkZ - 1) && (ChunkZ < MaxChunkP.ChunkZ + 1))
 					{
-						LoadChunk(Chunk);
-					}
-
-					if(Chunk->IsFullySetup && Chunk->IsLoaded && Chunk->IsNotEmpty)
-					{
-						world_position ChunkPosition = { ChunkX, ChunkY, ChunkZ, vec3(0.0f, 0.0f, 0.0f) };
-						Chunk->Translation =  Substract(World, &ChunkPosition, &Origin);
-
-						// TODO(georgy): This is kind of cheesy pre-frustum culling. Think about it!
-						if(!((Length(vec3(Chunk->Translation.x(), 0.0f, Chunk->Translation.z())) > 3.0f*World->ChunkDimInMeters) &&
-							(Dot(Chunk->Translation, OriginForward) < -0.25f)))
+						if(Chunk->IsNotEmpty)
 						{
-							chunk *ChunkToRender = PushStruct(TempAllocator, chunk);
-							*ChunkToRender = *Chunk;
-							ChunkToRender->LengthSqTranslation = LengthSq(ChunkToRender->Translation);
-							ChunkToRender->Next = World->ChunksToRender;
-							World->ChunksToRender = ChunkToRender;
-						}
-					}
+							if((World->ChunksToSetupFullyThisFrameCount < MAX_CHUNKS_TO_SETUP_FULLY) && 
+								Chunk->IsSetupBlocks && !Chunk->IsFullySetup && CanSetupAO(World, Chunk, WorldAllocator))
+							{
+								World->ChunksToSetupFully[World->ChunksToSetupFullyThisFrameCount++] = Chunk;
+							}
 
-					for(world_entity_block *Block = &Chunk->FirstEntityBlock;
+							if((World->ChunksToLoadThisFrameCount < MAX_CHUNKS_TO_LOAD) && 
+								Chunk->IsFullySetup && !Chunk->IsLoaded)
+							{
+								World->ChunksToLoad[World->ChunksToLoadThisFrameCount++] = Chunk;
+							}
+
+							if(Chunk->IsFullySetup && Chunk->IsLoaded)
+							{
+								world_position ChunkPosition = { ChunkX, ChunkY, ChunkZ, vec3(0.0f, 0.0f, 0.0f) };
+								Chunk->Translation =  Substract(World, &ChunkPosition, &Origin);
+
+								// TODO(georgy): This is kind of cheesy pre-frustum culling. Think about it!
+								if(!((Length(vec3(Chunk->Translation.x(), 0.0f, Chunk->Translation.z())) > 3.0f*World->ChunkDimInMeters) &&
+									(Dot(Chunk->Translation, OriginForward) < -0.25f)))
+								{
+									chunk *ChunkToRender = PushStruct(TempAllocator, chunk);
+									*ChunkToRender = *Chunk;
+									ChunkToRender->LengthSqTranslation = LengthSq(ChunkToRender->Translation);
+									ChunkToRender->Next = World->ChunksToRender;
+									World->ChunksToRender = ChunkToRender;
+								}
+							}
+						}
+
+						for(world_entity_block *Block = &Chunk->FirstEntityBlock;
 						Block;
 						Block = Block->Next)
-					{
-						for(u32 EntityIndexInBlock = 0;
-							EntityIndexInBlock < Block->StoredEntityCount;
-							EntityIndexInBlock++)
 						{
-							u32 StoredEntityIndex = Block->StoredEntityIndex[EntityIndexInBlock];
-							stored_entity *StoredEntity = GameState->StoredEntities + StoredEntityIndex;
-							if(!IsSet(&StoredEntity->Sim, EntityFlag_NonSpatial))
+							for(u32 EntityIndexInBlock = 0;
+								EntityIndexInBlock < Block->StoredEntityCount;
+								EntityIndexInBlock++)
 							{
-								vec3 SimSpaceP = Substract(World, &StoredEntity->P, &Origin);
-								rect3 EntityAABB = RectCenterDim(SimSpaceP + StoredEntity->Sim.Collision->OffsetP, StoredEntity->Sim.Collision->Dim);
-								if(RectIntersect(SimRegion->Bounds, EntityAABB))
+								u32 StoredEntityIndex = Block->StoredEntityIndex[EntityIndexInBlock];
+								stored_entity *StoredEntity = GameState->StoredEntities + StoredEntityIndex;
+								if(!IsSet(&StoredEntity->Sim, EntityFlag_NonSpatial))
 								{
-									AddEntity(GameState, SimRegion, StoredEntity, SimSpaceP);
+									vec3 SimSpaceP = Substract(World, &StoredEntity->P, &Origin);
+									rect3 EntityAABB = RectCenterDim(SimSpaceP + StoredEntity->Sim.Collision->OffsetP, StoredEntity->Sim.Collision->Dim);
+									if(RectIntersect(SimRegion->Bounds, EntityAABB))
+									{
+										AddEntity(GameState, SimRegion, StoredEntity, SimSpaceP);
+									}
 								}
 							}
 						}
@@ -203,7 +197,7 @@ BeginSimulation(game_state *GameState, world *World, world_position Origin, vec3
 	}
 
 	// TODO(georgy): Need more accurate value for this! Profile! Can be based upon sim region bounds!
-#define MAX_CHUNKS_IN_MEMORY 1024
+#define MAX_CHUNKS_IN_MEMORY 4096
 	if(World->RecentlyUsedCount >= MAX_CHUNKS_IN_MEMORY)
 	{
 		UnloadChunks(World, &MinChunkP, &MaxChunkP);
@@ -215,8 +209,6 @@ BeginSimulation(game_state *GameState, world *World, world_position Origin, vec3
 internal void
 EndSimulation(game_state *GameState, sim_region *SimRegion, stack_allocator *WorldAllocator)
 {
-	SimRegion->World->ChunksToRender = 0;			
-
 	for(u32 EntityIndex = 0;
 		EntityIndex < SimRegion->EntityCount;
 		EntityIndex++)
@@ -500,12 +492,16 @@ HandleCollision(game_state *GameState, sim_entity *EntityA, sim_entity *EntityB,
 {
 	bool32 Result;
 
-	if(EntityA->Type == EntityType_Fireball)
+	if(A == EntityType_Fireball)
 	{
 		if(EntityB)
 		{
 			AddCollisionRule(GameState, EntityA->StorageIndex, EntityB->StorageIndex, false);
 		}
+	}
+
+	if((A == EntityType_Fireball) || (B == EntityType_Fireball))
+	{
 		Result = false;
 	}
 	else
@@ -547,7 +543,7 @@ struct collided_chunk_info
 	vec3 Min, Max;
 };
 internal void
-MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec3 ddP, r32 Drag, r32 dt, bool32 Gravity)
+MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, move_spec MoveSpec, r32 dt, bool32 Gravity)
 {
 	mat3 EllipsoidToWorld = Rotate3x3(Entity->Rotation, vec3(0.0f, 1.0f, 0.0f)) * 
 							Scale3x3(0.5f*Entity->Collision->Dim);
@@ -556,28 +552,28 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 
 	if(Gravity)
 	{
-		ddP = vec3(0.0f, -9.8f, 0.0f);
+		MoveSpec.ddP = vec3(0.0f, -9.8f, 0.0f);
 	}
 	else
 	{
-		r32 ddPLength = LengthSq(ddP);
+		r32 ddPLength = LengthSq(MoveSpec.ddP);
 		if(ddPLength > 1.0f)
 		{
-			ddP = Normalize(ddP);
+			MoveSpec.ddP = Normalize(MoveSpec.ddP);
 		}
-		ddP *= 8.0f;
-		vec3 DragV = -Drag*Entity->dP;
+		MoveSpec.ddP *= MoveSpec.Speed;
+		vec3 DragV = -MoveSpec.Drag*Entity->dP;
 		DragV.SetY(0.0f);
-		ddP += DragV;
+		MoveSpec.ddP += DragV;
 	}
 
 	vec3 CollisionVolumeDisplacement = Entity->Collision->OffsetP;
 	vec3 CollisionEntityP = Entity->P + CollisionVolumeDisplacement;
 	vec3 OldP = CollisionEntityP;
-	vec3 DesiredP = (0.5f*ddP*dt*dt) + (Entity->dP*dt) + CollisionEntityP;
+	vec3 DesiredP = (0.5f*MoveSpec.ddP*dt*dt) + (Entity->dP*dt) + CollisionEntityP;
 
 	vec3 EntityDelta = DesiredP - CollisionEntityP;
-	Entity->dP += ddP*dt;
+	Entity->dP += MoveSpec.ddP*dt;
 
 	// NOTE(georgy): Collision broad phase
 	stored_entity *StoredEntity = GameState->StoredEntities + Entity->StorageIndex;
@@ -685,7 +681,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 			vec3 NormalizedESpaceEntityDelta = Normalize(ESpaceEntityDelta);
 			r32 t = 1.0f;
 			r32 EntityDeltaLengthWorld = Length((EllipsoidToWorld * ESpaceEntityDelta));
-			if(EntityDeltaLength > DistanceRemaining)
+			if(EntityDeltaLengthWorld > DistanceRemaining)
 			{
 				t = DistanceRemaining / EntityDeltaLengthWorld;
 			}
@@ -736,24 +732,21 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, vec
 				CollisionEntityIndex++)
 			{
 				sim_entity *TestEntity = CollideEntities[CollisionEntityIndex];
-				if(CanCollide(GameState, Entity, TestEntity))
+				vec3 Displacement = TestEntity->Collision->OffsetP;
+				mat3 TestEntityTransformation = Rotate3x3(TestEntity->Rotation, vec3(0.0f, 1.0f, 0.0f));
+				for(u32 TriangleIndex = 0;
+					TriangleIndex < (TestEntity->Collision->VerticesP.EntriesCount / 3);
+					TriangleIndex++)
 				{
-					for(u32 TriangleIndex = 0;
-						TriangleIndex < (TestEntity->Collision->VerticesP.EntriesCount / 3);
-						TriangleIndex++)
-					{
-						mat3 TestEntityTransformation = Rotate3x3(TestEntity->Rotation, vec3(0.0f, 1.0f, 0.0f));
-						vec3 Displacement = TestEntity->Collision->OffsetP;
-						vec3 P1 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3]) + TestEntity->P + Displacement;
-						vec3 P2 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3 + 1]) + TestEntity->P + Displacement;
-						vec3 P3 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3 + 2]) + TestEntity->P + Displacement;
+					vec3 P1 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3]) + TestEntity->P + Displacement;
+					vec3 P2 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3 + 1]) + TestEntity->P + Displacement;
+					vec3 P3 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3 + 2]) + TestEntity->P + Displacement;
 
-						if(NarrowPhaseCollisionDetection(P1, P2, P3, WorldToEllipsoid, NormalizedESpaceEntityDelta,
-														ESpaceP, ESpaceEntityDelta, &t, &CollisionP))
-						{
-							HitEntity = TestEntity;
-							HitEntityType = HitEntity->Type;
-						}
+					if(NarrowPhaseCollisionDetection(P1, P2, P3, WorldToEllipsoid, NormalizedESpaceEntityDelta,
+													ESpaceP, ESpaceEntityDelta, &t, &CollisionP))
+					{
+						HitEntity = TestEntity;
+						HitEntityType = HitEntity->Type;
 					}
 				}
 			}

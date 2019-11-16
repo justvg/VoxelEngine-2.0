@@ -2,14 +2,12 @@
 #include <gl\glew.h>
 #include <gl\wglew.h>
 
-#include <Windows.h>
-#include <timeapi.h>
-#include <stdio.h>
-
 #include "voxel_engine_platform.h"
 #include "voxel_engine.hpp"
 
-
+#include <Windows.h>
+#include <timeapi.h>
+#include <stdio.h>
 
 global_variable bool8 GlobalRunning;
 global_variable bool8 GlobalCursorShouldBeClipped;
@@ -453,14 +451,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					GetWindowRect(Window, &WindowRect);
 					LONG WindowRectHeight = WindowRect.bottom - WindowRect.top;
 					LONG WindowRectWidth = WindowRect.right - WindowRect.left;
-					GetClientRect(Window, &ClientRect);
-					LONG ClientRectHeight = ClientRect.bottom - ClientRect.top;
-					LONG ClientRectWidth = ClientRect.right - ClientRect.left;
-					LONG DiffHeight = WindowRectHeight - ClientRectHeight;
-					LONG DiffWidth = WindowRectWidth - ClientRectWidth;
-					WindowRect.top += DiffHeight;
-					WindowRect.left += DiffWidth / 2;
-					WindowRect.right -= DiffWidth / 2;
+					WindowRect.top = WindowRect.bottom = WindowRect.top + WindowRectHeight/2;
+					WindowRect.left = WindowRect.right = WindowRect.left + WindowRectWidth/2;
 					ClipCursor(&WindowRect);
 				}
 				else

@@ -376,7 +376,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 	r32 HeadRadians = DEG2RAD(Camera->Head);
 	r32 HorizontalDistanceFromHero = Camera->DistanceFromHero*Cos(-PitchRadians);
 	r32 XOffsetFromHero = -HorizontalDistanceFromHero * Sin(HeadRadians);
-	r32 YOffsetFromHero = Camera->DistanceFromHero*Sin(-PitchRadians);
+	r32 YOffsetFromHero = Camera->DistanceFromHero * Sin(-PitchRadians);
 	r32 ZOffsetFromHero = HorizontalDistanceFromHero * Cos(HeadRadians);
 	Camera->OffsetFromHero = vec3(XOffsetFromHero, YOffsetFromHero, ZOffsetFromHero);
 
@@ -442,11 +442,16 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		GameState->Hero.AdditionalRotation = Theta;
 	}
 	
-	temporary_memory RenderMemory = BeginTemporaryMemory(&TempState->Allocator);
+	
+	temporary_memory WorldConstructionAndRenderMemory = BeginTemporaryMemory(&TempState->Allocator);
 
 	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-100.0f, -20.0f, -100.0f), vec3(100.0f, 20.0f, 100.0f));
-	sim_region *SimRegion = BeginSimulation(GameState, &GameState->World, GameState->Hero.Entity->P, Forward, SimRegionUpdatableBounds, 
-											&GameState->WorldAllocator, &TempState->Allocator, Input->dt);											
+	sim_region *SimRegion = BeginSimulation(GameState, GameState->Hero.Entity->P, Forward, 
+											SimRegionUpdatableBounds, &TempState->Allocator, Input->dt);			
+
+	SetupChunksBlocks(&GameState->World, &GameState->WorldAllocator, TempState);								
+	SetupChunksVertices(&GameState->World, TempState);
+	LoadChunks(&GameState->World);
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -466,14 +471,14 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 		{
 			UseShader(GameState->WorldShader);	
 			
-			vec3 ddP = {};
-			r32 Drag = 0.0f;
+			move_spec MoveSpec = {};
 			switch(Entity->Type)
 			{
 				case EntityType_Hero:
 				{
-					ddP = GameState->Hero.ddP;
-					Drag = 2.0f;
+					MoveSpec.ddP = GameState->Hero.ddP;
+					MoveSpec.Speed = 8.0f;
+					MoveSpec.Drag = 2.0f;
 					if(GameState->Hero.dY && IsSet(Entity, EntityFlag_OnGround))
 					{
 						Entity->dP.SetY(GameState->Hero.dY);
@@ -493,7 +498,6 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 						}
 					}
 
-					// TODO(georgy): I don't like this switch and so on. Make this code "beautiful"!
 					r32 AnimationTimeStep = 0.0f;
 					character_animation_type DesiredAnimation = CharacterAnimation_Idle;
 					if(Length(vec3(Entity->dP.x(), 0.0f, Entity->dP.z())) > 0.12f)
@@ -505,46 +509,18 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 						DesiredAnimation = CharacterAnimation_Jump;
 					}
 
-					switch(DesiredAnimation)
+					if(Entity->AnimationState.Type != DesiredAnimation)
 					{
-						case CharacterAnimation_Run:
+						Entity->AnimationState.Type = DesiredAnimation;
+						Entity->AnimationState.Time = 0.0f;
+					}
+					else
+					{
+						AnimationTimeStep = dt;
+						if(Entity->AnimationState.Type == CharacterAnimation_Run)
 						{
-							if(Entity->AnimationState.Type != CharacterAnimation_Run)
-							{
-								Entity->AnimationState.Type = CharacterAnimation_Run;
-								Entity->AnimationState.Time = 0.0f;
-							}
-							else
-							{
-								AnimationTimeStep = 2.0f*Length(vec3(Entity->dP.x(), 0.0f, Entity->dP.z()))*Input->dt;
-							}
-						} break;
-
-						case CharacterAnimation_Jump:
-						{
-							if(Entity->AnimationState.Type != CharacterAnimation_Jump)
-							{
-								Entity->AnimationState.Type = CharacterAnimation_Jump;
-								Entity->AnimationState.Time = 0.0f;
-							}
-							else
-							{
-								AnimationTimeStep = Input->dt;
-							}
-						} break;
-
-						case CharacterAnimation_Idle:
-						{
-							if(Entity->AnimationState.Type != CharacterAnimation_Idle)
-							{
-								Entity->AnimationState.Type = CharacterAnimation_Idle;	
-								Entity->AnimationState.Time = 0.0f;
-							}
-							else
-							{
-								AnimationTimeStep = Input->dt;
-							}
-						} break;
+							AnimationTimeStep = 2.0f*Length(vec3(Entity->dP.x(), 0.0f, Entity->dP.z()))*dt;
+						}
 					}
 
 					Entity->AnimationState.Time += AnimationTimeStep;
@@ -574,10 +550,10 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 			if(IsSet(Entity, EntityFlag_Moveable) && !IsSet(Entity, EntityFlag_NonSpatial))
 			{
-				MoveEntity(GameState, SimRegion, Entity, ddP, Drag, dt, false);
+				MoveEntity(GameState, SimRegion, Entity, MoveSpec, dt, false);
 				if(IsSet(Entity, EntityFlag_GravityAffected))
 				{
-					MoveEntity(GameState, SimRegion, Entity, ddP, Drag, dt, true);
+					MoveEntity(GameState, SimRegion, Entity, MoveSpec, dt, true);
 				}
 			}
 
@@ -677,7 +653,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 	RenderChunks(&GameState->World, GameState->WorldShader, ViewProjection);
 
 	EndSimulation(GameState, SimRegion, &GameState->WorldAllocator);
-	EndTemporaryMemory(RenderMemory);
+	EndTemporaryMemory(WorldConstructionAndRenderMemory);
 
 	UnloadAssetsIfNecessary(TempState->GameAssets);
 }

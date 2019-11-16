@@ -9,6 +9,9 @@ InitializeWorld(world *World)
 	World->ChunksToRender = 0;
 	World->FirstFreeChunkBlocksInfo = 0;
 	World->FirstFreeWorldEntityBlock = 0;
+	World->Lock = 0;
+	World->ChunksToSetupBlocksThisFrameCount = 0;
+	World->ChunksToSetupFullyThisFrameCount = 0;
 }
 
 internal chunk *
@@ -178,20 +181,30 @@ VertexAO(bool32 Side1, bool32 Side2, bool32 Corner)
 	return(Result);
 }
 
-
-// TODO(georgy): Should I use EBO here??
-internal void
-SetupChunkBlocks(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bool32 DEBUGEmptyChunk)
+struct setup_chunk_blocks_job
 {
+	world *World;
+	chunk *Chunk;
+	stack_allocator *WorldAllocator;
+};
+internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
+{
+	setup_chunk_blocks_job *Job = (setup_chunk_blocks_job *)Data;
+	world *World = Job->World;
+	chunk *Chunk = Job->Chunk;
+	stack_allocator *WorldAllocator = Job->WorldAllocator;
+
 	Chunk->IsSetupBlocks = true;
 	Chunk->IsNotEmpty = false;
-
+	
+	BeginWorldLock(World);
 	if(!World->FirstFreeChunkBlocksInfo)
 	{
 		World->FirstFreeChunkBlocksInfo = PushStruct(WorldAllocator, chunk_blocks_info);
 	}
 	Chunk->BlocksInfo = World->FirstFreeChunkBlocksInfo;
 	World->FirstFreeChunkBlocksInfo = World->FirstFreeChunkBlocksInfo->Next;
+	EndWorldLock(World);
 
 	ZeroSize(Chunk->BlocksInfo, sizeof(chunk_blocks_info));
 
@@ -326,8 +339,74 @@ SetupChunkBlocks(world *World, chunk *Chunk, stack_allocator *WorldAllocator, bo
 }
 
 internal void
-SetupChunkVertices(world *World, chunk *Chunk)
+SetupChunksBlocks(world *World, stack_allocator *WorldAllocator, temp_state *TempState)
 {
+	for(u32 ChunkIndex = 0;
+		ChunkIndex < World->ChunksToSetupBlocksThisFrameCount;
+		ChunkIndex++)
+	{
+		setup_chunk_blocks_job *Job = PushStruct(&TempState->Allocator, setup_chunk_blocks_job);
+		Job->World = World;
+		Job->Chunk = World->ChunksToSetupBlocks[ChunkIndex];
+		Job->WorldAllocator = WorldAllocator;
+
+		PlatformAddEntry(TempState->JobSystemQueue, SetupChunkBlocks, Job);
+	}
+	
+	PlatformCompleteAllWork(TempState->JobSystemQueue);
+
+	World->ChunksToSetupBlocksThisFrameCount = 0;
+}
+
+internal bool32
+CanSetupAO(world *World, chunk *Chunk, stack_allocator *WorldAllocator)
+{
+	bool32 Result;
+	bool32 ChunkMinY = (Chunk->Y == MIN_CHUNKS_Y);
+	bool32 ChunkMaxY = (Chunk->Y == MAX_CHUNKS_Y);
+
+	Result = GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+
+	return(Result);
+}
+
+// TODO(georgy): Should I use EBO here??
+struct setup_chunk_vertices_job
+{
+	world *World;
+	chunk *Chunk;
+};
+internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkVertices)
+{
+	setup_chunk_vertices_job *Job = (setup_chunk_vertices_job *)Data;
+	world *World = Job->World;
+	chunk *Chunk = Job->Chunk;
+
 	Chunk->IsFullySetup = true;
 
 	InitializeDynamicArray(&Chunk->VerticesP);
@@ -633,6 +712,25 @@ SetupChunkVertices(world *World, chunk *Chunk)
 }
 
 internal void
+SetupChunksVertices(world *World, temp_state *TempState)
+{
+	for(u32 ChunkIndex = 0;
+		ChunkIndex < World->ChunksToSetupFullyThisFrameCount;
+		ChunkIndex++)
+	{
+		setup_chunk_vertices_job *Job = PushStruct(&TempState->Allocator, setup_chunk_vertices_job);
+		Job->World = World;
+		Job->Chunk = World->ChunksToSetupFully[ChunkIndex];
+
+		PlatformAddEntry(TempState->JobSystemQueue, SetupChunkVertices, Job);
+	}
+	
+	PlatformCompleteAllWork(TempState->JobSystemQueue);
+
+	World->ChunksToSetupFullyThisFrameCount = 0;
+}
+
+internal void
 LoadChunk(chunk *Chunk)
 {
 	Chunk->IsLoaded = true;
@@ -655,6 +753,19 @@ LoadChunk(chunk *Chunk)
 	glEnableVertexAttribArray(2);
 	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
 	glBindVertexArray(0);
+}
+
+internal void
+LoadChunks(world *World)
+{
+	for(u32 ChunkIndex = 0;
+		ChunkIndex < World->ChunksToLoadThisFrameCount;
+		ChunkIndex++)
+	{
+		LoadChunk(World->ChunksToLoad[ChunkIndex]);
+	}
+	
+	World->ChunksToLoadThisFrameCount = 0;
 }
 
 internal void
@@ -706,12 +817,10 @@ UnloadChunks(world *World, world_position *MinChunkP, world_position *MaxChunkP)
 		{
 			if(Chunk->IsRecentlyUsed)
 			{
-				if(Chunk->X < (MinChunkP->ChunkX - 2) ||
-				   Chunk->Y < (MinChunkP->ChunkY - 2) ||
-				   Chunk->Z < (MinChunkP->ChunkZ - 2) ||
-				   Chunk->X > (MaxChunkP->ChunkX + 2) ||
-				   Chunk->Y > (MaxChunkP->ChunkY + 2) ||
-				   Chunk->Z > (MaxChunkP->ChunkZ + 2))
+				if(Chunk->X < (MinChunkP->ChunkX - 4) ||
+				   Chunk->Z < (MinChunkP->ChunkZ - 4) ||
+				   Chunk->X > (MaxChunkP->ChunkX + 4) ||
+				   Chunk->Z > (MaxChunkP->ChunkZ + 4))
 				{
 					Chunk->IsRecentlyUsed = false;
 					ChunksUnloaded++;
@@ -886,6 +995,8 @@ RenderChunks(world *World, shader Shader, mat4 VP)
 			DrawFromVAO(Chunk->VAO, Chunk->VerticesP.EntriesCount);
 		}
 	}
+
+	World->ChunksToRender = 0;			
 }
 
 inline vec3

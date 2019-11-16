@@ -1012,15 +1012,6 @@ Real32Modulo(r32 Numerator, r32 Denominator)
 	return(Result);
 }
 
-inline r64 
-Real64Modulo(r64 Numerator, r64 Denominator)
-{
-	r64 Coeff = (r64)(i64)(Numerator/Denominator);
-	r64 Result = Numerator - (Coeff*Denominator);
-
-	return(Result);
-}
-
 // 
 // NOTE(georgy): box (rect3 but with 8 vertices)
 // 
@@ -1029,23 +1020,6 @@ struct box
 {
 	vec3 Points[8];
 };
-
-internal box __vectorcall
-ConstructBoxDim(vec3 Dim)
-{
-	box Result;
-
-	Result.Points[0] = -0.5f*Dim;
-	Result.Points[1] = Result.Points[0] + vec3(0.0f, Dim.y(), 0.0f);
-	Result.Points[2] = Result.Points[0] + vec3(0.0f, 0.0f, Dim.z());
-	Result.Points[3] = Result.Points[0] + vec3(0.0f, Dim.y(), Dim.z());
-	Result.Points[4] = Result.Points[0] + vec3(Dim.x(), 0.0f, 0.0f);
-	Result.Points[5] = Result.Points[0] + vec3(Dim.x(), Dim.y(), 0.0f);
-	Result.Points[6] = Result.Points[0] + vec3(Dim.x(), 0.0f, Dim.z());
-	Result.Points[7] = Result.Points[0] + vec3(Dim.x(), Dim.y(), Dim.z());
-
-	return(Result);
-}
 
 internal box __vectorcall
 ConstructBoxMinDim(vec3 Min, vec3 Dim)
@@ -1063,6 +1037,15 @@ ConstructBoxMinDim(vec3 Min, vec3 Dim)
 
 	return(Result);
 }
+
+internal box __vectorcall
+ConstructBoxDim(vec3 Dim)
+{
+	box Result = ConstructBoxMinDim(-0.5f*Dim, Dim);
+
+	return(Result);
+}
+
 
 internal box __vectorcall
 ConstructBox(box *Box, mat3 Transformation, vec3 Translation = vec3(0.0f, 0.0f, 0.0f))
@@ -1084,14 +1067,7 @@ ConstructBox(box *Box, mat3 Transformation, vec3 Translation = vec3(0.0f, 0.0f, 
 internal void __vectorcall
 TransformBox(box *Box, mat3 Transformation, vec3 Translation = vec3(0.0f, 0.0f, 0.0f))
 {
-	Box->Points[0] = Translation + Transformation * Box->Points[0];
-	Box->Points[1] = Translation + Transformation * Box->Points[1];
-	Box->Points[2] = Translation + Transformation * Box->Points[2];
-	Box->Points[3] = Translation + Transformation * Box->Points[3];
-	Box->Points[4] = Translation + Transformation * Box->Points[4];
-	Box->Points[5] = Translation + Transformation * Box->Points[5];
-	Box->Points[6] = Translation + Transformation * Box->Points[6];
-	Box->Points[7] = Translation + Transformation * Box->Points[7];
+	*Box = ConstructBox(Box, Transformation, Translation);
 }
 
 //
