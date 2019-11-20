@@ -137,55 +137,55 @@ BeginSimulation(game_state *GameState, world_position Origin, vec3 OriginForward
 					if((ChunkX > MinChunkP.ChunkX - 1) && (ChunkX < MaxChunkP.ChunkX + 1) &&
 					   (ChunkZ > MinChunkP.ChunkZ - 1) && (ChunkZ < MaxChunkP.ChunkZ + 1))
 					{
-						if(Chunk->IsNotEmpty)
+						if((World->ChunksToSetupFullyThisFrameCount < MAX_CHUNKS_TO_SETUP_FULLY) && 
+							Chunk->IsSetupBlocks && !Chunk->IsFullySetup && CanSetupAO(World, Chunk, WorldAllocator))
 						{
-							if((World->ChunksToSetupFullyThisFrameCount < MAX_CHUNKS_TO_SETUP_FULLY) && 
-								Chunk->IsSetupBlocks && !Chunk->IsFullySetup && CanSetupAO(World, Chunk, WorldAllocator))
-							{
-								World->ChunksToSetupFully[World->ChunksToSetupFullyThisFrameCount++] = Chunk;
-							}
+							World->ChunksToSetupFully[World->ChunksToSetupFullyThisFrameCount++] = Chunk;
+						}
 
-							if((World->ChunksToLoadThisFrameCount < MAX_CHUNKS_TO_LOAD) && 
-								Chunk->IsFullySetup && !Chunk->IsLoaded)
-							{
-								World->ChunksToLoad[World->ChunksToLoadThisFrameCount++] = Chunk;
-							}
+						if((World->ChunksToLoadThisFrameCount < MAX_CHUNKS_TO_LOAD) && 
+							Chunk->IsFullySetup && !Chunk->IsLoaded)
+						{
+							World->ChunksToLoad[World->ChunksToLoadThisFrameCount++] = Chunk;
+						}
 
-							if(Chunk->IsFullySetup && Chunk->IsLoaded)
-							{
-								world_position ChunkPosition = { ChunkX, ChunkY, ChunkZ, vec3(0.0f, 0.0f, 0.0f) };
-								Chunk->Translation =  Substract(World, &ChunkPosition, &Origin);
+						if(Chunk->IsFullySetup && Chunk->IsLoaded && Chunk->IsNotEmpty)
+						{
+							world_position ChunkPosition = { ChunkX, ChunkY, ChunkZ, vec3(0.0f, 0.0f, 0.0f) };
+							Chunk->Translation =  Substract(World, &ChunkPosition, &Origin);
 
-								// TODO(georgy): This is kind of cheesy pre-frustum culling. Think about it!
-								if(!((Length(vec3(Chunk->Translation.x(), 0.0f, Chunk->Translation.z())) > 3.0f*World->ChunkDimInMeters) &&
-									(Dot(Chunk->Translation, OriginForward) < -0.25f)))
-								{
-									chunk *ChunkToRender = PushStruct(TempAllocator, chunk);
-									*ChunkToRender = *Chunk;
-									ChunkToRender->LengthSqTranslation = LengthSq(ChunkToRender->Translation);
-									ChunkToRender->Next = World->ChunksToRender;
-									World->ChunksToRender = ChunkToRender;
-								}
+							// TODO(georgy): This is kind of cheesy pre-frustum culling. Think about it!
+							if(!((Length(vec3(Chunk->Translation.x(), 0.0f, Chunk->Translation.z())) > 3.0f*World->ChunkDimInMeters) &&
+								(Dot(Chunk->Translation, OriginForward) < -0.25f)))
+							{
+								chunk *ChunkToRender = PushStruct(TempAllocator, chunk);
+								*ChunkToRender = *Chunk;
+								ChunkToRender->LengthSqTranslation = LengthSq(ChunkToRender->Translation);
+								ChunkToRender->Next = World->ChunksToRender;
+								World->ChunksToRender = ChunkToRender;
 							}
 						}
 
-						for(world_entity_block *Block = &Chunk->FirstEntityBlock;
-						Block;
-						Block = Block->Next)
+						if(Chunk->IsFullySetup && Chunk->IsLoaded)
 						{
-							for(u32 EntityIndexInBlock = 0;
-								EntityIndexInBlock < Block->StoredEntityCount;
-								EntityIndexInBlock++)
+							for(world_entity_block *Block = &Chunk->FirstEntityBlock;
+								Block;
+								Block = Block->Next)
 							{
-								u32 StoredEntityIndex = Block->StoredEntityIndex[EntityIndexInBlock];
-								stored_entity *StoredEntity = GameState->StoredEntities + StoredEntityIndex;
-								if(!IsSet(&StoredEntity->Sim, EntityFlag_NonSpatial))
+								for(u32 EntityIndexInBlock = 0;
+									EntityIndexInBlock < Block->StoredEntityCount;
+									EntityIndexInBlock++)
 								{
-									vec3 SimSpaceP = Substract(World, &StoredEntity->P, &Origin);
-									rect3 EntityAABB = RectCenterDim(SimSpaceP + StoredEntity->Sim.Collision->OffsetP, StoredEntity->Sim.Collision->Dim);
-									if(RectIntersect(SimRegion->Bounds, EntityAABB))
+									u32 StoredEntityIndex = Block->StoredEntityIndex[EntityIndexInBlock];
+									stored_entity *StoredEntity = GameState->StoredEntities + StoredEntityIndex;
+									if(!IsSet(&StoredEntity->Sim, EntityFlag_NonSpatial))
 									{
-										AddEntity(GameState, SimRegion, StoredEntity, SimSpaceP);
+										vec3 SimSpaceP = Substract(World, &StoredEntity->P, &Origin);
+										rect3 EntityAABB = RectCenterDim(SimSpaceP + StoredEntity->Sim.Collision->OffsetP, StoredEntity->Sim.Collision->Dim);
+										if(RectIntersect(SimRegion->Bounds, EntityAABB))
+										{
+											AddEntity(GameState, SimRegion, StoredEntity, SimSpaceP);
+										}
 									}
 								}
 							}
@@ -258,22 +258,91 @@ GetLowestRoot(r32 A, r32 B, r32 C, r32 *t)
 	return(Result);
 }
 
-internal bool32
-NarrowPhaseCollisionDetection(vec3 P1, vec3 P2, vec3 P3, mat3 WorldToEllipsoid,
-							  vec3 NormalizedESpaceEntityDelta, vec3 ESpaceP, vec3 ESpaceEntityDelta,
-							  r32 *t, vec3 *CollisionP)
+struct collided_chunk_info
 {
+	chunk *Chunk;
+	vec3 Min, Max;
+};
+
+struct broad_phase_chunk_collision_detection
+{
+	u32 CollideChunksCount = 0;
+	collided_chunk_info CollideChunks[27];
+};
+internal broad_phase_chunk_collision_detection
+BroadPhaseChunkCollisionDetection(world *World, world_position WorldP, rect3 AABB)
+{
+	broad_phase_chunk_collision_detection Result = {};
+
+	for(i32 ChunkZ = WorldP.ChunkZ - 1;
+		ChunkZ <= WorldP.ChunkZ + 1;
+		ChunkZ++)
+	{
+		for(i32 ChunkY = WorldP.ChunkY - 1;
+			ChunkY <= WorldP.ChunkY + 1;
+			ChunkY++)
+		{
+			for(i32 ChunkX = WorldP.ChunkX - 1;
+				ChunkX <= WorldP.ChunkX + 1;
+				ChunkX++)
+			{
+				chunk *Chunk = GetChunk(World, ChunkX, ChunkY, ChunkZ);
+				if(Chunk)
+				{
+					r32 ChunkDimInMeters = World->ChunkDimInMeters;
+					vec3 SimSpaceChunkAABBMin = Chunk->Translation;
+					vec3 SimSpaceChunkAABBMax = SimSpaceChunkAABBMin + vec3(ChunkDimInMeters, ChunkDimInMeters, ChunkDimInMeters);
+					rect3 SimSpaceChunkAABB = RectMinMax(SimSpaceChunkAABBMin, SimSpaceChunkAABBMax);
+
+					if(RectIntersect(SimSpaceChunkAABB, AABB))
+					{
+						vec3 MinOffset = AABB.Min - SimSpaceChunkAABB.Min;
+						vec3 MaxOffset = AABB.Max - SimSpaceChunkAABB.Min;
+						Result.CollideChunks[Result.CollideChunksCount].Min = MinOffset;
+						Result.CollideChunks[Result.CollideChunksCount].Max = MaxOffset;
+
+						Result.CollideChunks[Result.CollideChunksCount++].Chunk = Chunk;
+					}
+				}
+			}	
+		}	
+	}
+
+	return(Result);
+}
+
+struct ellipsoid_triangle_collision_detection_data
+{
+	mat3 WorldToEllipsoid;
+	vec3 NormalizedESpaceEntityDelta;
+	vec3 ESpaceP;
+	vec3 ESpaceEntityDelta;
+	r32 t;
+	vec3 CollisionP;
+	entity_type HitEntityType;
+};
+
+internal bool32
+EllipsoidTriangleCollisionDetection(vec3 P1, vec3 P2, vec3 P3, ellipsoid_triangle_collision_detection_data *EllipsoidTriangleData)
+{
+	mat3 WorldToEllipsoid = EllipsoidTriangleData->WorldToEllipsoid;
+	vec3 NormalizedESpaceEntityDelta = EllipsoidTriangleData->NormalizedESpaceEntityDelta;
+	vec3 ESpaceP = EllipsoidTriangleData->ESpaceP;
+	vec3 ESpaceEntityDelta = EllipsoidTriangleData->ESpaceEntityDelta;
+	r32 *t = &EllipsoidTriangleData->t;
+	vec3 *CollisionP = &EllipsoidTriangleData->CollisionP;
+
 	bool32 Result = false;
 
 	bool32 FoundCollisionWithInsideTheTriangle = false;
-	
+
 	vec3 EP1 = WorldToEllipsoid * P1;
 	vec3 EP2 = WorldToEllipsoid * P2;
 	vec3 EP3 = WorldToEllipsoid * P3;
 
 	plane TrianglePlane = PlaneFromTriangle(EP1, EP2, EP3);
 
-	if(Dot(TrianglePlane.Normal, NormalizedESpaceEntityDelta) <= 0)
+	if (Dot(TrianglePlane.Normal, NormalizedESpaceEntityDelta) <= 0)
 	{
 		r32 t0, t1;
 		bool32 EmbeddedInPlane = false;
@@ -281,9 +350,9 @@ NarrowPhaseCollisionDetection(vec3 P1, vec3 P2, vec3 P3, mat3 WorldToEllipsoid,
 		r32 SignedDistanceToTrianglePlane = SignedDistance(TrianglePlane, ESpaceP);
 		r32 NormalDotEntityDelta = Dot(TrianglePlane.Normal, ESpaceEntityDelta);
 
-		if(NormalDotEntityDelta == 0.0f)
+		if (NormalDotEntityDelta == 0.0f)
 		{
-			if(fabs(SignedDistanceToTrianglePlane) >= 1.0f)
+			if (fabs(SignedDistanceToTrianglePlane) >= 1.0f)
 			{
 				return(Result);
 			}
@@ -299,36 +368,36 @@ NarrowPhaseCollisionDetection(vec3 P1, vec3 P2, vec3 P3, mat3 WorldToEllipsoid,
 			t0 = (1.0f - SignedDistanceToTrianglePlane) / NormalDotEntityDelta;
 			t1 = (-1.0f - SignedDistanceToTrianglePlane) / NormalDotEntityDelta;
 
-			if(t0 > t1)
+			if (t0 > t1)
 			{
 				r32 Temp = t0;
 				t0 = t1;
 				t1 = Temp;
 			}
 
-			if((t0 > 1.0f) || (t1 < 0.0f))
+			if ((t0 > 1.0f) || (t1 < 0.0f))
 			{
 				return(Result);
 			}
 
-			if(t0 < 0.0f)
+			if (t0 < 0.0f)
 			{
 				t0 = 0.0f;
 			}
-			if(t1 > 1.0f)
+			if (t1 > 1.0f)
 			{
 				t1 = 1.0f;
 			}
 		}
 
-		if(!EmbeddedInPlane)
+		if (!EmbeddedInPlane)
 		{
-			vec3 PlaneIntersectionPoint = ESpaceP + t0*ESpaceEntityDelta - TrianglePlane.Normal;
+			vec3 PlaneIntersectionPoint = ESpaceP + t0 * ESpaceEntityDelta - TrianglePlane.Normal;
 
-			if(IsPointInTriangle(PlaneIntersectionPoint, EP1, EP2, EP3))
+			if (IsPointInTriangle(PlaneIntersectionPoint, EP1, EP2, EP3))
 			{
 				FoundCollisionWithInsideTheTriangle = true;
-				if(t0 < *t)
+				if (t0 < *t)
 				{
 					Result = true;
 					*t = t0;
@@ -337,7 +406,7 @@ NarrowPhaseCollisionDetection(vec3 P1, vec3 P2, vec3 P3, mat3 WorldToEllipsoid,
 			}
 		}
 
-		if(!FoundCollisionWithInsideTheTriangle)
+		if (!FoundCollisionWithInsideTheTriangle)
 		{
 			r32 EntityDeltaSquaredLength = LengthSq(ESpaceEntityDelta);
 			r32 A, B, C;
@@ -346,7 +415,7 @@ NarrowPhaseCollisionDetection(vec3 P1, vec3 P2, vec3 P3, mat3 WorldToEllipsoid,
 			// NOTE(georgy): Check triangle vertices
 			A = EntityDeltaSquaredLength;
 
-			B = 2.0f*(Dot(ESpaceEntityDelta, ESpaceP - EP1));
+			B = 2.0f * (Dot(ESpaceEntityDelta, ESpaceP - EP1));
 			C = LengthSq((EP1 - ESpaceP)) - 1.0f;
 			if (GetLowestRoot(A, B, C, &NewT))
 			{
@@ -355,7 +424,7 @@ NarrowPhaseCollisionDetection(vec3 P1, vec3 P2, vec3 P3, mat3 WorldToEllipsoid,
 				*CollisionP = EP1;
 			}
 
-			B = 2.0f*(Dot(ESpaceEntityDelta, ESpaceP - EP2));
+			B = 2.0f * (Dot(ESpaceEntityDelta, ESpaceP - EP2));
 			C = LengthSq((EP2 - ESpaceP)) - 1.0f;
 			if (GetLowestRoot(A, B, C, &NewT))
 			{
@@ -364,7 +433,7 @@ NarrowPhaseCollisionDetection(vec3 P1, vec3 P2, vec3 P3, mat3 WorldToEllipsoid,
 				*CollisionP = EP2;
 			}
 
-			B = 2.0f*(Dot(ESpaceEntityDelta, ESpaceP - EP3));
+			B = 2.0f * (Dot(ESpaceEntityDelta, ESpaceP - EP3));
 			C = LengthSq((EP3 - ESpaceP)) - 1.0f;
 			if (GetLowestRoot(A, B, C, &NewT))
 			{
@@ -380,20 +449,20 @@ NarrowPhaseCollisionDetection(vec3 P1, vec3 P2, vec3 P3, mat3 WorldToEllipsoid,
 			r32 EdgeDotdP = Dot(Edge, ESpaceEntityDelta);
 			r32 EdgeDotBaseToVertex = Dot(BaseToVertex, Edge);
 
-			A = EdgeSquaredLength*-EntityDeltaSquaredLength +
-				EdgeDotdP*EdgeDotdP;
-			B = EdgeSquaredLength*(2.0f * Dot(ESpaceEntityDelta, BaseToVertex)) -
-				2.0f*EdgeDotdP*EdgeDotBaseToVertex;
-			C = EdgeSquaredLength*(1.0f - LengthSq(BaseToVertex)) +
-				EdgeDotBaseToVertex*EdgeDotBaseToVertex;
+			A = EdgeSquaredLength * -EntityDeltaSquaredLength +
+				EdgeDotdP * EdgeDotdP;
+			B = EdgeSquaredLength * (2.0f * Dot(ESpaceEntityDelta, BaseToVertex)) -
+				2.0f * EdgeDotdP * EdgeDotBaseToVertex;
+			C = EdgeSquaredLength * (1.0f - LengthSq(BaseToVertex)) +
+				EdgeDotBaseToVertex * EdgeDotBaseToVertex;
 			if (GetLowestRoot(A, B, C, &NewT))
 			{
-				r32 f = (EdgeDotdP*NewT - EdgeDotBaseToVertex) / EdgeSquaredLength;
+				r32 f = (EdgeDotdP * NewT - EdgeDotBaseToVertex) / EdgeSquaredLength;
 				if ((f >= 0.0f) && (f <= 1.0f))
 				{
 					Result = true;
 					*t = NewT;
-					*CollisionP = EP1 + f*Edge;
+					*CollisionP = EP1 + f * Edge;
 				}
 			}
 
@@ -403,20 +472,20 @@ NarrowPhaseCollisionDetection(vec3 P1, vec3 P2, vec3 P3, mat3 WorldToEllipsoid,
 			EdgeDotdP = Dot(Edge, ESpaceEntityDelta);
 			EdgeDotBaseToVertex = Dot(BaseToVertex, Edge);
 
-			A = EdgeSquaredLength*-EntityDeltaSquaredLength +
-				EdgeDotdP*EdgeDotdP;
-			B = EdgeSquaredLength*(2.0f * Dot(ESpaceEntityDelta, BaseToVertex)) -
-				2.0f*EdgeDotdP*EdgeDotBaseToVertex;
-			C = EdgeSquaredLength*(1.0f - LengthSq(BaseToVertex)) +
-				EdgeDotBaseToVertex*EdgeDotBaseToVertex;
+			A = EdgeSquaredLength * -EntityDeltaSquaredLength +
+				EdgeDotdP * EdgeDotdP;
+			B = EdgeSquaredLength * (2.0f * Dot(ESpaceEntityDelta, BaseToVertex)) -
+				2.0f * EdgeDotdP * EdgeDotBaseToVertex;
+			C = EdgeSquaredLength * (1.0f - LengthSq(BaseToVertex)) +
+				EdgeDotBaseToVertex * EdgeDotBaseToVertex;
 			if (GetLowestRoot(A, B, C, &NewT))
 			{
-				r32 f = (EdgeDotdP*NewT - EdgeDotBaseToVertex) / EdgeSquaredLength;
+				r32 f = (EdgeDotdP * NewT - EdgeDotBaseToVertex) / EdgeSquaredLength;
 				if ((f >= 0.0f) && (f <= 1.0f))
 				{
 					Result = true;
 					*t = NewT;
-					*CollisionP = EP2 + f*Edge;
+					*CollisionP = EP2 + f * Edge;
 				}
 			}
 
@@ -426,27 +495,194 @@ NarrowPhaseCollisionDetection(vec3 P1, vec3 P2, vec3 P3, mat3 WorldToEllipsoid,
 			EdgeDotdP = Dot(Edge, ESpaceEntityDelta);
 			EdgeDotBaseToVertex = Dot(BaseToVertex, Edge);
 
-			A = EdgeSquaredLength*-EntityDeltaSquaredLength +
-				EdgeDotdP*EdgeDotdP;
-			B = EdgeSquaredLength*(2.0f * Dot(ESpaceEntityDelta, BaseToVertex)) -
-				2.0f*EdgeDotdP*EdgeDotBaseToVertex;
-			C = EdgeSquaredLength*(1.0f - LengthSq(BaseToVertex)) +
-				EdgeDotBaseToVertex*EdgeDotBaseToVertex;
+			A = EdgeSquaredLength * -EntityDeltaSquaredLength +
+				EdgeDotdP * EdgeDotdP;
+			B = EdgeSquaredLength * (2.0f * Dot(ESpaceEntityDelta, BaseToVertex)) -
+				2.0f * EdgeDotdP * EdgeDotBaseToVertex;
+			C = EdgeSquaredLength * (1.0f - LengthSq(BaseToVertex)) +
+				EdgeDotBaseToVertex * EdgeDotBaseToVertex;
 			if (GetLowestRoot(A, B, C, &NewT))
 			{
-				r32 f = (EdgeDotdP*NewT - EdgeDotBaseToVertex) / EdgeSquaredLength;
+				r32 f = (EdgeDotdP * NewT - EdgeDotBaseToVertex) / EdgeSquaredLength;
 				if ((f >= 0.0f) && (f <= 1.0f))
 				{
 					Result = true;
 					*t = NewT;
-					*CollisionP = EP3 + f*Edge;
+					*CollisionP = EP3 + f * Edge;
 				}
 			}
 		}
 	}
 
 	return(Result);
-} 
+}
+
+struct ray_triangle_collision_detection_data
+{
+	vec3 RayOrigin;
+	vec3 RayEnd;
+	vec3 RayDirection;
+	r32 t;
+};
+
+enum narrow_phase_collision_detection_type
+{
+	NarrowPhaseCollisionDetection_EllipsoidTriangle,
+	NarrowPhaseCollisionDetection_RayTriangle,
+};
+internal void
+NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detection *BroadPhaseData,
+							  narrow_phase_collision_detection_type Type, ray_triangle_collision_detection_data *RayTriangleData = 0,
+							  ellipsoid_triangle_collision_detection_data *EllipsoidTriangleData = 0)
+{
+	u32 CollideChunksCount = BroadPhaseData->CollideChunksCount;
+	collided_chunk_info *CollideChunks = BroadPhaseData->CollideChunks;
+
+	for(u32 ChunkIndex = 0;
+		ChunkIndex < CollideChunksCount;
+		ChunkIndex++)
+	{
+		chunk *Chunk = CollideChunks[ChunkIndex].Chunk;
+		vec3* Vertices = Chunk->VerticesP.Entries;
+		r32 BlockDimInMeters = World->BlockDimInMeters;
+		vec3 MinChunkP = CollideChunks[ChunkIndex].Min - vec3(BlockDimInMeters, BlockDimInMeters, BlockDimInMeters);
+		vec3 MaxChunkP = CollideChunks[ChunkIndex].Max + vec3(BlockDimInMeters, BlockDimInMeters, BlockDimInMeters);
+		for(u32 TriangleIndex = 0;
+			TriangleIndex < (Chunk->VerticesP.EntriesCount / 3);
+			TriangleIndex++)
+		{
+			u32 FirstVertexIndex = TriangleIndex * 3;
+			vec3 P1 = Vertices[FirstVertexIndex];
+			vec3 P2 = Vertices[FirstVertexIndex + 1];
+			vec3 P3 = Vertices[FirstVertexIndex + 2];
+
+			vec3 MinP = Min(Min(P1, P2), P3);
+			vec3 MaxP = Max(Max(P1, P2), P3);
+			
+			if(All(MinP < MaxChunkP) &&
+			   All(MaxP > MinChunkP))
+			{
+				P1 += Chunk->Translation;
+				P2 += Chunk->Translation;
+				P3 += Chunk->Translation;
+
+				if(Type == NarrowPhaseCollisionDetection_RayTriangle)
+				{
+					Assert(RayTriangleData);
+
+					plane TrianglePlane = PlaneFromTriangle(P1, P2, P3);
+					r32 NormalDotDir = Dot(TrianglePlane.Normal, RayTriangleData->RayDirection);
+					if(NormalDotDir < -0.0001f)
+					{
+						r32 NewRayLength = -SignedDistance(TrianglePlane, RayTriangleData->RayOrigin) / NormalDotDir;
+						r32 NewT = NewRayLength / Length(RayTriangleData->RayEnd - RayTriangleData->RayOrigin);
+						if((NewT < RayTriangleData->t) && (NewT > 0.0f))
+						{
+							if(IsPointInTriangle(RayTriangleData->RayOrigin + NewRayLength*RayTriangleData->RayDirection, P1, P2, P3))
+							{
+								RayTriangleData->t = NewT;
+							}
+						}
+					}
+				}
+				else
+				{
+					Assert(Type == NarrowPhaseCollisionDetection_EllipsoidTriangle);
+					Assert(EllipsoidTriangleData);
+
+					if(EllipsoidTriangleCollisionDetection(P1, P2, P3, EllipsoidTriangleData))
+					{
+						EllipsoidTriangleData->HitEntityType = EntityType_Chunk;
+					}
+				}
+			}
+		}
+	}
+}
+
+internal void
+CameraCollisionDetection(world *World, stack_allocator *WorldAllocator, camera *Camera, 
+						 vec3 CameraTargetOffset, world_position *OriginP)
+{
+	r32 NearDistance = Camera->NearDistance;
+	r32 FoV = Camera->FoV;
+	r32 NearPlaneHalfHeight = Tan(DEG2RAD(FoV)*0.5f)*NearDistance;
+	r32 NearPlaneHalfWidth = NearPlaneHalfHeight*Camera->AspectRatio;
+
+	vec3 CameraRight = vec3(Camera->RotationMatrix.FirstColumn.x(), Camera->RotationMatrix.SecondColumn.x(), Camera->RotationMatrix.ThirdColumn.x());;
+	vec3 CameraUp = vec3(Camera->RotationMatrix.FirstColumn.y(), Camera->RotationMatrix.SecondColumn.y(), Camera->RotationMatrix.ThirdColumn.y());;
+	vec3 CameraOut = vec3(Camera->RotationMatrix.FirstColumn.z(), Camera->RotationMatrix.SecondColumn.z(), Camera->RotationMatrix.ThirdColumn.z());
+	ray_triangle_collision_detection_data RayTriangleData;
+	RayTriangleData.t = 1.0f;
+
+	vec3 OriginPos = CameraTargetOffset;
+	vec3 RayStartCornerRightBot = OriginPos + 
+								  CameraRight*NearPlaneHalfWidth - CameraUp*NearPlaneHalfHeight;
+	vec3 RayStartCornerRightTop = OriginPos + 
+								  CameraRight*NearPlaneHalfWidth + CameraUp*NearPlaneHalfHeight;
+	vec3 RayStartCornerLeftBot = OriginPos - 
+							     CameraRight*NearPlaneHalfWidth - CameraUp*NearPlaneHalfHeight;
+	vec3 RayStartCornerLeftTop = OriginPos - 
+								 CameraRight*NearPlaneHalfWidth + CameraUp*NearPlaneHalfHeight;
+
+	vec3 RayStartCorners[] = 
+	{
+		RayStartCornerRightBot,
+		RayStartCornerRightTop,
+		RayStartCornerLeftBot,
+		RayStartCornerLeftTop
+	};
+
+	vec3 CameraNearCentreP = Camera->OffsetFromHero + CameraTargetOffset + NearDistance*CameraOut;
+	vec3 FrustumNearCornerRightBot = CameraNearCentreP + 
+									 CameraRight*NearPlaneHalfWidth - CameraUp*NearPlaneHalfHeight;
+	vec3 FrustumNearCornerRightTop = CameraNearCentreP + 
+									 CameraRight*NearPlaneHalfWidth + CameraUp*NearPlaneHalfHeight;
+	vec3 FrustumNearCornerLeftBot = CameraNearCentreP - 
+									 CameraRight*NearPlaneHalfWidth - CameraUp*NearPlaneHalfHeight;
+	vec3 FrustumNearCornerLeftTop = CameraNearCentreP - 
+									 CameraRight*NearPlaneHalfWidth + CameraUp*NearPlaneHalfHeight;
+	vec3 FrustumNearCorners[] = 
+	{
+		FrustumNearCornerRightBot,
+		FrustumNearCornerRightTop,
+		FrustumNearCornerLeftBot,
+		FrustumNearCornerLeftTop
+	};
+
+	rect3 CameraCollisionVolumeAABB;
+	CameraCollisionVolumeAABB.Min = vec3(FLT_MAX, FLT_MAX, FLT_MAX);
+	CameraCollisionVolumeAABB.Max = vec3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+	for(u32 PointIndex = 0;
+		PointIndex < 4;
+		PointIndex++)
+	{
+		CameraCollisionVolumeAABB.Min = Min(CameraCollisionVolumeAABB.Min, RayStartCorners[PointIndex]);
+		CameraCollisionVolumeAABB.Max = Max(CameraCollisionVolumeAABB.Max, RayStartCorners[PointIndex]);
+	}
+	for(u32 PointIndex = 0;
+		PointIndex < 4;
+		PointIndex++)
+	{
+		CameraCollisionVolumeAABB.Min = Min(CameraCollisionVolumeAABB.Min, FrustumNearCorners[PointIndex]);
+		CameraCollisionVolumeAABB.Max = Max(CameraCollisionVolumeAABB.Max, FrustumNearCorners[PointIndex]);
+	}
+
+	broad_phase_chunk_collision_detection BroadPhaseResult = BroadPhaseChunkCollisionDetection(World, *OriginP, CameraCollisionVolumeAABB);
+
+	for(u32 RayIndex = 0;
+		RayIndex < 4;
+		RayIndex++)
+	{
+		RayTriangleData.RayOrigin = RayStartCorners[RayIndex];
+		RayTriangleData.RayEnd = FrustumNearCorners[RayIndex];
+		RayTriangleData.RayDirection = Normalize(FrustumNearCorners[RayIndex] - RayStartCorners[RayIndex]);
+
+		NarrowPhaseCollisionDetection(World, &BroadPhaseResult, NarrowPhaseCollisionDetection_RayTriangle, &RayTriangleData);
+	}
+
+    Camera->OffsetFromHero = Camera->OffsetFromHero * RayTriangleData.t;
+}
 
 internal bool32
 CanCollide(game_state *GameState, sim_entity *A, sim_entity *B)
@@ -537,11 +773,6 @@ HandleCollision(game_state *GameState, sim_entity *EntityA, sim_entity *EntityB,
 	return(Result);
 }
 
-struct collided_chunk_info
-{
-	chunk *Chunk;
-	vec3 Min, Max;
-};
 internal void
 MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, move_spec MoveSpec, r32 dt, bool32 Gravity)
 {
@@ -549,6 +780,9 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 							Scale3x3(0.5f*Entity->Collision->Dim);
 	mat3 WorldToEllipsoid = Scale3x3(1.0f / (0.5f*Entity->Collision->Dim)) * 
 							Rotate3x3(-Entity->Rotation, vec3(0.0f, 1.0f, 0.0f));
+
+	ellipsoid_triangle_collision_detection_data EllipsoidTriangleData;
+	EllipsoidTriangleData.WorldToEllipsoid = WorldToEllipsoid;
 
 	if(Gravity)
 	{
@@ -578,84 +812,40 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 	// NOTE(georgy): Collision broad phase
 	stored_entity *StoredEntity = GameState->StoredEntities + Entity->StorageIndex;
 	world_position OldWorldP = StoredEntity->P;
+	
+	box EntityBox = ConstructBoxDim(Entity->Collision->Dim);
+	mat3 EntityRotationMatrix = Rotate3x3(Entity->Rotation, vec3(0.0f, 1.0f, 0.0f)); 
 
-	u32 CollideChunksCount = 0;
-	collided_chunk_info CollideChunks[27];
+	box EntityBoxOldP = ConstructBox(&EntityBox, EntityRotationMatrix, OldP);
+	rect3 EntityOldPAABB = RectFromBox(&EntityBoxOldP);
+
+	box EntityBoxDesiredP = ConstructBox(&EntityBox, EntityRotationMatrix, DesiredP);
+	rect3 EntityDesiredPAABB = RectFromBox(&EntityBoxDesiredP);
+
+	vec3 MinForAABB = Min(EntityOldPAABB.Min, EntityDesiredPAABB.Min);
+	vec3 MaxForAABB = Max(EntityOldPAABB.Max, EntityDesiredPAABB.Max);
+	rect3 AABB = RectMinMax(MinForAABB, MaxForAABB);
+
+	broad_phase_chunk_collision_detection BroadPhaseResult = BroadPhaseChunkCollisionDetection(SimRegion->World, OldWorldP, AABB);
 
 	u32 CollideEntitiesCount = 0;
 	sim_entity *CollideEntities[10];
-
+	for(u32 TestEntityIndex = 0;
+		TestEntityIndex < SimRegion->EntityCount;
+		TestEntityIndex++)
 	{
-		// TODO(georgy): 
-		//	I guess, we can have a situation, where EntityOldPAABB is totally in Chunk1 and EntityDesiredPAABB is totally on Chunk2
-		//	so we can miss all other chunks that could intersect with us when we were moving from Chunk1 to Chunk2
-		box EntityBox = ConstructBoxDim(Entity->Collision->Dim);
-		mat3 EntityRotationMatrix = Rotate3x3(Entity->Rotation, vec3(0.0f, 1.0f, 0.0f)); 
+		sim_entity *TestEntity = SimRegion->Entities + TestEntityIndex;
 
-		box EntityBoxOldP = ConstructBox(&EntityBox, EntityRotationMatrix, OldP);
-		rect3 EntityOldPAABB = RectFromBox(&EntityBoxOldP);
-
-		box EntityBoxDesiredP = ConstructBox(&EntityBox, EntityRotationMatrix, DesiredP);
-		rect3 EntityDesiredPAABB = RectFromBox(&EntityBoxDesiredP);
-
-		for(i32 ChunkZ = OldWorldP.ChunkZ - 1;
-			ChunkZ <= OldWorldP.ChunkZ + 1;
-			ChunkZ++)
+		if(CanCollide(GameState, Entity, TestEntity))
 		{
-			for(i32 ChunkY = OldWorldP.ChunkY - 1;
-				ChunkY <= OldWorldP.ChunkY + 1;
-				ChunkY++)
+			box TestEntityBox = ConstructBoxDim(TestEntity->Collision->Dim);
+			mat3 TestEntityTransformation = Rotate3x3(TestEntity->Rotation, vec3(0.0f, 1.0f, 0.0f));
+			TransformBox(&TestEntityBox, TestEntityTransformation, TestEntity->P + TestEntity->Collision->OffsetP);
+			rect3 TestEntityAABB = RectFromBox(&TestEntityBox);
+
+			if(RectIntersect(TestEntityAABB, EntityOldPAABB) || RectIntersect(TestEntityAABB, EntityDesiredPAABB))
 			{
-				for(i32 ChunkX = OldWorldP.ChunkX - 1;
-					ChunkX <= OldWorldP.ChunkX + 1;
-					ChunkX++)
-				{
-					chunk *Chunk = GetChunk(SimRegion->World, ChunkX, ChunkY, ChunkZ);
-					if(Chunk)
-					{
-						r32 ChunkDimInMeters = SimRegion->World->ChunkDimInMeters;
-						vec3 SimSpaceChunkAABBMin = Chunk->Translation;
-						vec3 SimSpaceChunkAABBMax = SimSpaceChunkAABBMin + vec3(ChunkDimInMeters, ChunkDimInMeters, ChunkDimInMeters);
-						rect3 SimSpaceChunkAABB = RectMinMax(SimSpaceChunkAABBMin, SimSpaceChunkAABBMax);
-
-						if(RectIntersect(SimSpaceChunkAABB, EntityOldPAABB) || RectIntersect(SimSpaceChunkAABB, EntityDesiredPAABB))
-						{
-							vec3 HeroMinOffsetOld = EntityOldPAABB.Min - SimSpaceChunkAABB.Min;
-							vec3 HeroMaxOffsetOld = EntityOldPAABB.Max - SimSpaceChunkAABB.Min;
-							vec3 HeroMinOffsetDesired = EntityDesiredPAABB.Min - SimSpaceChunkAABB.Min;
-							vec3 HeroMaxOffsetDesired = EntityDesiredPAABB.Max - SimSpaceChunkAABB.Min;
-							CollideChunks[CollideChunksCount].Min = vec3(FLT_MAX, FLT_MAX, FLT_MAX);
-							CollideChunks[CollideChunksCount].Max = vec3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-
-							CollideChunks[CollideChunksCount].Min = Min(CollideChunks[CollideChunksCount].Min, HeroMinOffsetOld);
-							CollideChunks[CollideChunksCount].Min = Min(CollideChunks[CollideChunksCount].Min, HeroMinOffsetDesired);
-							CollideChunks[CollideChunksCount].Max = Max(CollideChunks[CollideChunksCount].Max, HeroMaxOffsetOld);
-							CollideChunks[CollideChunksCount].Max = Max(CollideChunks[CollideChunksCount].Max, HeroMaxOffsetDesired);
-
-							CollideChunks[CollideChunksCount++].Chunk = Chunk;
-						}
-					}
-				}	
-			}	
-		}
-
-		for(u32 TestEntityIndex = 0;
-			TestEntityIndex < SimRegion->EntityCount;
-			TestEntityIndex++)
-		{
-			sim_entity *TestEntity = SimRegion->Entities + TestEntityIndex;
-
-			if(CanCollide(GameState, Entity, TestEntity))
-			{
-				box TestEntityBox = ConstructBoxDim(TestEntity->Collision->Dim);
-				mat3 TestEntityTransformation = Rotate3x3(TestEntity->Rotation, vec3(0.0f, 1.0f, 0.0f));
-				TransformBox(&TestEntityBox, TestEntityTransformation, TestEntity->P + TestEntity->Collision->OffsetP);
-				rect3 TestEntityAABB = RectFromBox(&TestEntityBox);
-
-				if(RectIntersect(TestEntityAABB, EntityOldPAABB) || RectIntersect(TestEntityAABB, EntityDesiredPAABB))
-				{
-					CollideEntities[CollideEntitiesCount++] = TestEntity;
-				}
+				CollideEntities[CollideEntitiesCount++] = TestEntity;
 			}
 		}
 	}
@@ -674,58 +864,27 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 		Iteration < 4;
 		Iteration++)
 	{
+		
 		r32 EntityDeltaLength = Length(ESpaceEntityDelta);
 		if(EntityDeltaLength > 0.0f)
 		{
 			vec3 ESpaceDesiredP = ESpaceP + ESpaceEntityDelta;
 			vec3 NormalizedESpaceEntityDelta = Normalize(ESpaceEntityDelta);
-			r32 t = 1.0f;
+			sim_entity *HitEntity = 0;
+
+			EllipsoidTriangleData.NormalizedESpaceEntityDelta = NormalizedESpaceEntityDelta;
+			EllipsoidTriangleData.ESpaceP = ESpaceP;
+			EllipsoidTriangleData.ESpaceEntityDelta = ESpaceEntityDelta;
+			EllipsoidTriangleData.t = 1.0f;
 			r32 EntityDeltaLengthWorld = Length((EllipsoidToWorld * ESpaceEntityDelta));
 			if(EntityDeltaLengthWorld > DistanceRemaining)
 			{
-				t = DistanceRemaining / EntityDeltaLengthWorld;
+				EllipsoidTriangleData.t = DistanceRemaining / EntityDeltaLengthWorld;
 			}
-			vec3 CollisionP;
-			sim_entity *HitEntity = 0;
-			entity_type HitEntityType = EntityType_Null;
-			for(u32 ChunkIndex = 0;
-				ChunkIndex < CollideChunksCount;
-				ChunkIndex++)
-			{
-				chunk *Chunk = CollideChunks[ChunkIndex].Chunk;
-				vec3* Vertices = Chunk->VerticesP.Entries;
-				r32 BlockDimInMeters = SimRegion->World->BlockDimInMeters;
-				vec3 MinChunkP = CollideChunks[ChunkIndex].Min - vec3(BlockDimInMeters, BlockDimInMeters, BlockDimInMeters);
-				vec3 MaxChunkP = CollideChunks[ChunkIndex].Max + vec3(BlockDimInMeters, BlockDimInMeters, BlockDimInMeters);
-				for(u32 TriangleIndex = 0;
-					TriangleIndex < (CollideChunks[ChunkIndex].Chunk->VerticesP.EntriesCount / 3);
-					TriangleIndex++)
-				{
-					u32 FirstVertexIndex = TriangleIndex * 3;
-					vec3 P1 = Vertices[FirstVertexIndex];
-					vec3 P2 = Vertices[FirstVertexIndex + 1];
-					vec3 P3 = Vertices[FirstVertexIndex + 2];
+			EllipsoidTriangleData.HitEntityType = EntityType_Null;
 
-					vec3 MinP = Min(Min(P1, P2), P3);
-					vec3 MaxP = Max(Max(P1, P2), P3);
-					
-					// if(((MinP.x() < MaxChunkP.x() + BlockDimInMeters) && (MaxP.x() > MinChunkP.x() - BlockDimInMeters)) &&
-					//    ((MinP.y() < MaxChunkP.y() + BlockDimInMeters) && (MaxP.y() > MinChunkP.y() - BlockDimInMeters)) && 
-					//    ((MinP.z() < MaxChunkP.z() + BlockDimInMeters) && (MaxP.z() > MinChunkP.z() - BlockDimInMeters)))
-					if(All(MinP < MaxChunkP) &&
-					   All(MaxP > MinChunkP))
-					{
-						P1 += Chunk->Translation;
-						P2 += Chunk->Translation;
-						P3 += Chunk->Translation;
-						if(NarrowPhaseCollisionDetection(P1, P2, P3, WorldToEllipsoid, NormalizedESpaceEntityDelta,
-														 ESpaceP, ESpaceEntityDelta, &t, &CollisionP))
-						{
-							HitEntityType = EntityType_Chunk;
-						}
-					}
-				}
-			}
+			NarrowPhaseCollisionDetection(SimRegion->World, &BroadPhaseResult, NarrowPhaseCollisionDetection_EllipsoidTriangle,
+										  0, &EllipsoidTriangleData);
 			
 			for(u32 CollisionEntityIndex = 0;
 				CollisionEntityIndex < CollideEntitiesCount;
@@ -742,26 +901,25 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 					vec3 P2 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3 + 1]) + TestEntity->P + Displacement;
 					vec3 P3 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3 + 2]) + TestEntity->P + Displacement;
 
-					if(NarrowPhaseCollisionDetection(P1, P2, P3, WorldToEllipsoid, NormalizedESpaceEntityDelta,
-													ESpaceP, ESpaceEntityDelta, &t, &CollisionP))
+					if(EllipsoidTriangleCollisionDetection(P1, P2, P3, &EllipsoidTriangleData))
 					{
 						HitEntity = TestEntity;
-						HitEntityType = HitEntity->Type;
+						EllipsoidTriangleData.HitEntityType = HitEntity->Type;
 					}
 				}
 			}
 
-			ESpaceP += t*ESpaceEntityDelta;
-			DistanceRemaining -= t*EntityDeltaLengthWorld;
+			ESpaceP += EllipsoidTriangleData.t*ESpaceEntityDelta;
+			DistanceRemaining -= EllipsoidTriangleData.t*EntityDeltaLengthWorld;
 			ESpaceEntityDelta = ESpaceDesiredP - ESpaceP;
 			bool32 SlidingPlaneNormalIsGround = false;
-			if(HitEntityType)
+			if(EllipsoidTriangleData.HitEntityType)
 			{
-				bool32 StopOnCollision = HandleCollision(GameState, Entity, HitEntity, Entity->Type, HitEntityType);
+				bool32 StopOnCollision = HandleCollision(GameState, Entity, HitEntity, Entity->Type, EllipsoidTriangleData.HitEntityType);
 
 				if(StopOnCollision)
 				{
-					vec3 SlidingPlaneNormal = Normalize((ESpaceP - CollisionP));
+					vec3 SlidingPlaneNormal = Normalize((ESpaceP - EllipsoidTriangleData.CollisionP));
 					if(Gravity && (SlidingPlaneNormal.y() >= 0.95f))
 					{
 						SlidingPlaneNormalIsGround = true;
@@ -773,7 +931,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 				}
 			}
 			
-			if((Gravity && Iteration == 0) && (!HitEntityType || !SlidingPlaneNormalIsGround))
+			if((Gravity && Iteration == 0) && (!EllipsoidTriangleData.HitEntityType || !SlidingPlaneNormalIsGround))
 			{
 				ClearFlags(Entity, EntityFlag_OnGround);
 			}

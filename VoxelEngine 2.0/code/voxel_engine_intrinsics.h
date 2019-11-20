@@ -58,3 +58,10 @@ ATan2(r32 Y, r32 X)
     r32 Result = atan2f(Y, X);
     return(Result);
 }
+
+inline r32
+Tan(r32 Angle)
+{
+    r32 Result = tanf(Angle);
+    return(Result);
+}

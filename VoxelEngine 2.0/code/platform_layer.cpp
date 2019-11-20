@@ -405,6 +405,9 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				RefreshRate = WinRefreshRate;
 			}
 			int GameRefreshRate = RefreshRate;
+#if VOXEL_ENGINE_DEBUG_BUILD
+			GameRefreshRate = RefreshRate / 2;
+#endif
 			r32 TargetSecondsPerFrame = 1.0f / GameRefreshRate;
 			ReleaseDC(Window, WindowDC);
 

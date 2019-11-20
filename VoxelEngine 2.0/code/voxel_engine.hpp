@@ -218,7 +218,7 @@ AddTree(game_state *GameState, world_position P)
 }
 
 internal void
-GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
+GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHeight)
 {
 	Assert(sizeof(game_state) <= Memory->PermanentStorageSize);
 	game_state *GameState = (game_state *)Memory->PermanentStorage;
@@ -237,10 +237,12 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 		GameState->StoredEntityCount = 0;
 
+		GameState->Camera = {};
 		GameState->Camera.DistanceFromHero = 9.0f;
-		GameState->Camera.Pitch = GameState->Camera.Head = 0;
 		GameState->Camera.RotSensetivity = 0.1f;
-		GameState->Camera.OffsetFromHero = {};
+		GameState->Camera.NearDistance = 0.1f;
+		GameState->Camera.FarDistance = 150.0f;
+		GameState->Camera.FoV = 45.0f;
 
 		InitializeWorld(&GameState->World);
 
@@ -378,7 +380,11 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 	r32 XOffsetFromHero = -HorizontalDistanceFromHero * Sin(HeadRadians);
 	r32 YOffsetFromHero = Camera->DistanceFromHero * Sin(-PitchRadians);
 	r32 ZOffsetFromHero = HorizontalDistanceFromHero * Cos(HeadRadians);
-	Camera->OffsetFromHero = vec3(XOffsetFromHero, YOffsetFromHero, ZOffsetFromHero);
+	vec3 NewTargetOffsetFromHero = vec3(XOffsetFromHero, YOffsetFromHero, ZOffsetFromHero);
+	Camera->OffsetFromHero = Camera->DistanceFromHero * Normalize(Lerp(Camera->LastOffsetFromHero, NewTargetOffsetFromHero, 8.0f*Input->dt));
+	Camera->LastOffsetFromHero = Camera->OffsetFromHero;
+
+	Camera->AspectRatio = (r32)BufferWidth/(r32)BufferHeight;
 
 #if 0
 	r32 CameraTargetDirX = Sin(DEG2RAD(Camera->Head))*Cos(DEG2RAD(Camera->Pitch));
@@ -447,16 +453,26 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 
 	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-100.0f, -20.0f, -100.0f), vec3(100.0f, 20.0f, 100.0f));
 	sim_region *SimRegion = BeginSimulation(GameState, GameState->Hero.Entity->P, Forward, 
-											SimRegionUpdatableBounds, &TempState->Allocator, Input->dt);			
+											SimRegionUpdatableBounds, &TempState->Allocator, Input->dt);	
 
+	// TODO(georgy): Get this from hero head model or smth
+	// NOTE(georgy): This is hero head centre offset from hero feet pos. 
+	// 				 We use this to offset all object in view matrix. So Camera->OffsetFromHero is offset from hero head centre  
+	vec3 CameraTargetOffset = vec3(0.0f, 0.680000007f + 0.1f, 0.0f);
+	Camera->RotationMatrix = RotationMatrixFromDirection(Camera->OffsetFromHero);
+#if !defined(VOXEL_ENGINE_DEBUG_BUILD)
+	CameraCollisionDetection(&GameState->World, &GameState->WorldAllocator, Camera, CameraTargetOffset,
+							 &GameState->Hero.Entity->P);
+#endif
 	SetupChunksBlocks(&GameState->World, &GameState->WorldAllocator, TempState);								
 	SetupChunksVertices(&GameState->World, TempState);
 	LoadChunks(&GameState->World);
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	mat4 View = RotationMatrixFromDirection(Camera->OffsetFromHero) * Translate(-Camera->OffsetFromHero);
-	mat4 Projection = Perspective(45.0f, (r32)Width/Height, 0.1f, 150.0f);
+	mat4 View = Camera->RotationMatrix * 
+				Translate(-Camera->OffsetFromHero - CameraTargetOffset);
+	mat4 Projection = Perspective(Camera->FoV, Camera->AspectRatio, Camera->NearDistance, Camera->FarDistance);
 	mat4 ViewProjection = Projection * View;
 	shader Shaders3D[] = {GameState->WorldShader, GameState->CharacterShader, GameState->BillboardShader};
 	Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), ViewProjection);
@@ -595,25 +611,25 @@ GameUpdate(game_memory *Memory, game_input *Input, int Width, int Height)
 					asset_tag_vector MatchVector = { 1.0f };
 					u32 HeadIndex = GetBestMatchAsset(TempState->GameAssets, AssetType_Head, &MatchVector);
 					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Head);
-					DrawModel(GameState->CharacterShader, TempState->GameAssets, HeadIndex, Entity->Rotation, 1.0f, HeroRight);
+					DrawModel(GameState->CharacterShader, TempState->GameAssets, HeadIndex, Entity->Rotation, 1.0f, HeroRight, Entity->P);
 					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Shoulders);
 					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Shoulders].FirstAssetIndex, 
-							  Entity->Rotation, 1.0f, HeroRight);
+							  Entity->Rotation, 1.0f, HeroRight, Entity->P);
 					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Body);
 					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Body].FirstAssetIndex,
-							  Entity->Rotation, 1.0f, HeroRight);
+							  Entity->Rotation, 1.0f, HeroRight, Entity->P);
 					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Hand_Right);
 					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Hand].FirstAssetIndex, 
-							  Entity->Rotation, 0.8f, HeroRight);
+							  Entity->Rotation, 0.8f, HeroRight, Entity->P);
 					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Hand_Left);
 					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Hand].FirstAssetIndex,
-							  Entity->Rotation, 0.8f, -HeroRight);
+							  Entity->Rotation, 0.8f, -HeroRight, Entity->P);
 					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Foot_Right);
 					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Foot].FirstAssetIndex, 
-							  Entity->Rotation, 1.4f, HeroRight);
+							  Entity->Rotation, 1.4f, HeroRight, Entity->P);
 					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Foot_Left);
 					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Foot].FirstAssetIndex,
-							  Entity->Rotation, 1.4f, -HeroRight);
+							  Entity->Rotation, 1.4f, -HeroRight, Entity->P);
 				} break;
 
 				case EntityType_Fireball:

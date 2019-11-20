@@ -618,7 +618,7 @@ RotationMatrixFromDirection(vec3 Dir)
 internal mat4 __vectorcall
 Perspective(r32 FoV, r32 AspectRatio, r32 Near, r32 Far)
 {
-	r32 Scale = tanf(DEG2RAD(FoV)*0.5f) * Near;
+	r32 Scale = Tan(DEG2RAD(FoV)*0.5f) * Near;
 	r32 Top = Scale;
 	r32 Bottom = -Top;
 	r32 Right = AspectRatio * Top;
@@ -960,6 +960,82 @@ QuaternionToMatrix(quaternion A)
 	Result.SecondColumn = vec4(2.0f*X*Y - 2.0f*W*Z, 1.0f - 2.0f*X*X - 2.0f*Z*Z, 2.0f*Y*Z + 2.0f*W*X, 0.0f);
 	Result.ThirdColumn = vec4(2.0f*X*Z + 2.0f*W*Y, 2.0f*Y*Z - 2.0f*W*X, 1.0f - 2.0f*X*X - 2.0f*Y*Y, 0.0f);
 	Result.FourthColumn = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+
+	return(Result);
+}
+
+internal quaternion __vectorcall
+RotationMatrixToQuaternion(mat4 A)
+{
+	quaternion Result;
+
+	r32 m11 = A.FirstColumn.x();
+	r32 m22 = A.SecondColumn.y();
+	r32 m33 = A.ThirdColumn.z();
+
+	r32 FourWSquaredMinus1 = m11 + m22 + m33;
+	r32 FourXSquaredMinus1 = m11 - m22 - m33;
+	r32 FourYSquaredMinus1 = m22 - m11 - m33;
+	r32 FourZSquaredMinus1 = m33 - m11 - m22;
+
+	u32 BiggestIndex = 0;
+	r32 FourBiggestSquaredMinus1 = FourWSquaredMinus1;
+	if(FourXSquaredMinus1 > FourBiggestSquaredMinus1)
+	{
+		FourBiggestSquaredMinus1 = FourXSquaredMinus1;
+		BiggestIndex = 1;
+	}
+	if(FourYSquaredMinus1 > FourBiggestSquaredMinus1)
+	{
+		FourBiggestSquaredMinus1 = FourYSquaredMinus1;
+		BiggestIndex = 2;
+	}
+	if(FourZSquaredMinus1 > FourBiggestSquaredMinus1)
+	{
+		FourBiggestSquaredMinus1 = FourZSquaredMinus1;
+		BiggestIndex = 3;
+	}
+
+	r32 BiggestValue = SquareRoot(FourBiggestSquaredMinus1 + 1.0f) * 0.5f;
+	r32 Mult = 0.25f / BiggestValue;
+
+	r32 W, X, Y, Z;
+	switch (BiggestIndex)
+	{
+		case 0:
+		{
+			W = BiggestValue;
+			X = (A.SecondColumn.z() - A.ThirdColumn.y()) * Mult;
+			Y = (A.ThirdColumn.x() - A.FirstColumn.z()) * Mult;
+			Z = (A.FirstColumn.y() - A.SecondColumn.x()) * Mult;
+		} break;
+
+		case 1:
+		{
+			W = (A.SecondColumn.z() - A.ThirdColumn.y()) * Mult;
+			X = BiggestValue;
+			Y = (A.FirstColumn.y() + A.SecondColumn.x()) * Mult;
+			Z = (A.ThirdColumn.x() + A.FirstColumn.z()) * Mult;
+		} break;
+
+		case 2:
+		{
+			W = (A.ThirdColumn.x() - A.FirstColumn.z()) * Mult;
+			X = (A.FirstColumn.y() + A.SecondColumn.x()) * Mult;
+			Y = BiggestValue;
+			Z = (A.SecondColumn.z() + A.ThirdColumn.y()) * Mult;
+		} break;
+
+		case 3:
+		{
+			W = (A.FirstColumn.y() - A.SecondColumn.x()) * Mult;
+			X = (A.ThirdColumn.x() + A.FirstColumn.z()) * Mult;
+			Y = (A.SecondColumn.z() + A.ThirdColumn.y()) * Mult;
+			Z = BiggestValue;
+		} break;
+	}
+
+	Result = Quaternion(W, vec3(X, Y, Z));
 
 	return(Result);
 }

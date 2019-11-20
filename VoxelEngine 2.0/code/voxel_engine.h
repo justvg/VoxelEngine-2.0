@@ -100,7 +100,15 @@ struct camera
 
 	r32 RotSensetivity;
 
+	r32 NearDistance;
+	r32 FarDistance;
+	r32 FoV;
+	r32 AspectRatio;
+
+	mat4 RotationMatrix;
+
 	vec3 OffsetFromHero;
+	vec3 LastOffsetFromHero;
 };
 
 struct dynamic_array_vec3
