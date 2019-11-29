@@ -241,7 +241,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		GameState->Camera.DistanceFromHero = 9.0f;
 		GameState->Camera.RotSensetivity = 0.1f;
 		GameState->Camera.NearDistance = 0.1f;
-		GameState->Camera.FarDistance = 150.0f;
+		GameState->Camera.FarDistance = 120.0f;
 		GameState->Camera.FoV = 45.0f;
 
 		InitializeWorld(&GameState->World);
@@ -254,6 +254,9 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		CompileShader(&GameState->CharacterShader, "data/shaders/CharacterVS.glsl", "data/shaders/CharacterFS.glsl");
 		CompileShader(&GameState->WorldShader, "data/shaders/WorldVS.glsl", "data/shaders/WorldFS.glsl");
 		CompileShader(&GameState->BillboardShader, "data/shaders/BillboardVS.glsl", "data/shaders/BillboardFS.glsl");
+		CompileShader(&GameState->CharacterDepthShader, "data/shaders/CharacterDepthVS.glsl", "data/shaders/EmptyFS.glsl");
+		CompileShader(&GameState->WorldDepthShader, "data/shaders/WorldDepthVS.glsl", "data/shaders/EmptyFS.glsl");
+		CompileShader(&GameState->FramebufferScreenShader, "data/shaders/FramebufferScreenVS.glsl", "data/shaders/FramebufferScreenFS.glsl");
 
 		r32 CubeVertices[] = {
 			// Back face
@@ -347,6 +350,26 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		TestTreeP.ChunkZ = 0;
 		TestTreeP.Offset = vec3(0.0f, 2.0f, 3.0f);
 		AddTree(GameState, TestTreeP);
+
+		GameState->DirectionalLightDir = -vec3(3.0, 5.0, 4.0);
+
+		glGenFramebuffers(1, &GameState->ShadowMapFBO);
+		glBindFramebuffer(GL_FRAMEBUFFER, GameState->ShadowMapFBO);
+		GameState->ShadowMapsWidth = GameState->ShadowMapsHeight = 2000;
+
+		glGenTextures(1, &GameState->ShadowMapsArray);
+		glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
+		glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT, GameState->ShadowMapsWidth, GameState->ShadowMapsHeight, 
+					 CASCADES_COUNT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, GameState->ShadowMapsArray, 0);
+		glDrawBuffer(GL_NONE);
+		glReadBuffer(GL_NONE);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		InitializeDefaultAnimations(GameState->CharacterAnimations);
 
@@ -468,15 +491,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	SetupChunksVertices(&GameState->World, TempState);
 	LoadChunks(&GameState->World);
 
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-	mat4 View = Camera->RotationMatrix * 
-				Translate(-Camera->OffsetFromHero - CameraTargetOffset);
-	mat4 Projection = Perspective(Camera->FoV, Camera->AspectRatio, Camera->NearDistance, Camera->FarDistance);
-	mat4 ViewProjection = Projection * View;
-	shader Shaders3D[] = {GameState->WorldShader, GameState->CharacterShader, GameState->BillboardShader};
-	Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), ViewProjection);
-
+	// NOTE(georgy): Entity simulations
 	for(u32 EntityIndex = 0;
 		EntityIndex < SimRegion->EntityCount;
 		EntityIndex++)
@@ -485,8 +500,6 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		r32 dt = Input->dt;
 		if(Entity->Updatable)
 		{
-			UseShader(GameState->WorldShader);	
-			
 			move_spec MoveSpec = {};
 			switch(Entity->Type)
 			{
@@ -510,7 +523,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 							ClearFlags(Fireball, EntityFlag_NonSpatial);
 							Fireball->DistanceLimit = 8.0f;
 							Fireball->P = Entity->P + vec3(0.0f, 0.5f, 0.0f);
-							Fireball->dP = vec3(Entity->dP.x(), 0.0f, Entity->dP.z()) + 5.0f*Forward;
+							Fireball->dP = vec3(Entity->dP.x(), 0.0f, Entity->dP.z()) + 1.0f*Forward;
 						}
 					}
 
@@ -544,6 +557,12 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 
 				case EntityType_Fireball:
 				{
+					char MSBuffer[256];
+					_snprintf_s(MSBuffer, sizeof(MSBuffer), "%d %d %d\n", GameState->StoredEntities[Entity->StorageIndex].P.ChunkX, 
+								GameState->StoredEntities[Entity->StorageIndex].P.ChunkY,
+								GameState->StoredEntities[Entity->StorageIndex].P.ChunkZ);
+					OutputDebugString(MSBuffer);
+
 					if(Entity->DistanceLimit == 0.0f)
 					{
 						MakeEntityNonSpatial(Entity);
@@ -572,101 +591,113 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 					MoveEntity(GameState, SimRegion, Entity, MoveSpec, dt, true);
 				}
 			}
-
-			switch(Entity->Type)
-			{
-				case EntityType_Hero:
-				{
-					UseShader(GameState->CharacterShader);
-
-					mat4 BoneTransformations[CharacterBone_Count];
-					for(u32 BoneIndex = 0;
-						BoneIndex < CharacterBone_Count;
-						BoneIndex++)
-					{
-						BoneTransformations[BoneIndex] = GetBoneForEntity(GameState->CharacterAnimations, &Entity->AnimationState, 
-																		  (character_bone_id)BoneIndex);
-					}
-					for(u32 BoneIndex = 0;
-						BoneIndex < CharacterBone_Count;
-						BoneIndex++)
-					{
-						if(BoneIndex != CharacterBone_Body)
-						{
-							BoneTransformations[BoneIndex] = BoneTransformations[BoneIndex] * BoneTransformations[CharacterBone_Body];
-						}
-					}
-					
-					SetMat4(GameState->CharacterShader, "BoneTransformations[0]", BoneTransformations[CharacterBone_Head]);
-					SetMat4(GameState->CharacterShader, "BoneTransformations[1]", BoneTransformations[CharacterBone_Shoulders]);
-					SetMat4(GameState->CharacterShader, "BoneTransformations[2]", BoneTransformations[CharacterBone_Body]);
-					SetMat4(GameState->CharacterShader, "BoneTransformations[3]", BoneTransformations[CharacterBone_Hand_Right]);
-					SetMat4(GameState->CharacterShader, "BoneTransformations[4]", BoneTransformations[CharacterBone_Hand_Left]);
-					SetMat4(GameState->CharacterShader, "BoneTransformations[5]", BoneTransformations[CharacterBone_Foot_Right]);
-					SetMat4(GameState->CharacterShader, "BoneTransformations[6]", BoneTransformations[CharacterBone_Foot_Left]);
-
-					r32 HeroRotRadians = DEG2RAD(Entity->Rotation);
-					vec3 FacingDir = vec3(Sin(HeroRotRadians), 0.0f, Cos(HeroRotRadians));
-					vec3 HeroRight = Normalize(Cross(FacingDir, vec3(0.0f, 1.0f, 0.0f))); 
-					asset_tag_vector MatchVector = { 1.0f };
-					u32 HeadIndex = GetBestMatchAsset(TempState->GameAssets, AssetType_Head, &MatchVector);
-					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Head);
-					DrawModel(GameState->CharacterShader, TempState->GameAssets, HeadIndex, Entity->Rotation, 1.0f, HeroRight, Entity->P);
-					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Shoulders);
-					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Shoulders].FirstAssetIndex, 
-							  Entity->Rotation, 1.0f, HeroRight, Entity->P);
-					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Body);
-					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Body].FirstAssetIndex,
-							  Entity->Rotation, 1.0f, HeroRight, Entity->P);
-					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Hand_Right);
-					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Hand].FirstAssetIndex, 
-							  Entity->Rotation, 0.8f, HeroRight, Entity->P);
-					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Hand_Left);
-					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Hand].FirstAssetIndex,
-							  Entity->Rotation, 0.8f, -HeroRight, Entity->P);
-					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Foot_Right);
-					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Foot].FirstAssetIndex, 
-							  Entity->Rotation, 1.4f, HeroRight, Entity->P);
-					SetInt(GameState->CharacterShader, "BoneID", CharacterBone_Foot_Left);
-					DrawModel(GameState->CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Foot].FirstAssetIndex,
-							  Entity->Rotation, 1.4f, -HeroRight, Entity->P);
-				} break;
-
-				case EntityType_Fireball:
-				{
-					mat4 Model = Translate(vec3(0.0f, 0.5f*0.25f, 0.0f) + Entity->P) * Scale(vec3(0.25f, 0.25f, 0.25f));
-					SetMat4(GameState->WorldShader, "Model", Model);
-					DrawFromVAO(GameState->CubeVAO, 36);
-				} break;
-
-				case EntityType_Tree:
-				{
-					DrawModel(GameState->WorldShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Tree].FirstAssetIndex,
-							  0.0f, 1.0f, vec3(0.0f, 0.0f, 0.0f), Entity->P);
-				} break;
-
-				// TEST
-				default:
-				{
-					mat4 Model = Translate(vec3(0.0f, 0.5f, 0.0f) + Entity->P);
-					SetMat4(GameState->WorldShader, "Model", Model);
-					DrawFromVAO(GameState->CubeVAO, 36);
-
-					UseShader(GameState->BillboardShader);
-					SetVec3(GameState->BillboardShader, "Color", vec3(1.0f, 0.0f, 0.0f));
-					SetVec3(GameState->BillboardShader, "CameraRight", Right);
-					SetVec3(GameState->BillboardShader, "BillboardSimCenterP", Entity->P + vec3(0.0f, 1.0f + 0.1f, 0.0f));
-					SetVec2(GameState->BillboardShader, "Scale", vec2((r32)Entity->HitPoints / (r32)Entity->MaxHitPoints, 0.2f));
-					
-					glBindVertexArray(GameState->QuadVAO);
-					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-					glBindVertexArray(0);
-				}  break;
-			}
 		}
 	}
+	
+	// NOTE(georgy): Directional shadow map rendering
+	r32 CascadesDistances[CASCADES_COUNT + 1] = {Camera->NearDistance, 25.0f, 65.0f, Camera->FarDistance};
+	mat4 LightSpaceMatrices[CASCADES_COUNT];
+	glViewport(0, 0, GameState->ShadowMapsWidth, GameState->ShadowMapsHeight);
+	glBindFramebuffer(GL_FRAMEBUFFER, GameState->ShadowMapFBO);
+	for(u32 CascadeIndex = 0;
+		CascadeIndex < CASCADES_COUNT;
+		CascadeIndex++)
+	{
+		glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GameState->ShadowMapsArray, 0, CascadeIndex);
+		glClear(GL_DEPTH_BUFFER_BIT);
 
+		vec3 CameraRight = vec3(Camera->RotationMatrix.FirstColumn.x(), Camera->RotationMatrix.SecondColumn.x(), Camera->RotationMatrix.ThirdColumn.x());;
+		vec3 CameraUp = vec3(Camera->RotationMatrix.FirstColumn.y(), Camera->RotationMatrix.SecondColumn.y(), Camera->RotationMatrix.ThirdColumn.y());;
+		vec3 CameraOut = -vec3(Camera->RotationMatrix.FirstColumn.z(), Camera->RotationMatrix.SecondColumn.z(), Camera->RotationMatrix.ThirdColumn.z());
+
+		r32 NearPlaneHalfHeight = Tan(0.5f*DEG2RAD(Camera->FoV))*CascadesDistances[CascadeIndex];
+		r32 NearPlaneHalfWidth = NearPlaneHalfHeight*Camera->AspectRatio;
+		r32 FarPlaneHalfHeight = Tan(0.5f*DEG2RAD(Camera->FoV))*CascadesDistances[CascadeIndex + 1];
+		r32 FarPlaneHalfWidth = FarPlaneHalfHeight*Camera->AspectRatio;
+
+		vec4 Cascade1[8];
+		Cascade1[0] = vec4(CameraRight*NearPlaneHalfWidth + CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
+		Cascade1[1] = vec4(CameraRight*NearPlaneHalfWidth - CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
+		Cascade1[2] = vec4(-CameraRight*NearPlaneHalfWidth + CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
+		Cascade1[3] = vec4(-CameraRight*NearPlaneHalfWidth - CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
+		Cascade1[4] = vec4(CameraRight*FarPlaneHalfWidth + CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
+		Cascade1[5] = vec4(CameraRight*FarPlaneHalfWidth - CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
+		Cascade1[6] = vec4(-CameraRight*FarPlaneHalfWidth + CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
+		Cascade1[7] = vec4(-CameraRight*FarPlaneHalfWidth - CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
+
+		for(u32 PointIndex = 0;
+			PointIndex < ArrayCount(Cascade1);
+			PointIndex++)
+		{
+			Cascade1[PointIndex] = Cascade1[PointIndex] + vec4(Camera->OffsetFromHero + CameraTargetOffset, 0.0f);
+		}
+
+		// mat4 LightView = LookAt(vec3(0.0f, 0.0f, 0.0f), -vec3(0.0f, 1.0f, 0.0f), vec3(0.0f, 0.0f, -1.0f));
+		mat4 LightView = LookAt(vec3(0.0f, 0.0f, 0.0f), GameState->DirectionalLightDir);
+		for(u32 PointIndex = 0;
+			PointIndex < ArrayCount(Cascade1);
+			PointIndex++)
+		{
+			Cascade1[PointIndex] = LightView * Cascade1[PointIndex];
+		}
+		
+		rect3 Cascade1AABB;
+		Cascade1AABB.Min = vec3(FLT_MAX, FLT_MAX, FLT_MAX);
+		Cascade1AABB.Max = vec3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+		for(u32 PointIndex = 0;
+			PointIndex < ArrayCount(Cascade1);
+			PointIndex++)
+		{
+			Cascade1AABB.Min = Min(Cascade1AABB.Min, vec3(Cascade1[PointIndex].m));
+			Cascade1AABB.Max = Max(Cascade1AABB.Max, vec3(Cascade1[PointIndex].m));
+		}
+		Cascade1AABB = AddRadiusTo(Cascade1AABB, vec3(1.5f, 1.5f, 1.5f));
+		mat4 LightProjection = Ortho(Cascade1AABB.Min.y(), Cascade1AABB.Max.y(), 
+									 Cascade1AABB.Min.x(), Cascade1AABB.Max.x(),
+									-Cascade1AABB.Max.z() - 50.0f, -Cascade1AABB.Min.z());
+
+		LightSpaceMatrices[CascadeIndex] = LightProjection * LightView;
+		UseShader(GameState->WorldDepthShader);
+		SetMat4(GameState->WorldDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
+		UseShader(GameState->CharacterDepthShader);
+		SetMat4(GameState->CharacterDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
+
+		RenderEntities(GameState, TempState, SimRegion, GameState->WorldDepthShader, GameState->CharacterDepthShader, Right);
+
+		RenderChunks(&GameState->World, GameState->WorldDepthShader, LightSpaceMatrices[CascadeIndex]);
+	}
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	// NOTE(georgy): World and entities rendering
+	glViewport(0, 0, BufferWidth, BufferHeight);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	mat4 View = Camera->RotationMatrix * 
+				Translate(-Camera->OffsetFromHero - CameraTargetOffset);
+	mat4 Projection = Perspective(Camera->FoV, Camera->AspectRatio, Camera->NearDistance, Camera->FarDistance);
+	mat4 ViewProjection = Projection * View;
+	shader Shaders3D[] = {GameState->WorldShader, GameState->CharacterShader, GameState->BillboardShader};
+	Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), ViewProjection);
+
+	UseShader(GameState->WorldShader);
+	SetMat4Array(GameState->WorldShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
+	SetFloatArray(GameState->WorldShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
+	SetVec3(GameState->WorldShader, "DirectionalLightDir", GameState->DirectionalLightDir);
+	SetInt(GameState->WorldShader, "ShadowMaps", 0);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
+	
+	UseShader(GameState->CharacterShader);
+	SetMat4Array(GameState->CharacterShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
+	SetFloatArray(GameState->CharacterShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
+	SetVec3(GameState->CharacterShader, "DirectionalLightDir", GameState->DirectionalLightDir);
+	SetInt(GameState->CharacterShader, "ShadowMaps", 0);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
+
+	RenderEntities(GameState, TempState, SimRegion, GameState->WorldShader, GameState->CharacterShader, Right);
 	RenderChunks(&GameState->World, GameState->WorldShader, ViewProjection);
+
 
 	EndSimulation(GameState, SimRegion, &GameState->WorldAllocator);
 	EndTemporaryMemory(WorldConstructionAndRenderMemory);

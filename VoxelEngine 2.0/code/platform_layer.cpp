@@ -2,12 +2,12 @@
 #include <gl\glew.h>
 #include <gl\wglew.h>
 
-#include "voxel_engine_platform.h"
-#include "voxel_engine.hpp"
-
 #include <Windows.h>
 #include <timeapi.h>
 #include <stdio.h>
+
+#include "voxel_engine_platform.h"
+#include "voxel_engine.hpp"
 
 global_variable bool8 GlobalRunning;
 global_variable bool8 GlobalCursorShouldBeClipped;
@@ -404,7 +404,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			{
 				RefreshRate = WinRefreshRate;
 			}
-			int GameRefreshRate = RefreshRate;
+			int GameRefreshRate = RefreshRate / 2;
 #if VOXEL_ENGINE_DEBUG_BUILD
 			GameRefreshRate = RefreshRate / 2;
 #endif
@@ -569,7 +569,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				r32 MSPerFrame = 1000.0f * WinGetSecondsElapsed(LastCounter, EndCounter);
 				LastCounter = EndCounter;
 				
-#if 1
+#if 0
 				char MSBuffer[256];
 				_snprintf_s(MSBuffer, sizeof(MSBuffer), "All frame: %.02fms/f\n", MSPerFrame);
 				OutputDebugString(MSBuffer);

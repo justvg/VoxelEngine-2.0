@@ -60,6 +60,12 @@ UseShader(shader Shader)
 }
 
 inline void
+SetFloatArray(shader Shader, char *Name, u32 Count, r32 *Values)
+{
+	glUniform1fv(glGetUniformLocation(Shader.ID, Name), Count, Values);
+}
+
+inline void
 SetFloat(shader Shader, char *Name, r32 Value)
 {
 	glUniform1f(glGetUniformLocation(Shader.ID, Name), Value);
@@ -90,11 +96,16 @@ SetVec4(shader Shader, char *Name, vec4 Value)
 }
 
 inline void
-SetMat4(shader Shader, char *Name, mat4 Value)
+SetMat4Array(shader Shader, char *Name, u32 Count, mat4 *Values)
 {
-	glUniformMatrix4fv(glGetUniformLocation(Shader.ID, Name), 1, GL_FALSE, (GLfloat *)&Value.FirstColumn);
+	glUniformMatrix4fv(glGetUniformLocation(Shader.ID, Name), Count, GL_FALSE, (GLfloat *)Values);
 }
 
+inline void
+SetMat4(shader Shader, char *Name, mat4 Value)
+{
+	SetMat4Array(Shader, Name, 1, &Value);
+}
 
 inline void
 Initialize3DTransforms(shader *Shaders, u32 ShaderCount, mat4 ViewProjection)

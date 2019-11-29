@@ -234,10 +234,19 @@ struct game_state
 	shader CharacterShader;
 	shader WorldShader;
 	shader BillboardShader;
+	shader WorldDepthShader;
+	shader CharacterDepthShader;
+	shader FramebufferScreenShader;
 
 	animation CharacterAnimations[CharacterAnimation_Count];
 
 	hero Hero;
+
+#define CASCADES_COUNT 3
+	vec3 DirectionalLightDir;
+	GLuint ShadowMapFBO, ShadowMapsArray;
+	u32 ShadowMapsWidth, ShadowMapsHeight;
+
 	GLuint CubeVAO, CubeVBO;
 	GLuint QuadVAO, QuadVBO;
 

@@ -584,7 +584,7 @@ internal mat4 __vectorcall
 LookAt(vec3 From, vec3 Target, vec3 UpAxis = vec3(0.0f, 1.0f, 0.0f))
 {
 	vec3 Forward = Normalize(From - Target);
-	vec3 Right = Normalize(Cross(UpAxis, Forward));
+	vec3 Right = Normalize(Cross(UpAxis, Forward)); 
 	vec3 Up = Cross(Forward, Right);
 
 	mat4 Result;
@@ -633,6 +633,21 @@ Perspective(r32 FoV, r32 AspectRatio, r32 Near, r32 Far)
 							  -(Far + Near) / (Far - Near), 
 							  -1.0f);
 	Result.FourthColumn = vec4(0.0f, 0.0f, -(2.0f * Far * Near) / (Far - Near), 0.0f);
+
+	return(Result);
+}
+
+internal mat4 __vectorcall
+Ortho(r32 Bot, r32 Top, r32 Left, r32 Right, r32 Near, r32 Far)
+{
+	mat4 Result;
+
+	Result.FirstColumn = vec4(2.0f / (Right - Left), 0.0f, 0.0f, 0.0f);
+	Result.SecondColumn = vec4(0.0f, 2.0f / (Top - Bot), 0.0f, 0.0f);
+	Result.ThirdColumn = vec4(0.0f, 0.0f, -2.0f / (Far - Near), 0.0f);
+	Result.FourthColumn = vec4(-(Right + Left) / (Right - Left), 
+							  -(Top + Bot) / (Top - Bot),
+							  -(Far + Near) / (Far - Near), 1.0f);
 
 	return(Result);
 }
@@ -1143,6 +1158,7 @@ ConstructBox(box *Box, mat3 Transformation, vec3 Translation = vec3(0.0f, 0.0f, 
 internal void __vectorcall
 TransformBox(box *Box, mat3 Transformation, vec3 Translation = vec3(0.0f, 0.0f, 0.0f))
 {
+	// TODO(georgy): This is stupid, I dont want to copy box from ConstructBox. Can do this with pointers!
 	*Box = ConstructBox(Box, Transformation, Translation);
 }
 

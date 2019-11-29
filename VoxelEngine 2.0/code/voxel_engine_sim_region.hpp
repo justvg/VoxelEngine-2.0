@@ -155,8 +155,8 @@ BeginSimulation(game_state *GameState, world_position Origin, vec3 OriginForward
 							Chunk->Translation =  Substract(World, &ChunkPosition, &Origin);
 
 							// TODO(georgy): This is kind of cheesy pre-frustum culling. Think about it!
-							if(!((Length(vec3(Chunk->Translation.x(), 0.0f, Chunk->Translation.z())) > 3.0f*World->ChunkDimInMeters) &&
-								(Dot(Chunk->Translation, OriginForward) < -0.25f)))
+							//if(!((Length(vec3(Chunk->Translation.x(), 0.0f, Chunk->Translation.z())) > 3.0f*World->ChunkDimInMeters) &&
+							//	(Dot(Chunk->Translation, OriginForward) < -0.25f)))
 							{
 								chunk *ChunkToRender = PushStruct(TempAllocator, chunk);
 								*ChunkToRender = *Chunk;
@@ -221,6 +221,8 @@ EndSimulation(game_state *GameState, sim_region *SimRegion, stack_allocator *Wor
 		world_position NewP = MapIntoChunkSpace(SimRegion->World, &SimRegion->Origin, Entity->P);
 		ChangeEntityLocation(SimRegion->World, WorldAllocator, Entity->StorageIndex, StoredEntity, NewP);
 	}
+
+	SimRegion->World->ChunksToRender = 0;			
 }
 
 internal bool32
@@ -611,7 +613,7 @@ CameraCollisionDetection(world *World, stack_allocator *WorldAllocator, camera *
 
 	vec3 CameraRight = vec3(Camera->RotationMatrix.FirstColumn.x(), Camera->RotationMatrix.SecondColumn.x(), Camera->RotationMatrix.ThirdColumn.x());;
 	vec3 CameraUp = vec3(Camera->RotationMatrix.FirstColumn.y(), Camera->RotationMatrix.SecondColumn.y(), Camera->RotationMatrix.ThirdColumn.y());;
-	vec3 CameraOut = vec3(Camera->RotationMatrix.FirstColumn.z(), Camera->RotationMatrix.SecondColumn.z(), Camera->RotationMatrix.ThirdColumn.z());
+	vec3 CameraOut = -vec3(Camera->RotationMatrix.FirstColumn.z(), Camera->RotationMatrix.SecondColumn.z(), Camera->RotationMatrix.ThirdColumn.z());
 	ray_triangle_collision_detection_data RayTriangleData;
 	RayTriangleData.t = 1.0f;
 
@@ -724,7 +726,8 @@ CanCollide(game_state *GameState, sim_entity *A, sim_entity *B)
 }
 
 internal bool32
-HandleCollision(game_state *GameState, sim_entity *EntityA, sim_entity *EntityB, entity_type A, entity_type B)
+HandleCollision(game_state *GameState, sim_entity *EntityA, sim_entity *EntityB, entity_type A, entity_type B,
+				world_position OldWorldP, mat3 EllipsoidToWorld, vec3 ESpaceCollisionP)
 {
 	bool32 Result;
 
@@ -759,6 +762,19 @@ HandleCollision(game_state *GameState, sim_entity *EntityA, sim_entity *EntityB,
 	if((A == EntityType_Chunk) && (B == EntityType_Fireball))
 	{
 		MakeEntityNonSpatial(EntityB);
+
+		world_position CollisionWorldP = MapIntoChunkSpace(&GameState->World, &OldWorldP, EllipsoidToWorld * ESpaceCollisionP);
+		chunk *Chunk = GetChunk(&GameState->World, CollisionWorldP.ChunkX, CollisionWorldP.ChunkY, CollisionWorldP.ChunkZ);
+		Assert(Chunk);
+
+		u32 X = (u32)(CollisionWorldP.Offset.x() / GameState->World.BlockDimInMeters);
+		u32 Y = (u32)(CollisionWorldP.Offset.y() / GameState->World.BlockDimInMeters);
+		u32 Z = (u32)(CollisionWorldP.Offset.z() / GameState->World.BlockDimInMeters);
+		Assert((X < CHUNK_DIM) && (Y < CHUNK_DIM) && (Z < CHUNK_DIM));
+		Chunk->BlocksInfo->Blocks[Z*CHUNK_DIM*CHUNK_DIM + Y*CHUNK_DIM + X].Active = false;
+
+		Chunk->IsSetupBlocks = false;
+		Chunk->IsFullySetup = false;
 	}
 	else if((A == EntityType_Fireball) && (B == 10000))
 	{
@@ -915,7 +931,8 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 			bool32 SlidingPlaneNormalIsGround = false;
 			if(EllipsoidTriangleData.HitEntityType)
 			{
-				bool32 StopOnCollision = HandleCollision(GameState, Entity, HitEntity, Entity->Type, EllipsoidTriangleData.HitEntityType);
+				bool32 StopOnCollision = HandleCollision(GameState, Entity, HitEntity, Entity->Type, EllipsoidTriangleData.HitEntityType,
+														 OldWorldP, EllipsoidToWorld, EllipsoidTriangleData.CollisionP);
 
 				if(StopOnCollision)
 				{
@@ -943,5 +960,112 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 	if(Entity->DistanceLimit != 0.0f)
 	{
 		Entity->DistanceLimit = DistanceRemaining;
+	}
+}
+
+internal void
+RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegion, 
+			   shader WorldShader, shader CharacterShader, vec3 Right)
+{
+	for(u32 EntityIndex = 0;
+		EntityIndex < SimRegion->EntityCount;
+		EntityIndex++)
+	{
+		sim_entity *Entity = SimRegion->Entities + EntityIndex;
+		if(Entity->Updatable)
+		{
+			UseShader(WorldShader);
+
+			switch(Entity->Type)
+			{
+				case EntityType_Hero:
+				{
+					UseShader(CharacterShader);
+
+					mat4 BoneTransformations[CharacterBone_Count];
+					for(u32 BoneIndex = 0;
+						BoneIndex < CharacterBone_Count;
+						BoneIndex++)
+					{
+						BoneTransformations[BoneIndex] = GetBoneForEntity(GameState->CharacterAnimations, &Entity->AnimationState, 
+																		  (character_bone_id)BoneIndex);
+					}
+					for(u32 BoneIndex = 0;
+						BoneIndex < CharacterBone_Count;
+						BoneIndex++)
+					{
+						if(BoneIndex != CharacterBone_Body)
+						{
+							BoneTransformations[BoneIndex] = BoneTransformations[BoneIndex] * BoneTransformations[CharacterBone_Body];
+						}
+					}
+					
+					SetMat4(CharacterShader, "BoneTransformations[0]", BoneTransformations[CharacterBone_Head]);
+					SetMat4(CharacterShader, "BoneTransformations[1]", BoneTransformations[CharacterBone_Shoulders]);
+					SetMat4(CharacterShader, "BoneTransformations[2]", BoneTransformations[CharacterBone_Body]);
+					SetMat4(CharacterShader, "BoneTransformations[3]", BoneTransformations[CharacterBone_Hand_Right]);
+					SetMat4(CharacterShader, "BoneTransformations[4]", BoneTransformations[CharacterBone_Hand_Left]);
+					SetMat4(CharacterShader, "BoneTransformations[5]", BoneTransformations[CharacterBone_Foot_Right]);
+					SetMat4(CharacterShader, "BoneTransformations[6]", BoneTransformations[CharacterBone_Foot_Left]);
+
+					r32 HeroRotRadians = DEG2RAD(Entity->Rotation);
+					vec3 FacingDir = vec3(Sin(HeroRotRadians), 0.0f, Cos(HeroRotRadians));
+					vec3 HeroRight = Normalize(Cross(FacingDir, vec3(0.0f, 1.0f, 0.0f))); 
+					asset_tag_vector MatchVector = { 1.0f };
+					u32 HeadIndex = GetBestMatchAsset(TempState->GameAssets, AssetType_Head, &MatchVector);
+					SetInt(CharacterShader, "BoneID", CharacterBone_Head);
+					DrawModel(CharacterShader, TempState->GameAssets, HeadIndex, Entity->Rotation, 1.0f, HeroRight, Entity->P);
+					SetInt(CharacterShader, "BoneID", CharacterBone_Shoulders);
+					DrawModel(CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Shoulders].FirstAssetIndex, 
+							Entity->Rotation, 1.0f, HeroRight, Entity->P);
+					SetInt(CharacterShader, "BoneID", CharacterBone_Body);
+					DrawModel(CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Body].FirstAssetIndex,
+							Entity->Rotation, 1.0f, HeroRight, Entity->P);
+					SetInt(CharacterShader, "BoneID", CharacterBone_Hand_Right);
+					DrawModel(CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Hand].FirstAssetIndex, 
+							Entity->Rotation, 0.8f, HeroRight, Entity->P);
+					SetInt(CharacterShader, "BoneID", CharacterBone_Hand_Left);
+					DrawModel(CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Hand].FirstAssetIndex,
+							Entity->Rotation, 0.8f, -HeroRight, Entity->P);
+					SetInt(CharacterShader, "BoneID", CharacterBone_Foot_Right);
+					DrawModel(CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Foot].FirstAssetIndex, 
+							Entity->Rotation, 1.4f, HeroRight, Entity->P);
+					SetInt(CharacterShader, "BoneID", CharacterBone_Foot_Left);
+					DrawModel(CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Foot].FirstAssetIndex,
+							Entity->Rotation, 1.4f, -HeroRight, Entity->P);
+				} break;
+
+				case EntityType_Fireball:
+				{
+					mat4 Model = Translate(vec3(0.0f, 0.5f*0.25f, 0.0f) + Entity->P) * Scale(vec3(0.25f, 0.25f, 0.25f));
+					SetMat4(WorldShader, "Model", Model);
+					DrawFromVAO(GameState->CubeVAO, 36);
+				} break;
+
+				case EntityType_Tree:
+				{
+					DrawModel(WorldShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Tree].FirstAssetIndex,
+								0.0f, 1.0f, vec3(0.0f, 0.0f, 0.0f), Entity->P);
+				} break;
+
+				// TEST
+				default:
+				{
+					mat4 Model = Translate(vec3(0.0f, 0.5f, 0.0f) + Entity->P);
+					SetMat4(WorldShader, "Model", Model);
+					DrawFromVAO(GameState->CubeVAO, 36);
+
+					UseShader(GameState->BillboardShader);
+					SetVec3(GameState->BillboardShader, "Color", vec3(1.0f, 0.0f, 0.0f));
+					SetVec3(GameState->BillboardShader, "CameraRight", Right);
+					SetVec3(GameState->BillboardShader, "BillboardSimCenterP", Entity->P + vec3(0.0f, 1.0f + 0.1f, 0.0f));
+					SetVec2(GameState->BillboardShader, "Scale", vec2((r32)Entity->HitPoints / (r32)Entity->MaxHitPoints, 0.2f));
+					
+					glBindVertexArray(GameState->QuadVAO);
+					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+					glBindVertexArray(0);
+				}  break;
+			}
+		}
 	}
 }

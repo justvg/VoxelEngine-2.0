@@ -918,7 +918,6 @@ MergeSort(chunk **ChunkPtr)
 internal bool32
 ChunkFrustumCulling(mat4 MVP, vec3 Min, vec3 Dim)
 {
-	u64 StartCycles = __rdtsc();
 	vec4 Points[8];
 
 	r32 X = Dim.x();
@@ -995,8 +994,6 @@ RenderChunks(world *World, shader Shader, mat4 VP)
 			DrawFromVAO(Chunk->VAO, Chunk->VerticesP.EntriesCount);
 		}
 	}
-
-	World->ChunksToRender = 0;			
 }
 
 inline vec3
