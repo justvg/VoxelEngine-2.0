@@ -159,6 +159,20 @@ TESTAddCube(game_state *GameState, world_position P, vec3 Dim, u32 VerticesCount
 	return(StoredEntity);
 }
 
+internal void
+AddParticlesToEntity(game_state *GameState, stored_entity *Entity, particle_emitter_info Info, asset_type_id TextureType)
+{
+	// TODO(georgy): Allow multiple particle systems for an entity
+	if(!Entity->Sim.Particles)
+	{
+		// TODO(georgy): Do I want to use _world_ allocator here?
+		Entity->Sim.Particles = PushStruct(&GameState->WorldAllocator, particle_emitter);
+		particle_emitter *EntityParticles = Entity->Sim.Particles;
+		EntityParticles->Info = Info;
+		EntityParticles->TextureType = TextureType;
+	}
+}
+
 struct add_stored_entity_result
 {
 	stored_entity *StoredEntity;
@@ -205,6 +219,18 @@ AddHero(game_state *GameState, world_position P)
 	Entity.StoredEntity->Sim.Collision = GameState->HeroCollision;
 	Entity.StoredEntity->Sim.Fireball.StorageIndex = AddFireball(GameState);
 
+	particle_emitter_info FireballParticleEmitterInfo = {};
+	FireballParticleEmitterInfo.MaxLifeTime = 2.0f;
+	FireballParticleEmitterInfo.RowsInTextureAtlas = 4;
+	FireballParticleEmitterInfo.SpawnInSecond = 60;
+	FireballParticleEmitterInfo.Scale = 0.25f;
+	FireballParticleEmitterInfo.StartPRanges = vec3(0.5f, 0.0f, 0.5f);
+	FireballParticleEmitterInfo.StartdPRanges = vec3(0.5f, 0.0f, 0.5f);
+	FireballParticleEmitterInfo.dPY = 7.0f;
+	FireballParticleEmitterInfo.StartddP = vec3(0.0f, -9.8f, 0.0f);
+	AddParticlesToEntity(GameState, &GameState->StoredEntities[Entity.StoredEntity->Sim.Fireball.StorageIndex], 
+						 FireballParticleEmitterInfo, AssetType_Fire);
+
 	return(Entity.StoredEntity);
 }
 
@@ -243,6 +269,10 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		GameState->Camera.NearDistance = 0.1f;
 		GameState->Camera.FarDistance = 120.0f;
 		GameState->Camera.FoV = 45.0f;
+		// TODO(georgy): Get this from hero head model or smth
+		// NOTE(georgy): This is hero head centre offset from hero feet pos. 
+		// 				 We use this to offset all object in view matrix. So Camera->OffsetFromHero is offset from hero head centre  
+		GameState->Camera.TargetOffset = vec3(0.0f, 0.680000007f + 0.1f, 0.0f);
 
 		InitializeWorld(&GameState->World);
 
@@ -253,10 +283,72 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 
 		CompileShader(&GameState->CharacterShader, "data/shaders/CharacterVS.glsl", "data/shaders/CharacterFS.glsl");
 		CompileShader(&GameState->WorldShader, "data/shaders/WorldVS.glsl", "data/shaders/WorldFS.glsl");
+		CompileShader(&GameState->HitpointsShader, "data/shaders/HitpointsVS.glsl", "data/shaders/HitpointsFS.glsl");
 		CompileShader(&GameState->BillboardShader, "data/shaders/BillboardVS.glsl", "data/shaders/BillboardFS.glsl");
+		CompileShader(&GameState->BlockParticleShader, "data/shaders/BlockParticleVS.glsl", "data/shaders/BlockParticleFS.glsl");
 		CompileShader(&GameState->CharacterDepthShader, "data/shaders/CharacterDepthVS.glsl", "data/shaders/EmptyFS.glsl");
 		CompileShader(&GameState->WorldDepthShader, "data/shaders/WorldDepthVS.glsl", "data/shaders/EmptyFS.glsl");
+		CompileShader(&GameState->BlockParticleDepthShader, "data/shaders/BlockParticleDepthVS.glsl", "data/shaders/EmptyFS.glsl");
 		CompileShader(&GameState->FramebufferScreenShader, "data/shaders/FramebufferScreenVS.glsl", "data/shaders/FramebufferScreenFS.glsl");
+
+		GameState->BlockParticleGenerator = {};
+		block_particle_generator *BlockParticleGenerator = &GameState->BlockParticleGenerator;
+		r32 BlockParticleVertices[] = 
+		{
+			0.1f, -0.1f, -0.1f,  0.0f,  0.0f, -1.0f,
+			-0.1f, -0.1f, -0.1f,  0.0f,  0.0f, -1.0f,
+			0.1f,  0.1f, -0.1f,  0.0f,  0.0f, -1.0f, 
+			-0.1f,  0.1f, -0.1f,  0.0f,  0.0f, -1.0f,
+			0.1f,  0.1f, -0.1f,  0.0f,  0.0f, -1.0f,
+			-0.1f, -0.1f, -0.1f,  0.0f,  0.0f, -1.0f, 
+
+			-0.1f, -0.1f,  0.1f,  0.0f,  0.0f, 1.0f,  
+			0.1f, -0.1f,  0.1f,  0.0f,  0.0f, 1.0f,  
+			0.1f,  0.1f,  0.1f,  0.0f,  0.0f, 1.0f,  
+			0.1f,  0.1f,  0.1f,  0.0f,  0.0f, 1.0f,  
+			-0.1f,  0.1f,  0.1f,  0.0f,  0.0f, 1.0f,  
+			-0.1f, -0.1f,  0.1f,  0.0f,  0.0f, 1.0f,  
+
+			-0.1f,  0.1f,  0.1f, -1.0f,  0.0f,  0.0f, 
+			-0.1f,  0.1f, -0.1f, -1.0f,  0.0f,  0.0f, 
+			-0.1f, -0.1f, -0.1f, -1.0f,  0.0f,  0.0f, 
+			-0.1f, -0.1f, -0.1f, -1.0f,  0.0f,  0.0f, 
+			-0.1f, -0.1f,  0.1f, -1.0f,  0.0f,  0.0f, 
+			-0.1f,  0.1f,  0.1f, -1.0f,  0.0f,  0.0f, 
+
+			0.1f,  0.1f, -0.1f,  1.0f,  0.0f,  0.0f,
+			0.1f,  0.1f,  0.1f,  1.0f,  0.0f,  0.0f,
+			0.1f, -0.1f, -0.1f,  1.0f,  0.0f,  0.0f, 
+			0.1f, -0.1f,  0.1f,  1.0f,  0.0f,  0.0f,
+			0.1f, -0.1f, -0.1f,  1.0f,  0.0f,  0.0f,
+			0.1f,  0.1f,  0.1f,  1.0f,  0.0f,  0.0f, 
+
+			-0.1f, -0.1f, -0.1f,  0.0f, -1.0f,  0.0f, 
+			0.1f, -0.1f, -0.1f,  0.0f, -1.0f,  0.0f, 
+			0.1f, -0.1f,  0.1f,  0.0f, -1.0f,  0.0f, 
+			0.1f, -0.1f,  0.1f,  0.0f, -1.0f,  0.0f, 
+			-0.1f, -0.1f,  0.1f,  0.0f, -1.0f,  0.0f, 
+			-0.1f, -0.1f, -0.1f,  0.0f, -1.0f,  0.0f, 
+
+			0.1f,  0.1f, -0.1f,  0.0f,  1.0f,  0.0f,
+			-0.1f,  0.1f, -0.1f,  0.0f,  1.0f,  0.0f,
+			0.1f,  0.1f,  0.1f,  0.0f,  1.0f,  0.0f, 
+			-0.1f,  0.1f,  0.1f,  0.0f,  1.0f,  0.0f,
+			0.1f,  0.1f,  0.1f,  0.0f,  1.0f,  0.0f,
+			-0.1f,  0.1f, -0.1f,  0.0f,  1.0f,  0.0f
+		};
+		glGenVertexArrays(1, &BlockParticleGenerator->VAO);
+		glGenBuffers(1, &BlockParticleGenerator->VBO);
+		glGenBuffers(1, &BlockParticleGenerator->SimPVBO);
+		glGenBuffers(1, &BlockParticleGenerator->ColorVBO);
+		glBindVertexArray(BlockParticleGenerator->VAO);
+		glBindBuffer(GL_ARRAY_BUFFER, BlockParticleGenerator->VBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(BlockParticleVertices), BlockParticleVertices, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6*sizeof(r32), (void *)0);
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6*sizeof(r32), (void *)(3*sizeof(r32)));
+		glBindVertexArray(0);
 
 		r32 CubeVertices[] = {
 			// Back face
@@ -327,15 +419,38 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(r32), (void *)0);
 		glBindVertexArray(0);
 
+		glGenVertexArrays(1, &GameState->ParticleVAO);
+		glGenBuffers(1, &GameState->ParticleVBO);
+		glGenBuffers(1, &GameState->ParticlePVBO);
+		glGenBuffers(1, &GameState->ParticleOffsetVBO);
+		glGenBuffers(1, &GameState->ParticleScaleVBO);
+		glBindVertexArray(GameState->ParticleVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, GameState->ParticleVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(QuadVertices), QuadVertices, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(r32), (void *)0);
+		glBindVertexArray(0);
+
 		// NOTE(georgy): Reserve slot 0
 		AddStoredEntity(GameState, EntityType_Null, InvalidPosition());
 
 		world_position TestP = {};
 		TestP.ChunkX = 0;
-		TestP.ChunkY = MAX_CHUNKS_Y;
+		TestP.ChunkY = 0;
 		TestP.ChunkZ = 0;
-		TestP.Offset = vec3(0.0f, 0.0f, 3.0f);
-		TESTAddCube(GameState, TestP, vec3(1.0f, 1.0f, 1.0f), 36, CubeVertices);
+		TestP.Offset = vec3(0.0f, 4.0f, 3.0f);
+		particle_emitter_info CubeParticleEmitterInfo = {};
+		CubeParticleEmitterInfo.Additive = true;
+		CubeParticleEmitterInfo.MaxLifeTime = 2.0f;
+		CubeParticleEmitterInfo.RowsInTextureAtlas = 4;
+		CubeParticleEmitterInfo.SpawnInSecond = 120;
+		CubeParticleEmitterInfo.Scale = 0.3f;
+		CubeParticleEmitterInfo.StartPRanges = vec3(0.12f, 0.0f, 0.12f);
+		CubeParticleEmitterInfo.StartdPRanges = vec3(0.5f, 0.0f, 0.5f);
+		CubeParticleEmitterInfo.dPY = 7.0f;
+		CubeParticleEmitterInfo.StartddP = vec3(0.0f, -9.8f, 0.0f);
+		AddParticlesToEntity(GameState, TESTAddCube(GameState, TestP, vec3(1.0f, 1.0f, 1.0f), 36, CubeVertices),
+							 CubeParticleEmitterInfo, AssetType_Cosmic);
 
 		world_position HeroP = {};
 		HeroP.ChunkX = 0;
@@ -343,6 +458,15 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		HeroP.ChunkZ = 0;
 		HeroP.Offset = vec3(0.3f, 5.0f, 3.0f);
 		GameState->Hero.Entity = AddHero(GameState, HeroP);
+		particle_emitter_info ParticleEmitterInfo = {};
+		ParticleEmitterInfo.MaxLifeTime = 2.0f;
+		ParticleEmitterInfo.RowsInTextureAtlas = 8;
+		ParticleEmitterInfo.SpawnInSecond = 120;
+		ParticleEmitterInfo.Scale = 1.0f;
+		ParticleEmitterInfo.StartPRanges = vec3(0.0f, 0.0f, 0.0f);
+		ParticleEmitterInfo.StartdPRanges = vec3(0.5f, 0.0f, 0.5f);
+		ParticleEmitterInfo.dPY = 2.0f;
+		// AddParticlesToEntity(GameState, GameState->Hero.Entity, ParticleEmitterInfo, AssetType_Smoke);
 
 		world_position TestTreeP = {};
 		TestTreeP.ChunkX = 0;
@@ -478,14 +602,9 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	sim_region *SimRegion = BeginSimulation(GameState, GameState->Hero.Entity->P, Forward, 
 											SimRegionUpdatableBounds, &TempState->Allocator, Input->dt);	
 
-	// TODO(georgy): Get this from hero head model or smth
-	// NOTE(georgy): This is hero head centre offset from hero feet pos. 
-	// 				 We use this to offset all object in view matrix. So Camera->OffsetFromHero is offset from hero head centre  
-	vec3 CameraTargetOffset = vec3(0.0f, 0.680000007f + 0.1f, 0.0f);
 	Camera->RotationMatrix = RotationMatrixFromDirection(Camera->OffsetFromHero);
 #if !defined(VOXEL_ENGINE_DEBUG_BUILD)
-	CameraCollisionDetection(&GameState->World, &GameState->WorldAllocator, Camera, CameraTargetOffset,
-							 &GameState->Hero.Entity->P);
+	CameraCollisionDetection(&GameState->World, &GameState->WorldAllocator, Camera, &GameState->Hero.Entity->P);
 #endif
 	SetupChunksBlocks(&GameState->World, &GameState->WorldAllocator, TempState);								
 	SetupChunksVertices(&GameState->World, TempState);
@@ -523,7 +642,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 							ClearFlags(Fireball, EntityFlag_NonSpatial);
 							Fireball->DistanceLimit = 8.0f;
 							Fireball->P = Entity->P + vec3(0.0f, 0.5f, 0.0f);
-							Fireball->dP = vec3(Entity->dP.x(), 0.0f, Entity->dP.z()) + 1.0f*Forward;
+							Fireball->dP = vec3(Entity->dP.x(), 0.0f, Entity->dP.z()) + 5.0f*Forward;
 						}
 					}
 
@@ -557,12 +676,6 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 
 				case EntityType_Fireball:
 				{
-					char MSBuffer[256];
-					_snprintf_s(MSBuffer, sizeof(MSBuffer), "%d %d %d\n", GameState->StoredEntities[Entity->StorageIndex].P.ChunkX, 
-								GameState->StoredEntities[Entity->StorageIndex].P.ChunkY,
-								GameState->StoredEntities[Entity->StorageIndex].P.ChunkZ);
-					OutputDebugString(MSBuffer);
-
 					if(Entity->DistanceLimit == 0.0f)
 					{
 						MakeEntityNonSpatial(Entity);
@@ -583,6 +696,17 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 				} break;
 			}
 
+			if(Entity->Particles)
+			{
+				particle_emitter *EntityParticles = Entity->Particles;
+				UpdateParticles(EntityParticles, Camera, Entity->P, dt);
+				SpawnParticles(EntityParticles, Camera, Entity->P, dt);
+				if(!EntityParticles->Info.Additive)
+				{
+					SortParticles(EntityParticles->Particles, ArrayCount(EntityParticles->Particles));
+				}
+			}
+
 			if(IsSet(Entity, EntityFlag_Moveable) && !IsSet(Entity, EntityFlag_NonSpatial))
 			{
 				MoveEntity(GameState, SimRegion, Entity, MoveSpec, dt, false);
@@ -593,6 +717,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 			}
 		}
 	}
+	BlockParticlesUpdate(&GameState->BlockParticleGenerator, Input->dt);
 	
 	// NOTE(georgy): Directional shadow map rendering
 	r32 CascadesDistances[CASCADES_COUNT + 1] = {Camera->NearDistance, 25.0f, 65.0f, Camera->FarDistance};
@@ -629,7 +754,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 			PointIndex < ArrayCount(Cascade1);
 			PointIndex++)
 		{
-			Cascade1[PointIndex] = Cascade1[PointIndex] + vec4(Camera->OffsetFromHero + CameraTargetOffset, 0.0f);
+			Cascade1[PointIndex] = Cascade1[PointIndex] + vec4(Camera->OffsetFromHero + Camera->TargetOffset, 0.0f);
 		}
 
 		// mat4 LightView = LookAt(vec3(0.0f, 0.0f, 0.0f), -vec3(0.0f, 1.0f, 0.0f), vec3(0.0f, 0.0f, -1.0f));
@@ -661,10 +786,15 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		SetMat4(GameState->WorldDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
 		UseShader(GameState->CharacterDepthShader);
 		SetMat4(GameState->CharacterDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
-
-		RenderEntities(GameState, TempState, SimRegion, GameState->WorldDepthShader, GameState->CharacterDepthShader, Right);
+		UseShader(GameState->BlockParticleDepthShader);
+		SetMat4(GameState->BlockParticleDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
 
 		RenderChunks(&GameState->World, GameState->WorldDepthShader, LightSpaceMatrices[CascadeIndex]);
+
+		RenderEntities(GameState, TempState, SimRegion, GameState->WorldDepthShader, 
+					   GameState->CharacterDepthShader, GameState->BillboardShader, 
+					   Right);
+		RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, GameState->BlockParticleDepthShader, GameState->Hero.Entity->P);
 	}
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -673,10 +803,11 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	mat4 View = Camera->RotationMatrix * 
-				Translate(-Camera->OffsetFromHero - CameraTargetOffset);
+				Translate(-Camera->OffsetFromHero - Camera->TargetOffset);
 	mat4 Projection = Perspective(Camera->FoV, Camera->AspectRatio, Camera->NearDistance, Camera->FarDistance);
 	mat4 ViewProjection = Projection * View;
-	shader Shaders3D[] = {GameState->WorldShader, GameState->CharacterShader, GameState->BillboardShader};
+	shader Shaders3D[] = {GameState->WorldShader, GameState->CharacterShader, 
+						  GameState->HitpointsShader, GameState->BillboardShader, GameState->BlockParticleShader};
 	Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), ViewProjection);
 
 	UseShader(GameState->WorldShader);
@@ -695,9 +826,19 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
 
-	RenderEntities(GameState, TempState, SimRegion, GameState->WorldShader, GameState->CharacterShader, Right);
-	RenderChunks(&GameState->World, GameState->WorldShader, ViewProjection);
+	UseShader(GameState->BlockParticleShader);
+	SetMat4Array(GameState->BlockParticleShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
+	SetFloatArray(GameState->BlockParticleShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
+	SetVec3(GameState->BlockParticleShader, "DirectionalLightDir", GameState->DirectionalLightDir);
+	SetInt(GameState->BlockParticleShader, "ShadowMaps", 0);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
 
+	RenderChunks(&GameState->World, GameState->WorldShader, ViewProjection);
+	RenderEntities(GameState, TempState, SimRegion, GameState->WorldShader, GameState->CharacterShader,
+				   GameState->BillboardShader, Right);
+	RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, GameState->BlockParticleShader, GameState->Hero.Entity->P);
+	RenderParticleEffects(GameState, TempState, SimRegion, GameState->BillboardShader, Right);
 
 	EndSimulation(GameState, SimRegion, &GameState->WorldAllocator);
 	EndTemporaryMemory(WorldConstructionAndRenderMemory);

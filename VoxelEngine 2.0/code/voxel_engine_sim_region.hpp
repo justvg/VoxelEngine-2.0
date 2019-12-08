@@ -143,6 +143,11 @@ BeginSimulation(game_state *GameState, world_position Origin, vec3 OriginForward
 							World->ChunksToSetupFully[World->ChunksToSetupFullyThisFrameCount++] = Chunk;
 						}
 
+						if(Chunk->IsSetupBlocks && Chunk->IsLoaded && Chunk->IsModified)
+						{
+							UpdateChunk(World, Chunk);
+						}
+
 						if((World->ChunksToLoadThisFrameCount < MAX_CHUNKS_TO_LOAD) && 
 							Chunk->IsFullySetup && !Chunk->IsLoaded)
 						{
@@ -152,7 +157,7 @@ BeginSimulation(game_state *GameState, world_position Origin, vec3 OriginForward
 						if(Chunk->IsFullySetup && Chunk->IsLoaded && Chunk->IsNotEmpty)
 						{
 							world_position ChunkPosition = { ChunkX, ChunkY, ChunkZ, vec3(0.0f, 0.0f, 0.0f) };
-							Chunk->Translation =  Substract(World, &ChunkPosition, &Origin);
+							Chunk->Translation = Substract(World, &ChunkPosition, &Origin);
 
 							// TODO(georgy): This is kind of cheesy pre-frustum culling. Think about it!
 							//if(!((Length(vec3(Chunk->Translation.x(), 0.0f, Chunk->Translation.z())) > 3.0f*World->ChunkDimInMeters) &&
@@ -603,8 +608,8 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 }
 
 internal void
-CameraCollisionDetection(world *World, stack_allocator *WorldAllocator, camera *Camera, 
-						 vec3 CameraTargetOffset, world_position *OriginP)
+CameraCollisionDetection(world *World, stack_allocator *WorldAllocator, 
+						 camera *Camera, world_position *OriginP)
 {
 	r32 NearDistance = Camera->NearDistance;
 	r32 FoV = Camera->FoV;
@@ -617,7 +622,7 @@ CameraCollisionDetection(world *World, stack_allocator *WorldAllocator, camera *
 	ray_triangle_collision_detection_data RayTriangleData;
 	RayTriangleData.t = 1.0f;
 
-	vec3 OriginPos = CameraTargetOffset;
+	vec3 OriginPos = Camera->TargetOffset;
 	vec3 RayStartCornerRightBot = OriginPos + 
 								  CameraRight*NearPlaneHalfWidth - CameraUp*NearPlaneHalfHeight;
 	vec3 RayStartCornerRightTop = OriginPos + 
@@ -635,7 +640,7 @@ CameraCollisionDetection(world *World, stack_allocator *WorldAllocator, camera *
 		RayStartCornerLeftTop
 	};
 
-	vec3 CameraNearCentreP = Camera->OffsetFromHero + CameraTargetOffset + NearDistance*CameraOut;
+	vec3 CameraNearCentreP = Camera->OffsetFromHero + Camera->TargetOffset + NearDistance*CameraOut;
 	vec3 FrustumNearCornerRightBot = CameraNearCentreP + 
 									 CameraRight*NearPlaneHalfWidth - CameraUp*NearPlaneHalfHeight;
 	vec3 FrustumNearCornerRightTop = CameraNearCentreP + 
@@ -726,10 +731,11 @@ CanCollide(game_state *GameState, sim_entity *A, sim_entity *B)
 }
 
 internal bool32
-HandleCollision(game_state *GameState, sim_entity *EntityA, sim_entity *EntityB, entity_type A, entity_type B,
-				world_position OldWorldP, mat3 EllipsoidToWorld, vec3 ESpaceCollisionP)
+HandleCollision(game_state *GameState, sim_region *SimRegion, sim_entity *EntityA, sim_entity *EntityB, entity_type A, entity_type B,
+				mat3 EllipsoidToWorld, vec3 ESpaceCollisionP)
 {
 	bool32 Result;
+	world *World = &GameState->World;
 
 	if(A == EntityType_Fireball)
 	{
@@ -763,18 +769,44 @@ HandleCollision(game_state *GameState, sim_entity *EntityA, sim_entity *EntityB,
 	{
 		MakeEntityNonSpatial(EntityB);
 
-		world_position CollisionWorldP = MapIntoChunkSpace(&GameState->World, &OldWorldP, EllipsoidToWorld * ESpaceCollisionP);
-		chunk *Chunk = GetChunk(&GameState->World, CollisionWorldP.ChunkX, CollisionWorldP.ChunkY, CollisionWorldP.ChunkZ);
-		Assert(Chunk);
+		world_position CollisionWorldP = MapIntoChunkSpace(World, &SimRegion->Origin, EllipsoidToWorld * ESpaceCollisionP);
+		chunk *Chunk = GetChunk(World, CollisionWorldP.ChunkX, CollisionWorldP.ChunkY, CollisionWorldP.ChunkZ);
+		Assert(Chunk && Chunk->IsSetupBlocks && Chunk->IsFullySetup && Chunk->IsLoaded);
 
-		u32 X = (u32)(CollisionWorldP.Offset.x() / GameState->World.BlockDimInMeters);
-		u32 Y = (u32)(CollisionWorldP.Offset.y() / GameState->World.BlockDimInMeters);
-		u32 Z = (u32)(CollisionWorldP.Offset.z() / GameState->World.BlockDimInMeters);
-		Assert((X < CHUNK_DIM) && (Y < CHUNK_DIM) && (Z < CHUNK_DIM));
-		Chunk->BlocksInfo->Blocks[Z*CHUNK_DIM*CHUNK_DIM + Y*CHUNK_DIM + X].Active = false;
-
-		Chunk->IsSetupBlocks = false;
-		Chunk->IsFullySetup = false;
+		for(i32 BlockZ = -2;
+			BlockZ <= 2;
+			BlockZ++)
+		{
+			for(i32 BlockY = -2;
+				BlockY <= 2;
+				BlockY++)
+			{
+				for(i32 BlockX = -2;
+					BlockX <= 2;
+					BlockX++)
+				{
+					i32 X = (i32)((CollisionWorldP.Offset.x() + World->BlockDimInMeters*BlockX) / World->BlockDimInMeters);
+					i32 Y = (i32)((CollisionWorldP.Offset.y() + World->BlockDimInMeters*BlockY) / World->BlockDimInMeters);
+					i32 Z = (i32)((CollisionWorldP.Offset.z() + World->BlockDimInMeters*BlockZ) / World->BlockDimInMeters);
+					//if(Chunk->BlocksInfo->Blocks[Z*CHUNK_DIM*CHUNK_DIM + Y*CHUNK_DIM + X].Type == BlockType_Snow)
+					{
+						bool32 Active = IsBlockActiveBetweenChunks(World, Chunk, X, Y, Z);
+						if(Active)
+						{
+							vec3 OffsetInChunk = World->BlockDimInMeters*vec3((r32)X, (r32)Y, (r32)Z) + 
+												 0.5f*vec3(World->BlockDimInMeters, World->BlockDimInMeters, World->BlockDimInMeters);
+							world_position WorldBlockP = { Chunk->X, Chunk->Y, Chunk->Z, OffsetInChunk };
+							RecanonicalizeCoords(World, &WorldBlockP);
+							vec3 BlockColor;
+							u32 Op = OperationBetweenChunks_SetActiveness |
+									 OperationBetweenChunks_GetColor;
+							OperationBetweenChunks(World, Chunk, X, Y, Z, (operation_between_chunks)Op, false, &BlockColor);
+							AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, BlockColor);
+						}
+					} 
+				}	
+			}
+		}
 	}
 	else if((A == EntityType_Fireball) && (B == 10000))
 	{
@@ -880,77 +912,82 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 		Iteration < 4;
 		Iteration++)
 	{
-		
-		r32 EntityDeltaLength = Length(ESpaceEntityDelta);
-		if(EntityDeltaLength > 0.0f)
+		if(!IsSet(Entity, EntityFlag_NonSpatial))
 		{
-			vec3 ESpaceDesiredP = ESpaceP + ESpaceEntityDelta;
-			vec3 NormalizedESpaceEntityDelta = Normalize(ESpaceEntityDelta);
-			sim_entity *HitEntity = 0;
-
-			EllipsoidTriangleData.NormalizedESpaceEntityDelta = NormalizedESpaceEntityDelta;
-			EllipsoidTriangleData.ESpaceP = ESpaceP;
-			EllipsoidTriangleData.ESpaceEntityDelta = ESpaceEntityDelta;
-			EllipsoidTriangleData.t = 1.0f;
-			r32 EntityDeltaLengthWorld = Length((EllipsoidToWorld * ESpaceEntityDelta));
-			if(EntityDeltaLengthWorld > DistanceRemaining)
+			r32 EntityDeltaLength = Length(ESpaceEntityDelta);
+			if(EntityDeltaLength > 0.0f)
 			{
-				EllipsoidTriangleData.t = DistanceRemaining / EntityDeltaLengthWorld;
-			}
-			EllipsoidTriangleData.HitEntityType = EntityType_Null;
+				vec3 ESpaceDesiredP = ESpaceP + ESpaceEntityDelta;
+				vec3 NormalizedESpaceEntityDelta = Normalize(ESpaceEntityDelta);
+				sim_entity *HitEntity = 0;
 
-			NarrowPhaseCollisionDetection(SimRegion->World, &BroadPhaseResult, NarrowPhaseCollisionDetection_EllipsoidTriangle,
-										  0, &EllipsoidTriangleData);
-			
-			for(u32 CollisionEntityIndex = 0;
-				CollisionEntityIndex < CollideEntitiesCount;
-				CollisionEntityIndex++)
-			{
-				sim_entity *TestEntity = CollideEntities[CollisionEntityIndex];
-				vec3 Displacement = TestEntity->Collision->OffsetP;
-				mat3 TestEntityTransformation = Rotate3x3(TestEntity->Rotation, vec3(0.0f, 1.0f, 0.0f));
-				for(u32 TriangleIndex = 0;
-					TriangleIndex < (TestEntity->Collision->VerticesP.EntriesCount / 3);
-					TriangleIndex++)
+				EllipsoidTriangleData.NormalizedESpaceEntityDelta = NormalizedESpaceEntityDelta;
+				EllipsoidTriangleData.ESpaceP = ESpaceP;
+				EllipsoidTriangleData.ESpaceEntityDelta = ESpaceEntityDelta;
+				EllipsoidTriangleData.t = 1.0f;
+				r32 EntityDeltaLengthWorld = Length((EllipsoidToWorld * ESpaceEntityDelta));
+				if(EntityDeltaLengthWorld > DistanceRemaining)
 				{
-					vec3 P1 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3]) + TestEntity->P + Displacement;
-					vec3 P2 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3 + 1]) + TestEntity->P + Displacement;
-					vec3 P3 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3 + 2]) + TestEntity->P + Displacement;
+					EllipsoidTriangleData.t = DistanceRemaining / EntityDeltaLengthWorld;
+				}
+				EllipsoidTriangleData.HitEntityType = EntityType_Null;
 
-					if(EllipsoidTriangleCollisionDetection(P1, P2, P3, &EllipsoidTriangleData))
+				NarrowPhaseCollisionDetection(SimRegion->World, &BroadPhaseResult, NarrowPhaseCollisionDetection_EllipsoidTriangle,
+											0, &EllipsoidTriangleData);
+				
+				for(u32 CollisionEntityIndex = 0;
+					CollisionEntityIndex < CollideEntitiesCount;
+					CollisionEntityIndex++)
+				{
+					sim_entity *TestEntity = CollideEntities[CollisionEntityIndex];
+					if(CanCollide(GameState, Entity, TestEntity))
 					{
-						HitEntity = TestEntity;
-						EllipsoidTriangleData.HitEntityType = HitEntity->Type;
+						vec3 Displacement = TestEntity->Collision->OffsetP;
+						mat3 TestEntityTransformation = Rotate3x3(TestEntity->Rotation, vec3(0.0f, 1.0f, 0.0f));
+						for(u32 TriangleIndex = 0;
+							TriangleIndex < (TestEntity->Collision->VerticesP.EntriesCount / 3);
+							TriangleIndex++)
+						{
+							vec3 P1 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3]) + TestEntity->P + Displacement;
+							vec3 P2 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3 + 1]) + TestEntity->P + Displacement;
+							vec3 P3 = (TestEntityTransformation*TestEntity->Collision->VerticesP.Entries[TriangleIndex*3 + 2]) + TestEntity->P + Displacement;
+
+							if(EllipsoidTriangleCollisionDetection(P1, P2, P3, &EllipsoidTriangleData))
+							{
+								HitEntity = TestEntity;
+								EllipsoidTriangleData.HitEntityType = HitEntity->Type;
+							}
+						}
 					}
 				}
-			}
 
-			ESpaceP += EllipsoidTriangleData.t*ESpaceEntityDelta;
-			DistanceRemaining -= EllipsoidTriangleData.t*EntityDeltaLengthWorld;
-			ESpaceEntityDelta = ESpaceDesiredP - ESpaceP;
-			bool32 SlidingPlaneNormalIsGround = false;
-			if(EllipsoidTriangleData.HitEntityType)
-			{
-				bool32 StopOnCollision = HandleCollision(GameState, Entity, HitEntity, Entity->Type, EllipsoidTriangleData.HitEntityType,
-														 OldWorldP, EllipsoidToWorld, EllipsoidTriangleData.CollisionP);
-
-				if(StopOnCollision)
+				ESpaceP += EllipsoidTriangleData.t*ESpaceEntityDelta;
+				DistanceRemaining -= EllipsoidTriangleData.t*EntityDeltaLengthWorld;
+				ESpaceEntityDelta = ESpaceDesiredP - ESpaceP;
+				bool32 SlidingPlaneNormalIsGround = false;
+				if(EllipsoidTriangleData.HitEntityType)
 				{
-					vec3 SlidingPlaneNormal = Normalize((ESpaceP - EllipsoidTriangleData.CollisionP));
-					if(Gravity && (SlidingPlaneNormal.y() >= 0.95f))
+					bool32 StopOnCollision = HandleCollision(GameState, SimRegion, Entity, HitEntity, Entity->Type, 
+															EllipsoidTriangleData.HitEntityType, EllipsoidToWorld, EllipsoidTriangleData.CollisionP);
+
+					if(StopOnCollision)
 					{
-						SlidingPlaneNormalIsGround = true;
-						AddFlags(Entity, EntityFlag_OnGround);
+						vec3 SlidingPlaneNormal = Normalize((ESpaceP - EllipsoidTriangleData.CollisionP));
+						if(Gravity && (SlidingPlaneNormal.y() >= 0.95f))
+						{
+							SlidingPlaneNormalIsGround = true;
+							AddFlags(Entity, EntityFlag_OnGround);
+						}
+						ESpaceEntityDelta = ESpaceEntityDelta - 1.1f*Dot(SlidingPlaneNormal, ESpaceEntityDelta)*SlidingPlaneNormal;
+						Entity->dP = Entity->dP - (1.1f*Dot(EllipsoidToWorld * SlidingPlaneNormal, Entity->dP)) *
+														(EllipsoidToWorld * SlidingPlaneNormal);
 					}
-					ESpaceEntityDelta = ESpaceEntityDelta - 1.1f*Dot(SlidingPlaneNormal, ESpaceEntityDelta)*SlidingPlaneNormal;
-					Entity->dP = Entity->dP - (1.1f*Dot(EllipsoidToWorld * SlidingPlaneNormal, Entity->dP)) *
-													  (EllipsoidToWorld * SlidingPlaneNormal);
 				}
-			}
-			
-			if((Gravity && Iteration == 0) && (!EllipsoidTriangleData.HitEntityType || !SlidingPlaneNormalIsGround))
-			{
-				ClearFlags(Entity, EntityFlag_OnGround);
+				
+				if((Gravity && Iteration == 0) && (!EllipsoidTriangleData.HitEntityType || !SlidingPlaneNormalIsGround))
+				{
+					ClearFlags(Entity, EntityFlag_OnGround);
+				}
 			}
 		}
 	}
@@ -965,7 +1002,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 
 internal void
 RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegion, 
-			   shader WorldShader, shader CharacterShader, vec3 Right)
+			   shader WorldShader, shader CharacterShader, shader BillboardShader, vec3 Right)
 {
 	for(u32 EntityIndex = 0;
 		EntityIndex < SimRegion->EntityCount;
@@ -1012,26 +1049,26 @@ RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegi
 					vec3 FacingDir = vec3(Sin(HeroRotRadians), 0.0f, Cos(HeroRotRadians));
 					vec3 HeroRight = Normalize(Cross(FacingDir, vec3(0.0f, 1.0f, 0.0f))); 
 					asset_tag_vector MatchVector = { 1.0f };
-					u32 HeadIndex = GetBestMatchAsset(TempState->GameAssets, AssetType_Head, &MatchVector);
+					model_id HeadIndex = GetBestMatchModelFromType(TempState->GameAssets, AssetType_Head, &MatchVector);
 					SetInt(CharacterShader, "BoneID", CharacterBone_Head);
 					DrawModel(CharacterShader, TempState->GameAssets, HeadIndex, Entity->Rotation, 1.0f, HeroRight, Entity->P);
 					SetInt(CharacterShader, "BoneID", CharacterBone_Shoulders);
-					DrawModel(CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Shoulders].FirstAssetIndex, 
+					DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Shoulders),
 							Entity->Rotation, 1.0f, HeroRight, Entity->P);
 					SetInt(CharacterShader, "BoneID", CharacterBone_Body);
-					DrawModel(CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Body].FirstAssetIndex,
+					DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Body),
 							Entity->Rotation, 1.0f, HeroRight, Entity->P);
 					SetInt(CharacterShader, "BoneID", CharacterBone_Hand_Right);
-					DrawModel(CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Hand].FirstAssetIndex, 
+					DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Hand),
 							Entity->Rotation, 0.8f, HeroRight, Entity->P);
 					SetInt(CharacterShader, "BoneID", CharacterBone_Hand_Left);
-					DrawModel(CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Hand].FirstAssetIndex,
+					DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Hand),
 							Entity->Rotation, 0.8f, -HeroRight, Entity->P);
 					SetInt(CharacterShader, "BoneID", CharacterBone_Foot_Right);
-					DrawModel(CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Foot].FirstAssetIndex, 
+					DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Foot),
 							Entity->Rotation, 1.4f, HeroRight, Entity->P);
 					SetInt(CharacterShader, "BoneID", CharacterBone_Foot_Left);
-					DrawModel(CharacterShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Foot].FirstAssetIndex,
+					DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Foot),
 							Entity->Rotation, 1.4f, -HeroRight, Entity->P);
 				} break;
 
@@ -1044,7 +1081,7 @@ RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegi
 
 				case EntityType_Tree:
 				{
-					DrawModel(WorldShader, TempState->GameAssets, TempState->GameAssets->AssetTypes[AssetType_Tree].FirstAssetIndex,
+					DrawModel(WorldShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Tree),
 								0.0f, 1.0f, vec3(0.0f, 0.0f, 0.0f), Entity->P);
 				} break;
 
@@ -1055,11 +1092,11 @@ RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegi
 					SetMat4(WorldShader, "Model", Model);
 					DrawFromVAO(GameState->CubeVAO, 36);
 
-					UseShader(GameState->BillboardShader);
-					SetVec3(GameState->BillboardShader, "Color", vec3(1.0f, 0.0f, 0.0f));
-					SetVec3(GameState->BillboardShader, "CameraRight", Right);
-					SetVec3(GameState->BillboardShader, "BillboardSimCenterP", Entity->P + vec3(0.0f, 1.0f + 0.1f, 0.0f));
-					SetVec2(GameState->BillboardShader, "Scale", vec2((r32)Entity->HitPoints / (r32)Entity->MaxHitPoints, 0.2f));
+					UseShader(GameState->HitpointsShader);
+					SetVec3(GameState->HitpointsShader, "Color", vec3(1.0f, 0.0f, 0.0f));
+					SetVec3(GameState->HitpointsShader, "CameraRight", Right);
+					SetVec3(GameState->HitpointsShader, "BillboardSimCenterP", Entity->P + vec3(0.0f, 1.0f + 0.1f, 0.0f));
+					SetVec2(GameState->HitpointsShader, "Scale", vec2((r32)Entity->HitPoints / (r32)Entity->MaxHitPoints, 0.2f));
 					
 					glBindVertexArray(GameState->QuadVAO);
 					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -1068,4 +1105,108 @@ RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegi
 			}
 		}
 	}
+}
+
+internal void
+RenderParticleEffects(game_state *GameState, temp_state *TempState, sim_region *SimRegion, 
+					  shader BillboardShader, vec3 Right)
+{
+	UseShader(BillboardShader);
+	SetVec3(BillboardShader, "CameraRight", Right);
+	SetVec3(BillboardShader, "CameraUp", vec3(0.0f, 1.0f, 0.0f));
+	SetInt(BillboardShader, "Texture", 0);
+	glEnable(GL_BLEND);
+	glDepthMask(GL_FALSE);
+
+	vec3 ParticlesPositions[MAX_PARTICLES_COUNT];
+	vec2 ParticlesOffsets[MAX_PARTICLES_COUNT];
+	r32 ParticlesScales[MAX_PARTICLES_COUNT];
+
+	for(u32 EntityIndex = 0;
+		EntityIndex < SimRegion->EntityCount;
+		EntityIndex++)
+	{
+		sim_entity *Entity = SimRegion->Entities + EntityIndex;
+		if(Entity->Updatable)
+		{
+			if(Entity->Particles)
+			{
+				particle_emitter *EntityParticles = Entity->Particles;
+				texture_id TextureIndex = GetFirstTextureFromType(TempState->GameAssets, EntityParticles->TextureType);
+				loaded_texture *Texture = GetTexture(TempState->GameAssets, TextureIndex);
+				if(Texture)
+				{
+					SetFloat(BillboardShader, "RowsInAtlas", (r32)EntityParticles->Info.RowsInTextureAtlas);
+					glActiveTexture(GL_TEXTURE0);
+					glBindTexture(GL_TEXTURE_2D, Texture->TextureID);
+					
+					if(EntityParticles->Info.Additive)
+					{
+						glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+					}
+					else
+					{
+						glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+					}
+
+					glBindVertexArray(GameState->ParticleVAO);
+					
+					u32 ParticlesCount = 0;
+					for(u32 ParticleIndex = 0;
+						ParticleIndex < ArrayCount(EntityParticles->Particles);
+						ParticleIndex++)
+					{
+						particle *Particle = EntityParticles->Particles + ParticleIndex;
+
+						if(Particle->LifeTime > 0.0f)
+						{
+							r32 LifeFactor = (EntityParticles->Info.MaxLifeTime - Particle->LifeTime) / EntityParticles->Info.MaxLifeTime;
+							u32 Rows = EntityParticles->Info.RowsInTextureAtlas;
+							u32 StageCount = Rows*Rows;
+							r32 ProgressInTextureAtlas = StageCount*LifeFactor;
+							u32 IndexOfStage = (u32)ProgressInTextureAtlas;
+							u32 Column = IndexOfStage % Rows;
+							u32 Row = IndexOfStage / Rows;
+							vec2 Offset = vec2((r32)Column / Rows, (r32)Row / Rows);
+
+							ParticlesPositions[ParticlesCount] = Particle->P + Entity->P;
+							ParticlesOffsets[ParticlesCount] = Offset;
+							ParticlesScales[ParticlesCount] = Particle->Scale;
+							ParticlesCount++;
+						}
+					}
+
+					glBindBuffer(GL_ARRAY_BUFFER, GameState->ParticlePVBO);
+					glBufferData(GL_ARRAY_BUFFER, sizeof(vec3)*ParticlesCount, ParticlesPositions, GL_STATIC_DRAW);
+					glEnableVertexAttribArray(1);
+					glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
+
+					glBindBuffer(GL_ARRAY_BUFFER, GameState->ParticleOffsetVBO);
+					glBufferData(GL_ARRAY_BUFFER, sizeof(vec2)*ParticlesCount, ParticlesOffsets, GL_STATIC_DRAW);
+					glEnableVertexAttribArray(2);
+					glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(vec2), (void *)0);
+					
+					glBindBuffer(GL_ARRAY_BUFFER, GameState->ParticleScaleVBO);
+					glBufferData(GL_ARRAY_BUFFER, sizeof(r32)*ParticlesCount, ParticlesScales, GL_STATIC_DRAW);
+					glEnableVertexAttribArray(3);
+					glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(r32), (void *)0);
+
+					glVertexAttribDivisor(1, 1);
+					glVertexAttribDivisor(2, 1);
+					glVertexAttribDivisor(3, 1);
+
+					glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, ParticlesCount);
+
+					glBindVertexArray(0);
+				}
+				else
+				{
+					LoadTexture(TempState->GameAssets, TextureIndex);
+				}
+			}
+		}
+	}
+
+	glDepthMask(GL_TRUE);
+	glDisable(GL_BLEND);
 }

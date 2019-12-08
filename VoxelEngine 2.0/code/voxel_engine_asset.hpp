@@ -7,7 +7,7 @@ LoadCub(char *Filename, u64 *ModelSize, r32 AdditionalAlignmentY = 0.0f, r32 Add
 
 	u32 Width, Height, Depth;
 	read_entire_file_result FileData = PlatformReadEntireFile(Filename);
-	if(FileData.Memory)
+	if(FileData.Size != 0)
 	{
 		InitializeDynamicArray(&Model.VerticesP);
 		InitializeDynamicArray(&Model.Normals);
@@ -157,6 +157,87 @@ LoadCub(char *Filename, u64 *ModelSize, r32 AdditionalAlignmentY = 0.0f, r32 Add
 	return (Model);
 }
 
+#pragma pack(push, 1)
+struct bmp_file_header
+{
+	u16 FileType;
+	u32 FileSize;
+	u32 Reserved;
+	u32 BitmapOffset;
+	u32 InfoHeaderSize;
+	u32 Width;
+	u32 Height;
+	u16 Planes;
+	u16 BitsPerPixel;
+	u32 Compression;
+	u32 SizeOfBitmap;
+	u32 HorizontalResolution;
+	u32 VerticalResolution;
+	u32 ColorsUsed;
+	u32 ColorsImportant;
+
+	u32 RedMask;
+	u32 GreenMask;
+	u32 BlueMask;
+};
+#pragma pack(pop)
+
+internal loaded_texture
+LoadBMP(char *Filename)
+{
+	loaded_texture Result = {};
+
+	read_entire_file_result FileData = PlatformReadEntireFile(Filename);
+	if(FileData.Size != 0)
+	{
+		bmp_file_header *Header = (bmp_file_header *)FileData.Memory;
+		u32 *Pixels = (u32 *)((u8 *)Header + Header->BitmapOffset);
+		Result.Data = (u8 *)Pixels;
+		Result.Width = Header->Width;
+		Result.Height = Header->Height;
+		Result.Free = FileData.Memory;
+		Result.ChannelsCount = Header->BitsPerPixel / 8;
+
+		Assert(Header->Height >= 0);
+		Assert(Header->Compression == 3);
+
+		u32 RedMask = Header->RedMask;
+		u32 GreenMask = Header->GreenMask;
+		u32 BlueMask = Header->BlueMask;
+		u32 AlphaMask = ~(RedMask | GreenMask | BlueMask);
+
+		u32 RedShiftRight = FindLeastSignificantSetBitIndex(RedMask);
+		u32 GreenShiftRight = FindLeastSignificantSetBitIndex(GreenMask);
+		u32 BlueShiftRight = FindLeastSignificantSetBitIndex(BlueMask);
+		u32 AlphaShiftRight = FindLeastSignificantSetBitIndex(AlphaMask);
+
+		u32 *SourceDest = Pixels;
+		for(u32 Y = 0;
+			Y < Header->Height;
+			Y++)
+		{
+			for(u32 X = 0;
+				X < Header->Width;
+				X++)
+			{
+				u32 Color = *SourceDest;
+
+				u8 Red = (Color & RedMask) >> RedShiftRight;
+				u8 Green = (Color & GreenMask) >> GreenShiftRight;
+				u8 Blue = (Color & BlueMask) >> BlueShiftRight;
+				u8 Alpha = (Color & AlphaMask) >> AlphaShiftRight;
+
+				*SourceDest++ = ((Alpha << 24) |
+								 (Blue << 16) |
+								 (Green << 8) |
+								 (Red << 0));
+			}
+		}
+	}
+
+	return(Result);
+}
+
 struct load_asset_job
 {
 	game_assets *GameAssets;
@@ -164,6 +245,8 @@ struct load_asset_job
 	u32 AssetIndex;
 
 	asset_state FinalState;
+
+	asset_data_type AssetDataType;
 };
 internal PLATFORM_JOB_SYSTEM_CALLBACK(LoadAssetJob)
 {
@@ -173,10 +256,24 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(LoadAssetJob)
 	Assert(!Asset->Header);
 
 	Asset->Header = (asset_memory_header *)PlatformAllocateMemory(sizeof(asset_memory_header));
-	u64 ModelSize = 0;
+	u64 AssetSize = 0;
 	Asset->Header->AssetIndex = Job->AssetIndex;
-	Asset->Header->Model = LoadCub(Asset->Filename, &ModelSize, Asset->AdditionalAlignmentY, Asset->AdditionalAlignmentX);
-	Asset->Header->TotalSize = sizeof(asset_memory_header) + ModelSize;
+	switch(Job->AssetDataType)
+	{
+		case AssetDataType_Model:
+		{
+			Asset->Header->Model = LoadCub(Asset->Filename, &AssetSize, Asset->AdditionalAlignmentY, Asset->AdditionalAlignmentX);
+		} break;
+
+		case AssetDataType_Texture:
+		{
+			Asset->Header->Texture = LoadBMP(Asset->Filename);
+			AssetSize = Asset->Header->Texture.Width*Asset->Header->Texture.Height*Asset->Header->Texture.ChannelsCount;
+		} break;
+
+		InvalidDefaultCase;
+	}
+	Asset->Header->TotalSize = sizeof(asset_memory_header) + AssetSize;
 
 	BeginAssetLock(Job->GameAssets);
 	if(Job->FinalState == AssetState_Loaded)
@@ -193,8 +290,8 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(LoadAssetJob)
     PlatformFreeMemory(Job);
 }
 
-internal void
-LoadModel(game_assets *GameAssets, u32 AssetIndex)
+inline void
+LoadAsset(game_assets *GameAssets, u32 AssetIndex)
 {
 	if(AssetIndex)
 	{
@@ -209,14 +306,48 @@ LoadModel(game_assets *GameAssets, u32 AssetIndex)
             Job->Asset = Asset;
             Job->AssetIndex = AssetIndex;
             Job->FinalState = AssetState_Loaded;
+			Job->AssetDataType = Asset->DataType;
 
 			PlatformAddEntry(GameAssets->TempState->JobSystemQueue, LoadAssetJob, Job);
 		}
 	}
 }
 
+internal void
+LoadModel(game_assets *GameAssets, model_id Index)
+{
+	LoadAsset(GameAssets, Index.Value);
+}
+
+internal void
+LoadTexture(game_assets *GameAssets, texture_id Index)
+{
+	LoadAsset(GameAssets, Index.Value);
+}
+
+inline u32 
+GetFirstAssetFromType(game_assets *GameAssets, asset_type_id TypeID)
+{
+	u32 Result = GameAssets->AssetTypes[TypeID].FirstAssetIndex;
+	return(Result);
+}
+
+inline model_id 
+GetFirstModelFromType(game_assets *GameAssets, asset_type_id TypeID)
+{
+	model_id Result = { GetFirstAssetFromType(GameAssets, TypeID) };
+	return(Result);
+}
+
+inline texture_id 
+GetFirstTextureFromType(game_assets *GameAssets, asset_type_id TypeID)
+{
+	texture_id Result = { GetFirstAssetFromType(GameAssets, TypeID) };
+	return(Result);
+}
+
 internal u32
-GetBestMatchAsset(game_assets *GameAssets, asset_type_id TypeID, asset_tag_vector *MatchVector)
+GetBestMatchAssetFromType(game_assets *GameAssets, asset_type_id TypeID, asset_tag_vector *MatchVector)
 {
 	u32 Result = 0;
 
@@ -251,6 +382,20 @@ GetBestMatchAsset(game_assets *GameAssets, asset_type_id TypeID, asset_tag_vecto
 	return(Result);
 }
 
+inline model_id
+GetBestMatchModelFromType(game_assets *GameAssets, asset_type_id TypeID, asset_tag_vector *MatchVector)
+{
+	model_id Result = { GetBestMatchAssetFromType(GameAssets, TypeID, MatchVector) };
+	return(Result);
+}
+
+inline texture_id
+GetBestMatchTextureFromType(game_assets *GameAssets, asset_type_id TypeID, asset_tag_vector *MatchVector)
+{
+	texture_id Result = { GetBestMatchAssetFromType(GameAssets, TypeID, MatchVector) };
+	return(Result);
+}
+
 internal void
 BeginAssetType(game_assets *Assets, asset_type_id ID)
 {
@@ -263,12 +408,14 @@ BeginAssetType(game_assets *Assets, asset_type_id ID)
 }
 
 internal void
-AddAsset(game_assets *Assets, char *Filename, r32 AdditionalAlignmentY = 0.0f, r32 AdditionalAlignmentX = 0.0f)
+AddAsset(game_assets *Assets, char *Filename, asset_data_type DataType, 
+		 r32 AdditionalAlignmentY = 0.0f, r32 AdditionalAlignmentX = 0.0f)
 {
 	Assert(Assets->DEBUGAssetType);
 
 	asset *Asset = Assets->Assets + Assets->AssetCount++;
 	Asset->State = AssetState_Unloaded;
+	Asset->DataType = DataType;
 	Asset->Filename = Filename;
 	Asset->AdditionalAlignmentY = AdditionalAlignmentY;
 	Asset->AdditionalAlignmentX = AdditionalAlignmentX;
@@ -324,34 +471,46 @@ AllocateGameAssets(temp_state *TempState, stack_allocator *Allocator, u64 Size)
 	GameAssets->DEBUGAsset = 0;
 
 	BeginAssetType(GameAssets, AssetType_Null);
-	AddAsset(GameAssets, "");
+	AddAsset(GameAssets, "", AssetDataType_Null);
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Head);
-	AddAsset(GameAssets, "data/models/head1.cub", 0.47f);
+	AddAsset(GameAssets, "data/models/head1.cub", AssetDataType_Model, 0.47f);
 	AddTag(GameAssets, Tag_Color, 1.0f);
-	AddAsset(GameAssets, "data/models/head2.cub", 0.47f);
+	AddAsset(GameAssets, "data/models/head2.cub", AssetDataType_Model, 0.47f);
 	AddTag(GameAssets, Tag_Color, 10.0f);
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Shoulders);
-	AddAsset(GameAssets, "data/models/shoulders.cub", 0.4f);
+	AddAsset(GameAssets, "data/models/shoulders.cub", AssetDataType_Model, 0.4f);
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Body);
-	AddAsset(GameAssets, "data/models/body.cub", 0.08f);
+	AddAsset(GameAssets, "data/models/body.cub", AssetDataType_Model, 0.08f);
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Hand);
-	AddAsset(GameAssets, "data/models/hand.cub", 0.32f, 0.275f);
+	AddAsset(GameAssets, "data/models/hand.cub", AssetDataType_Model, 0.32f, 0.275f);
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Foot);
-	AddAsset(GameAssets, "data/models/foot.cub", 0.0f, 0.15f);
+	AddAsset(GameAssets, "data/models/foot.cub", AssetDataType_Model, 0.0f, 0.15f);
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Tree);
-	AddAsset(GameAssets, "data/models/tree.cub", 0.0f, 0.0f);
+	AddAsset(GameAssets, "data/models/tree.cub", AssetDataType_Model, 0.0f, 0.0f);
+	EndAssetType(GameAssets);
+
+	BeginAssetType(GameAssets, AssetType_Smoke);
+	AddAsset(GameAssets, "data/textures/smoke.bmp", AssetDataType_Texture);
+	EndAssetType(GameAssets);
+
+	BeginAssetType(GameAssets, AssetType_Fire);
+	AddAsset(GameAssets, "data/textures/particleAtlas.bmp", AssetDataType_Texture);
+	EndAssetType(GameAssets);
+
+	BeginAssetType(GameAssets, AssetType_Cosmic);
+	AddAsset(GameAssets, "data/textures/cosmic.bmp", AssetDataType_Texture);
 	EndAssetType(GameAssets);
 
 	return(GameAssets);
@@ -368,15 +527,32 @@ UnloadAssetsIfNecessary(game_assets *GameAssets)
 		{
 			RemoveAssetHeaderFromList(LastUsedAsset);
 
-			// TODO(georgy): This can free only models at the moment!
-			glDeleteBuffers(1, &LastUsedAsset->Model.PVBO);
-			glDeleteBuffers(1, &LastUsedAsset->Model.NormalsVBO);
-			glDeleteBuffers(1, &LastUsedAsset->Model.ColorsVBO);
-			glDeleteVertexArrays(1, &LastUsedAsset->Model.VAO);
+			switch(GameAssets->Assets[LastUsedAsset->AssetIndex].DataType)
+			{
+				case AssetDataType_Model:
+				{
+					glDeleteBuffers(1, &LastUsedAsset->Model.PVBO);
+					glDeleteBuffers(1, &LastUsedAsset->Model.NormalsVBO);
+					glDeleteBuffers(1, &LastUsedAsset->Model.ColorsVBO);
+					glDeleteVertexArrays(1, &LastUsedAsset->Model.VAO);
 
-			FreeDynamicArray(&LastUsedAsset->Model.VerticesP);
-			FreeDynamicArray(&LastUsedAsset->Model.Normals);
-			FreeDynamicArray(&LastUsedAsset->Model.VertexColors);
+					FreeDynamicArray(&LastUsedAsset->Model.VerticesP);
+					FreeDynamicArray(&LastUsedAsset->Model.Normals);
+					FreeDynamicArray(&LastUsedAsset->Model.VertexColors);
+				} break;
+			
+				case AssetDataType_Texture:
+				{
+					if (LastUsedAsset->Texture.Free)
+					{
+						PlatformFreeFileMemory(LastUsedAsset->Texture.Free);
+						LastUsedAsset->Texture.Free = 0;
+					}
+					glDeleteTextures(1, &LastUsedAsset->Texture.TextureID);
+				} break;
+
+				InvalidDefaultCase;
+			}
 
 			GameAssets->Assets[LastUsedAsset->AssetIndex].Header = 0;
 			GameAssets->Assets[LastUsedAsset->AssetIndex].State = AssetState_Unloaded;

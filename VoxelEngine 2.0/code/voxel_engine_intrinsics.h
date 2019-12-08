@@ -2,14 +2,16 @@
 
 // TODO(georgy): Remove math.h
 #include <math.h>
+// TODO(georgy): This is for rand. Remove this!
+#include <cstdlib>
 
 #if COMPILER_MSVC
 #define CompletePreviousWritesBeforeFutureWrites _WriteBarrier()
 inline u32 AtomicCompareExchangeU32(u32 volatile *Value, u32 New, u32 Expected)
 {
     u32 Result = _InterlockedCompareExchange((long *)Value, New, Expected);
-
-    return(Result);
+    
+	return(Result);
 }
 #endif
 
@@ -63,5 +65,17 @@ inline r32
 Tan(r32 Angle)
 {
     r32 Result = tanf(Angle);
+    return(Result);
+}
+
+inline u32
+FindLeastSignificantSetBitIndex(u32 Value)
+{
+    u32 Result = 0;
+
+#if COMPILER_MSVC
+    _BitScanForward((unsigned long *)&Result, Value);
+#endif
+
     return(Result);
 }

@@ -13,9 +13,33 @@ struct loaded_model
 	dynamic_array_vec3 VertexColors;
 };
 
+struct loaded_texture
+{
+	GLuint TextureID;
+	i32 Width, Height, ChannelsCount;
+
+	u8 *Data;
+	void *Free;
+};
+
+struct model_id
+{
+	u32 Value;
+};
+
+struct texture_id
+{
+	u32 Value;
+};
+
 enum asset_type_id
 {
 	AssetType_Null,
+	
+	// 
+	// NOTE(georgy): Models! 
+	// 
+
 	AssetType_Head,
 	AssetType_Shoulders,
 	AssetType_Body,
@@ -23,6 +47,14 @@ enum asset_type_id
 	AssetType_Foot,
 
 	AssetType_Tree,
+
+	// 
+	// NOTE(georgy): Textures! 
+	// 
+
+	AssetType_Smoke,
+	AssetType_Fire,
+	AssetType_Cosmic,
 
 	AssetType_Count
 };
@@ -34,7 +66,11 @@ struct asset_memory_header
 
 	u32 AssetIndex;
 	u32 TotalSize;
-	loaded_model Model;
+	union
+	{
+		loaded_model Model;
+		loaded_texture Texture;
+	};
 };
 
 enum asset_state
@@ -43,10 +79,17 @@ enum asset_state
 	AssetState_Queued,
 	AssetState_Loaded
 };
+enum asset_data_type
+{
+	AssetDataType_Null,
 
+	AssetDataType_Model,
+	AssetDataType_Texture,
+};
 struct asset
 {
 	asset_state State;
+	asset_data_type DataType;
 
 	char *Filename;
 	r32 AdditionalAlignmentY;
@@ -140,21 +183,36 @@ RemoveAssetHeaderFromList(asset_memory_header *Header)
 	Header->Prev->Next = Header->Next;
 }
 
-inline loaded_model *
-GetModel(game_assets *GameAssets, u32 AssetIndex)
+inline asset_memory_header *
+GetAsset(game_assets *GameAssets, u32 AssetIndex)
 {
 	Assert(AssetIndex < GameAssets->AssetCount);
-
-	loaded_model *Result = 0;
 	asset *Asset = GameAssets->Assets + AssetIndex;
+
+	asset_memory_header *Result = 0;
+	
+	BeginAssetLock(GameAssets);
 	if(Asset->State == AssetState_Loaded)
 	{
-		BeginAssetLock(GameAssets);
-		RemoveAssetHeaderFromList(Asset->Header);
-		InsertAssetHeaderFront(GameAssets, Asset->Header);
-		EndAssetLock(GameAssets);
+		Result = Asset->Header;
 
-		Result = &Asset->Header->Model;
+		RemoveAssetHeaderFromList(Result);
+		InsertAssetHeaderFront(GameAssets, Result);
+	}
+	EndAssetLock(GameAssets);
+
+	return(Result);
+}
+
+inline loaded_model *
+GetModel(game_assets *GameAssets, model_id Index)
+{
+	asset_memory_header *Header = GetAsset(GameAssets, Index.Value);
+
+	loaded_model *Result = 0;
+	if(Header)
+	{
+		Result = &Header->Model;
 
 		if(!Result->VAO)
 		{
@@ -180,6 +238,39 @@ GetModel(game_assets *GameAssets, u32 AssetIndex)
 			FreeDynamicArray(&Result->VerticesP);
 			FreeDynamicArray(&Result->Normals);
 			FreeDynamicArray(&Result->VertexColors);
+		}
+	}
+
+	return(Result);
+}
+
+inline loaded_texture *
+GetTexture(game_assets *GameAssets, texture_id Index)
+{
+	asset_memory_header *Header = GetAsset(GameAssets, Index.Value);
+
+	loaded_texture *Result = 0;
+	if(Header)
+	{
+		Result = &Header->Texture;
+
+		if(!Result->TextureID)
+		{
+			GLenum Format;
+			if(Result->ChannelsCount == 1) Format = GL_RED;
+			if(Result->ChannelsCount == 3) Format = GL_RGB;
+			if(Result->ChannelsCount == 4) Format = GL_RGBA;
+
+			glGenTextures(1, &Result->TextureID);
+			glBindTexture(GL_TEXTURE_2D, Result->TextureID);
+			glTexImage2D(GL_TEXTURE_2D, 0, Format, Result->Width, Result->Height, 0, Format, GL_UNSIGNED_BYTE, Result->Data);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+			PlatformFreeFileMemory(Result->Free);
+			Result->Free = 0;
 		}
 	}
 

@@ -39,20 +39,10 @@ GetChunk(world *World, i32 ChunkX, i32 ChunkY, i32 ChunkZ, stack_allocator *Allo
 	if(!Chunk && Allocator)
 	{
 		Chunk = PushStruct(Allocator, chunk);
+		*Chunk = {};
 		Chunk->X = ChunkX;
 		Chunk->Y = ChunkY;
 		Chunk->Z = ChunkZ;
-
-		Chunk->IsRecentlyUsed = false;
-
-		Chunk->IsSetupBlocks= false;
-		Chunk->IsFullySetup = false;
-		Chunk->IsLoaded = false;
-		Chunk->BlocksInfo = 0;
-
-		Chunk->FirstEntityBlock.StoredEntityCount = 0;
-
-		Chunk->Next = 0;
 
 		*ChunkPtr = Chunk;
 	}
@@ -60,8 +50,15 @@ GetChunk(world *World, i32 ChunkX, i32 ChunkY, i32 ChunkZ, stack_allocator *Allo
 	return(Chunk);
 }
 
-inline bool32
-IsBlockActiveBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z)
+enum operation_between_chunks
+{
+	OperationBetweenChunks_IsBlockActive = 0x1,
+	OperationBetweenChunks_SetActiveness = 0x2,
+	OperationBetweenChunks_GetColor = 0x4,
+};
+internal bool32
+OperationBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z, operation_between_chunks Op, 
+					   bool32 Activeness = false, vec3 *Color = 0)
 {
 	bool32 Result = false;
 
@@ -69,7 +66,7 @@ IsBlockActiveBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z)
 	   (Y >=0) && (Y < CHUNK_DIM) &&
 	   (Z >=0) && (Z < CHUNK_DIM))
 	{
-		Result = IsBlockActive(Chunk->BlocksInfo->Blocks, X, Y, Z);
+		
 	}
 	else
 	{
@@ -109,14 +106,44 @@ IsBlockActiveBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z)
 			NewChunkZ++;
 		}
 		
-		chunk *NewChunk = GetChunk(World, NewChunkX, NewChunkY, NewChunkZ);
-		if(NewChunk)
-		{
-			Assert(NewChunk->IsSetupBlocks);
-			Result = IsBlockActive(NewChunk->BlocksInfo->Blocks, X, Y, Z);
-		}
+		Chunk = GetChunk(World, NewChunkX, NewChunkY, NewChunkZ);
+		Assert(Chunk);
 	}
 
+	Assert(Chunk->IsSetupBlocks);
+	Result = IsBlockActive(Chunk->BlocksInfo->Blocks, X, Y, Z);
+	if(Op & OperationBetweenChunks_SetActiveness)
+	{
+		Chunk->BlocksInfo->Blocks[Z*CHUNK_DIM*CHUNK_DIM + Y*CHUNK_DIM + X].Active = Activeness;
+		Chunk->IsModified = true;
+	}
+	if(Op & OperationBetweenChunks_GetColor)
+	{
+		Assert(Color);
+		*Color = Chunk->BlocksInfo->Colors[Z*CHUNK_DIM*CHUNK_DIM + Y*CHUNK_DIM + X];
+	}
+
+	return(Result);
+}
+
+inline bool32
+IsBlockActiveBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z)
+{
+	bool32 Result = OperationBetweenChunks(World, Chunk, X, Y, Z, OperationBetweenChunks_IsBlockActive);
+	return(Result);
+}
+
+inline void
+SetBlockActiveBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z, bool32 Activeness)
+{
+	OperationBetweenChunks(World, Chunk, X, Y, Z, OperationBetweenChunks_SetActiveness, Activeness);
+}
+
+inline vec3
+GetBlockColorBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z)
+{
+	vec3 Result;
+	OperationBetweenChunks(World, Chunk, X, Y, Z, OperationBetweenChunks_GetColor, false, &Result);
 	return(Result);
 }
 
@@ -181,238 +208,9 @@ VertexAO(bool32 Side1, bool32 Side2, bool32 Corner)
 	return(Result);
 }
 
-struct setup_chunk_blocks_job
-{
-	world *World;
-	chunk *Chunk;
-	stack_allocator *WorldAllocator;
-};
-internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
-{
-	setup_chunk_blocks_job *Job = (setup_chunk_blocks_job *)Data;
-	world *World = Job->World;
-	chunk *Chunk = Job->Chunk;
-	stack_allocator *WorldAllocator = Job->WorldAllocator;
-
-	Chunk->IsSetupBlocks = true;
-	Chunk->IsNotEmpty = false;
-	
-	BeginWorldLock(World);
-	if(!World->FirstFreeChunkBlocksInfo)
-	{
-		World->FirstFreeChunkBlocksInfo = PushStruct(WorldAllocator, chunk_blocks_info);
-	}
-	Chunk->BlocksInfo = World->FirstFreeChunkBlocksInfo;
-	World->FirstFreeChunkBlocksInfo = World->FirstFreeChunkBlocksInfo->Next;
-	EndWorldLock(World);
-
-	ZeroSize(Chunk->BlocksInfo, sizeof(chunk_blocks_info));
-
-	block *Blocks = Chunk->BlocksInfo->Blocks;
-	vec3 *Colors = Chunk->BlocksInfo->Colors;
-
-	for(u32 BlockZ = 0;
-		BlockZ < CHUNK_DIM;
-		BlockZ++)
-	{
-		for(u32 BlockX = 0;
-			BlockX < CHUNK_DIM;
-			BlockX++)
-		{
-			if(Chunk->Y < 0)
-			{
-				for(u32 BlockY = 0;
-					BlockY < CHUNK_DIM;
-					BlockY++)
-				{
-					Chunk->IsNotEmpty = true;
-					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true;
-					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = vec3(0.53f, 0.53f, 0.53f);
-				}
-			}
-			else
-			{
-				r32 X = (Chunk->X * CHUNK_DIM) + (r32)BlockX + 0.5f;
-				r32 Z = (Chunk->Z * CHUNK_DIM) + (r32)BlockZ + 0.5f;
-				r32 NoiseValue = Clamp(PerlinNoise2D(0.01f*vec2(X, Z)), 0.0f, 1.0f);
-				NoiseValue += 0.15f*Clamp(PerlinNoise2D(0.05f*vec2(X, Z)), 0.0f, 1.0f)*NoiseValue;
-				NoiseValue = NoiseValue*NoiseValue*NoiseValue*NoiseValue*NoiseValue;
-
-				r32 BiomeNoise = Clamp(PerlinNoise2D(0.007f*vec2(X, Z)), 0.0f, 1.0f);
-				BiomeNoise += 0.5f*Clamp(PerlinNoise2D(0.03f*vec2(X, Z)), 0.0f, 1.0f);
-				BiomeNoise += 0.25f*Clamp(PerlinNoise2D(0.06f*vec2(X, Z)), 0.0f, 1.0f);
-				BiomeNoise /= 1.75f;
-
-				world_biome_type BiomeType = WorldBiome_Grassland;
-				if(NoiseValue < 0.008f)
-				{
-					BiomeType = WorldBiome_Water;
-				}
-				else if(NoiseValue < 0.011f)
-				{
-					BiomeType = WorldBiome_Beach;
-				}
-				else if(NoiseValue > 0.7f)
-				{
-					if(BiomeNoise < 0.3f)
-					{
-						BiomeType = WorldBiome_Scorched;
-					}
-					else if(BiomeNoise < 0.4f)
-					{
-						BiomeType = WorldBiome_Tundra;
-					}
-					else
-					{
-						BiomeType = WorldBiome_Snow;
-					}
-				}
-				else 
-				{
-					BiomeType = WorldBiome_Grassland;
-				}
-
-				u32 Height = (u32)roundf(CHUNK_DIM * MAX_CHUNKS_Y * NoiseValue);
-				Height++;
-				u32 HeightForThisChunk = (u32)Clamp((r32)Height - (r32)Chunk->Y*CHUNK_DIM, 0.0f, CHUNK_DIM);
-				for(u32 BlockY = 0;
-					BlockY < HeightForThisChunk;
-					BlockY++)
-				{
-					r32 Y = (Chunk->Y * CHUNK_DIM) + (r32)BlockY + 0.5f;
-					if((NoiseValue > 0.2f) && (NoiseValue < 0.55f))
-					{
-						r32 CaveNoise = Clamp(PerlinNoise3D(0.02f*vec3(X, 2.0f*(Y + 10.0f), Z)), 0.0f, 1.0f);
-						CaveNoise = CaveNoise*CaveNoise*CaveNoise;
-						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = (CaveNoise < 0.475f);
-					}
-					else
-					{
-						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true;
-					}
-
-					if(IsBlockActive(Blocks, BlockX, BlockY, BlockZ))
-					{
-						Chunk->IsNotEmpty = true;
-					}
-
-					r32 ColorNoise = Clamp(PerlinNoise3D(0.02f*vec3(X, Y, Z)), 0.0f, 1.0f);
-					ColorNoise *= ColorNoise;
-					vec3 Color = vec3(0.0f, 0.0f, 0.0f);
-					switch(BiomeType)
-					{
-						case WorldBiome_Water:
-						{
-							Color = Lerp(vec3(0.0f, 0.25f, 0.8f), vec3(0.0f, 0.18f, 1.0f), ColorNoise);
-						} break;
-
-						case WorldBiome_Beach:
-						{
-							Color = Lerp(vec3(0.9f, 0.85f, 0.7f), vec3(1.0f, 0.819f, 0.6f), ColorNoise);
-						} break;
-
-						case WorldBiome_Scorched:
-						{
-							Color = Lerp(vec3(0.55f, 0.36f, 0.172f), vec3(0.63f, 0.4f, 0.172f), ColorNoise);
-						} break;
-
-						case WorldBiome_Tundra:
-						{
-							Color = Lerp(vec3(0.78f, 0.925f, 0.54f), vec3(0.815f, 0.925f, 0.59f), ColorNoise);
-						} break;
-
-						case WorldBiome_Snow:
-						{
-							Color = Lerp(vec3(0.75f, 0.75f, 0.85f), vec3(0.67f, 0.55f, 1.0f), ColorNoise);
-						} break;
-
-						case WorldBiome_Grassland:
-						{
-							Color = Lerp(vec3(0.0f, 0.56f, 0.16f), vec3(0.65f, 0.9f, 0.0f), ColorNoise);
-						} break;
-					}
-					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = Color;
-				}
-			}
-		}
-	}
-}
-
 internal void
-SetupChunksBlocks(world *World, stack_allocator *WorldAllocator, temp_state *TempState)
+GenerateChunkVertices(world *World, chunk *Chunk)
 {
-	for(u32 ChunkIndex = 0;
-		ChunkIndex < World->ChunksToSetupBlocksThisFrameCount;
-		ChunkIndex++)
-	{
-		setup_chunk_blocks_job *Job = PushStruct(&TempState->Allocator, setup_chunk_blocks_job);
-		Job->World = World;
-		Job->Chunk = World->ChunksToSetupBlocks[ChunkIndex];
-		Job->WorldAllocator = WorldAllocator;
-
-		PlatformAddEntry(TempState->JobSystemQueue, SetupChunkBlocks, Job);
-	}
-	
-	PlatformCompleteAllWork(TempState->JobSystemQueue);
-
-	World->ChunksToSetupBlocksThisFrameCount = 0;
-}
-
-internal bool32
-CanSetupAO(world *World, chunk *Chunk, stack_allocator *WorldAllocator)
-{
-	bool32 Result;
-	bool32 ChunkMinY = (Chunk->Y == MIN_CHUNKS_Y);
-	bool32 ChunkMaxY = (Chunk->Y == MAX_CHUNKS_Y);
-
-	Result = GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
-
-	return(Result);
-}
-
-// TODO(georgy): Should I use EBO here??
-struct setup_chunk_vertices_job
-{
-	world *World;
-	chunk *Chunk;
-};
-internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkVertices)
-{
-	setup_chunk_vertices_job *Job = (setup_chunk_vertices_job *)Data;
-	world *World = Job->World;
-	chunk *Chunk = Job->Chunk;
-
-	Chunk->IsFullySetup = true;
-
-	InitializeDynamicArray(&Chunk->VerticesP);
-	InitializeDynamicArray(&Chunk->VerticesNormals);
-	InitializeDynamicArray(&Chunk->VerticesColors);
-
 	block *Blocks = Chunk->BlocksInfo->Blocks;
 	vec3 *Colors = Chunk->BlocksInfo->Colors;
 
@@ -711,6 +509,245 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkVertices)
 	}
 }
 
+struct setup_chunk_blocks_job
+{
+	world *World;
+	chunk *Chunk;
+	stack_allocator *WorldAllocator;
+};
+internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
+{
+	setup_chunk_blocks_job *Job = (setup_chunk_blocks_job *)Data;
+	world *World = Job->World;
+	chunk *Chunk = Job->Chunk;
+	stack_allocator *WorldAllocator = Job->WorldAllocator;
+
+	Chunk->IsSetupBlocks = true;
+	Chunk->IsNotEmpty = false;
+	
+	BeginWorldLock(World);
+	if(!World->FirstFreeChunkBlocksInfo)
+	{
+		World->FirstFreeChunkBlocksInfo = PushStruct(WorldAllocator, chunk_blocks_info);
+	}
+	Chunk->BlocksInfo = World->FirstFreeChunkBlocksInfo;
+	World->FirstFreeChunkBlocksInfo = World->FirstFreeChunkBlocksInfo->Next;
+	EndWorldLock(World);
+
+	ZeroSize(Chunk->BlocksInfo, sizeof(chunk_blocks_info));
+
+	block *Blocks = Chunk->BlocksInfo->Blocks;
+	vec3 *Colors = Chunk->BlocksInfo->Colors;
+
+	for(u32 BlockZ = 0;
+		BlockZ < CHUNK_DIM;
+		BlockZ++)
+	{
+		for(u32 BlockX = 0;
+			BlockX < CHUNK_DIM;
+			BlockX++)
+		{
+			if(Chunk->Y < 0)
+			{
+				for(u32 BlockY = 0;
+					BlockY < CHUNK_DIM;
+					BlockY++)
+				{
+					Chunk->IsNotEmpty = true;
+					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true;
+					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = vec3(0.53f, 0.53f, 0.53f);
+				}
+			}
+			else
+			{
+				r32 X = (Chunk->X * CHUNK_DIM) + (r32)BlockX + 0.5f;
+				r32 Z = (Chunk->Z * CHUNK_DIM) + (r32)BlockZ + 0.5f;
+				r32 NoiseValue = Clamp(PerlinNoise2D(0.01f*vec2(X, Z)), 0.0f, 1.0f);
+				NoiseValue += 0.15f*Clamp(PerlinNoise2D(0.05f*vec2(X, Z)), 0.0f, 1.0f)*NoiseValue;
+				NoiseValue = NoiseValue*NoiseValue*NoiseValue*NoiseValue*NoiseValue;
+
+				r32 BiomeNoise = Clamp(PerlinNoise2D(0.007f*vec2(X, Z)), 0.0f, 1.0f);
+				BiomeNoise += 0.5f*Clamp(PerlinNoise2D(0.03f*vec2(X, Z)), 0.0f, 1.0f);
+				BiomeNoise += 0.25f*Clamp(PerlinNoise2D(0.06f*vec2(X, Z)), 0.0f, 1.0f);
+				BiomeNoise /= 1.75f;
+
+				world_biome_type BiomeType = WorldBiome_Grassland;
+				if(NoiseValue < 0.008f)
+				{
+					BiomeType = WorldBiome_Water;
+				}
+				else if(NoiseValue < 0.011f)
+				{
+					BiomeType = WorldBiome_Beach;
+				}
+				else if(NoiseValue > 0.7f)
+				{
+					if(BiomeNoise < 0.3f)
+					{
+						BiomeType = WorldBiome_Scorched;
+					}
+					else if(BiomeNoise < 0.4f)
+					{
+						BiomeType = WorldBiome_Tundra;
+					}
+					else
+					{
+						BiomeType = WorldBiome_Snow;
+					}
+				}
+				else 
+				{
+					BiomeType = WorldBiome_Grassland;
+				}
+
+				u32 Height = (u32)roundf(CHUNK_DIM * MAX_CHUNKS_Y * NoiseValue);
+				Height++;
+				u32 HeightForThisChunk = (u32)Clamp((r32)Height - (r32)Chunk->Y*CHUNK_DIM, 0.0f, CHUNK_DIM);
+				for(u32 BlockY = 0;
+					BlockY < HeightForThisChunk;
+					BlockY++)
+				{
+					r32 Y = (Chunk->Y * CHUNK_DIM) + (r32)BlockY + 0.5f;
+					if((NoiseValue > 0.2f) && (NoiseValue < 0.55f))
+					{
+						r32 CaveNoise = Clamp(PerlinNoise3D(0.02f*vec3(X, 2.0f*(Y + 10.0f), Z)), 0.0f, 1.0f);
+						CaveNoise = CaveNoise*CaveNoise*CaveNoise;
+						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = (CaveNoise < 0.475f);
+					}
+					else
+					{
+						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true;
+					}
+
+					if(IsBlockActive(Blocks, BlockX, BlockY, BlockZ))
+					{
+						Chunk->IsNotEmpty = true;
+					}
+
+					r32 ColorNoise = Clamp(PerlinNoise3D(0.02f*vec3(X, Y, Z)), 0.0f, 1.0f);
+					ColorNoise *= ColorNoise;
+					vec3 Color = vec3(0.0f, 0.0f, 0.0f);
+					switch(BiomeType)
+					{
+						case WorldBiome_Water:
+						{
+							Color = Lerp(vec3(0.0f, 0.25f, 0.8f), vec3(0.0f, 0.18f, 1.0f), ColorNoise);
+						} break;
+
+						case WorldBiome_Beach:
+						{
+							Color = Lerp(vec3(0.9f, 0.85f, 0.7f), vec3(1.0f, 0.819f, 0.6f), ColorNoise);
+						} break;
+
+						case WorldBiome_Scorched:
+						{
+							Color = Lerp(vec3(0.55f, 0.36f, 0.172f), vec3(0.63f, 0.4f, 0.172f), ColorNoise);
+						} break;
+
+						case WorldBiome_Tundra:
+						{
+							Color = Lerp(vec3(0.78f, 0.925f, 0.54f), vec3(0.815f, 0.925f, 0.59f), ColorNoise);
+						} break;
+
+						case WorldBiome_Snow:
+						{
+							Color = Lerp(vec3(0.75f, 0.75f, 0.85f), vec3(0.67f, 0.55f, 1.0f), ColorNoise);
+							Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Type = BlockType_Snow;
+						} break;
+
+						case WorldBiome_Grassland:
+						{
+							Color = Lerp(vec3(0.0f, 0.56f, 0.16f), vec3(0.65f, 0.9f, 0.0f), ColorNoise);
+						} break;
+					}
+					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = Color;
+				}
+			}
+		}
+	}
+}
+
+internal void
+SetupChunksBlocks(world *World, stack_allocator *WorldAllocator, temp_state *TempState)
+{
+	for(u32 ChunkIndex = 0;
+		ChunkIndex < World->ChunksToSetupBlocksThisFrameCount;
+		ChunkIndex++)
+	{
+		setup_chunk_blocks_job *Job = PushStruct(&TempState->Allocator, setup_chunk_blocks_job);
+		Job->World = World;
+		Job->Chunk = World->ChunksToSetupBlocks[ChunkIndex];
+		Job->WorldAllocator = WorldAllocator;
+
+		PlatformAddEntry(TempState->JobSystemQueue, SetupChunkBlocks, Job);
+	}
+	
+	PlatformCompleteAllWork(TempState->JobSystemQueue);
+
+	World->ChunksToSetupBlocksThisFrameCount = 0;
+}
+
+internal bool32
+CanSetupAO(world *World, chunk *Chunk, stack_allocator *WorldAllocator)
+{
+	bool32 Result;
+	bool32 ChunkMinY = (Chunk->Y == MIN_CHUNKS_Y);
+	bool32 ChunkMaxY = (Chunk->Y == MAX_CHUNKS_Y);
+
+	Result = GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+
+	return(Result);
+}
+
+// TODO(georgy): Should I use EBO here??
+struct setup_chunk_vertices_job
+{
+	world *World;
+	chunk *Chunk;
+};
+internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkVertices)
+{
+	setup_chunk_vertices_job *Job = (setup_chunk_vertices_job *)Data;
+	world *World = Job->World;
+	chunk *Chunk = Job->Chunk;
+
+	Chunk->IsFullySetup = true;
+
+	InitializeDynamicArray(&Chunk->VerticesP);
+	InitializeDynamicArray(&Chunk->VerticesNormals);
+	InitializeDynamicArray(&Chunk->VerticesColors);
+
+	block *Blocks = Chunk->BlocksInfo->Blocks;
+	vec3 *Colors = Chunk->BlocksInfo->Colors;
+
+	GenerateChunkVertices(World, Chunk);
+}
+
 internal void
 SetupChunksVertices(world *World, temp_state *TempState)
 {
@@ -831,6 +868,51 @@ UnloadChunks(world *World, world_position *MinChunkP, world_position *MaxChunkP)
 			Chunk = Chunk->Next;
 		}
 	}
+}
+
+internal void
+UpdateChunk(world *World, chunk *Chunk)
+{
+	block *Blocks = Chunk->BlocksInfo->Blocks;
+	vec3 *Colors = Chunk->BlocksInfo->Colors;
+
+	Chunk->IsNotEmpty = false;
+	for(i32 BlockZ = 0;
+		BlockZ < CHUNK_DIM;
+		BlockZ++)
+	{
+		for(i32 BlockY = 0;
+			BlockY < CHUNK_DIM;
+			BlockY++)
+		{
+			for(i32 BlockX = 0;
+				BlockX < CHUNK_DIM;
+				BlockX++)
+			{
+				if(IsBlockActive(Blocks, BlockX, BlockY, BlockZ))
+				{
+					Chunk->IsNotEmpty = true;
+					break;
+				}
+			}
+		}
+	}
+
+	Chunk->VerticesP.EntriesCount = 0;
+	Chunk->VerticesNormals.EntriesCount = 0;
+	Chunk->VerticesColors.EntriesCount = 0;
+	GenerateChunkVertices(World, Chunk);
+
+	glBindVertexArray(Chunk->VAO);
+	glBindBuffer(GL_ARRAY_BUFFER, Chunk->PVBO);
+	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesP.EntriesCount*sizeof(vec3), Chunk->VerticesP.Entries, GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, Chunk->NormalsVBO);
+	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesNormals.EntriesCount*sizeof(vec3), Chunk->VerticesNormals.Entries, GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, Chunk->ColorsVBO);
+	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesColors.EntriesCount*sizeof(vec3), Chunk->VerticesColors.Entries, GL_STATIC_DRAW);
+	glBindVertexArray(0);
+
+	Chunk->IsModified = false;
 }
 
 internal chunk *

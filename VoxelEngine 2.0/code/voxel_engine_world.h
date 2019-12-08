@@ -13,9 +13,16 @@ struct world_entity_block
 	world_entity_block *Next;
 };
 
+enum block_type
+{
+	BlockType_Null,
+	
+	BlockType_Snow,
+};
 struct block
 {
 	bool8 Active;
+	block_type Type;
 };
 struct chunk_blocks_info
 {
@@ -34,6 +41,7 @@ struct chunk
 	bool32 IsSetupBlocks;
 	bool32 IsFullySetup;
 	bool32 IsLoaded;
+	bool32 IsModified;
 
 	bool32 IsNotEmpty;
 
@@ -109,3 +117,6 @@ struct world_position
 	i32 ChunkX, ChunkY, ChunkZ;
 	vec3 Offset;
 };
+
+
+inline vec3 Substract(world *World, world_position *A, world_position *B);

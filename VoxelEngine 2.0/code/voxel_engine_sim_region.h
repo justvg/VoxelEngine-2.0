@@ -65,6 +65,8 @@ struct sim_entity
 	vec3 dP;
 
 	entity_reference Fireball;
+	
+	particle_emitter *Particles;
 };
 
 inline bool32 

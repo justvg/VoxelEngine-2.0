@@ -2,12 +2,12 @@
 #include <gl\glew.h>
 #include <gl\wglew.h>
 
+#include "voxel_engine_platform.h"
+#include "voxel_engine.hpp"
+
 #include <Windows.h>
 #include <timeapi.h>
 #include <stdio.h>
-
-#include "voxel_engine_platform.h"
-#include "voxel_engine.hpp"
 
 global_variable bool8 GlobalRunning;
 global_variable bool8 GlobalCursorShouldBeClipped;

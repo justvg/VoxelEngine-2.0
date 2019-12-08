@@ -108,6 +108,7 @@ struct camera
 	mat4 RotationMatrix;
 
 	vec3 OffsetFromHero;
+	vec3 TargetOffset;
 	vec3 LastOffsetFromHero;
 };
 
@@ -186,8 +187,8 @@ AddQuad(dynamic_array_vec3 *Array, vec3 A, vec3 B, vec3 C, vec3 D)
 
 #include "voxel_engine_asset.h"
 #include "voxel_engine_animation.h"
-#include "voxel_engine_render.h"
 #include "voxel_engine_world.h"
+#include "voxel_engine_render.h"
 #include "voxel_engine_sim_region.h"
 
 struct stored_entity
@@ -233,9 +234,12 @@ struct game_state
 
 	shader CharacterShader;
 	shader WorldShader;
+	shader HitpointsShader;
 	shader BillboardShader;
+	shader BlockParticleShader;
 	shader WorldDepthShader;
 	shader CharacterDepthShader;
+	shader BlockParticleDepthShader;
 	shader FramebufferScreenShader;
 
 	animation CharacterAnimations[CharacterAnimation_Count];
@@ -247,11 +251,15 @@ struct game_state
 	GLuint ShadowMapFBO, ShadowMapsArray;
 	u32 ShadowMapsWidth, ShadowMapsHeight;
 
-	GLuint CubeVAO, CubeVBO;
-	GLuint QuadVAO, QuadVBO;
-
 	u32 StoredEntityCount;
 	stored_entity StoredEntities[10000];
+
+	GLuint ParticleVAO, ParticleVBO, ParticlePVBO, ParticleOffsetVBO, ParticleScaleVBO; 
+
+	block_particle_generator BlockParticleGenerator;
+
+	GLuint CubeVAO, CubeVBO;
+	GLuint QuadVAO, QuadVBO;
 };
 
 internal void AddCollisionRule(game_state *GameState, u32 StorageIndexA, u32 StorageIndexB, bool32 CanCollide);
@@ -273,4 +281,14 @@ MakeEntityNonSpatial(sim_entity *Entity)
 {
 	Entity->P = vec3((r32)INVALID_POSITION, (r32)INVALID_POSITION, (r32)INVALID_POSITION);
 	AddFlags(Entity, EntityFlag_NonSpatial);
+
+	if(Entity->Particles)
+	{
+		for(u32 ParticleIndex = 0;
+			ParticleIndex < MAX_PARTICLES_COUNT;
+			ParticleIndex++)
+		{
+			Entity->Particles->Particles[ParticleIndex].LifeTime = 0.0f;
+		}
+	}
 }

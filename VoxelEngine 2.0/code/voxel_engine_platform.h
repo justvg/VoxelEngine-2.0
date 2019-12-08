@@ -23,6 +23,7 @@
 
 #define Assert(Expression) if(!(Expression)) { *(int *)0 = 0; }
 #define InvalidCodePath Assert(!"InvalidCodePath")
+#define InvalidDefaultCase Assert(!"InvalidDefaultCase")
 
 #define ArrayCount(Array) (sizeof(Array)/sizeof((Array)[0]))
 
