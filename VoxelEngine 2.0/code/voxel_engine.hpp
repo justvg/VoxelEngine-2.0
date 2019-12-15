@@ -243,6 +243,57 @@ AddTree(game_state *GameState, world_position P)
 	Entity.StoredEntity->Sim.Collision = GameState->TreeCollision;
 }
 
+static r32 YPos = 300;
+static r32 XPos = -0.5f * 400;
+static r32 FontScale = 0.5f;
+internal void
+DEBUGRenderTextLine(game_state *GameState, game_assets *GameAssets, char *String, r32 BufferWidth)
+{
+	asset_tag_vector MatchVector = { };
+	MatchVector.E[Tag_FontType] = FontType_DebugFont;
+	font_id FontID = GetBestMatchFont(GameAssets, &MatchVector);
+	loaded_font *Font = GetFont(GameAssets, FontID);
+	if(Font)
+	{
+		glBindVertexArray(GameState->GlyphVAO);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glDisable(GL_DEPTH_TEST);
+
+		XPos = -0.5f * BufferWidth;
+
+		for(char *C = String;
+			*C;
+			C++)
+		{
+			char Character = *C;
+			char NextCharacter = *(C + 1);
+
+			if(Character != ' ')
+			{
+				loaded_texture *Glyph = GetBitmapForGlyph(GameAssets, Font, Character);
+
+				SetVec2(GameState->GlyphShader, "ScreenP", vec2(XPos, YPos));
+				SetVec3(GameState->GlyphShader, "WidthHeightScale", vec3(Glyph->Width, Glyph->Height, FontScale));
+				SetFloat(GameState->GlyphShader, "AlignPercentageY", Glyph->AlignPercentageY);
+				glBindTexture(GL_TEXTURE_2D, Glyph->TextureID);
+				glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+			}
+
+			XPos += FontScale*GetHorizontalAdvanceFor(Font, Character, NextCharacter);
+		}
+		YPos -= FontScale*Font->LineAdvance;
+		
+		glEnable(GL_DEPTH_TEST);
+		glDisable(GL_BLEND);
+		glBindVertexArray(0);
+	}
+	else
+	{
+		LoadFont(GameAssets, FontID);
+	}
+}
+
 internal void
 GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHeight)
 {
@@ -253,10 +304,13 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		PlatformAddEntry = Memory->PlatformAddEntry;
 		PlatformCompleteAllWork = Memory->PlatformCompleteAllWork;
 		PlatformReadEntireFile = Memory->PlatformReadEntireFile;
-		PlatformFreeFileMemory = Memory->PlatformFreeFileMemory;
 		PlatformAllocateMemory = Memory->PlatformAllocateMemory;
 		PlatformFreeMemory = Memory->PlatformFreeMemory;
 		PlatformOutputDebugString = Memory->PlatformOutputDebugString;
+		PlatformLoadCodepointBitmap = Memory->PlatformLoadCodepointBitmap;
+		PlatformBeginFont = Memory->PlatformBeginFont;
+		PlatformLoadCodepointBitmap = Memory->PlatformLoadCodepointBitmap;
+		PlatformEndFont = Memory->PlatformEndFont;
 
 		InitializeStackAllocator(&GameState->WorldAllocator, Memory->PermanentStorageSize - sizeof(game_state),
 															 (u8 *)Memory->PermanentStorage + sizeof(game_state));
@@ -273,6 +327,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		// NOTE(georgy): This is hero head centre offset from hero feet pos. 
 		// 				 We use this to offset all object in view matrix. So Camera->OffsetFromHero is offset from hero head centre  
 		GameState->Camera.TargetOffset = vec3(0.0f, 0.680000007f + 0.1f, 0.0f);
+		GameState->Camera.DEBUGFront = vec3(0.0f, 0.0f, -1.0f);
 
 		InitializeWorld(&GameState->World);
 
@@ -289,6 +344,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		CompileShader(&GameState->CharacterDepthShader, "data/shaders/CharacterDepthVS.glsl", "data/shaders/EmptyFS.glsl");
 		CompileShader(&GameState->WorldDepthShader, "data/shaders/WorldDepthVS.glsl", "data/shaders/EmptyFS.glsl");
 		CompileShader(&GameState->BlockParticleDepthShader, "data/shaders/BlockParticleDepthVS.glsl", "data/shaders/EmptyFS.glsl");
+		CompileShader(&GameState->GlyphShader, "data/shaders/GlyphVS.glsl", "data/shaders/GlyphFS.glsl");
 		CompileShader(&GameState->FramebufferScreenShader, "data/shaders/FramebufferScreenVS.glsl", "data/shaders/FramebufferScreenFS.glsl");
 
 		GameState->BlockParticleGenerator = {};
@@ -497,6 +553,22 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 
 		InitializeDefaultAnimations(GameState->CharacterAnimations);
 
+		r32 GlyphVertices[] = 
+		{
+			0.0f, 1.0f,
+			0.0f, 0.0f,
+			1.0f, 1.0f,
+			1.0f, 0.0f
+		};
+		glGenVertexArrays(1, &GameState->GlyphVAO);
+		glGenBuffers(1, &GameState->GlyphVBO);
+		glBindVertexArray(GameState->GlyphVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, GameState->GlyphVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(GlyphVertices), GlyphVertices, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void *)0);
+		glBindVertexArray(0);
+
 		GameState->IsInitialized = true;
 	}
 
@@ -508,7 +580,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 														(u8 *)Memory->TemporaryStorage + sizeof(temp_state));
 
 		TempState->JobSystemQueue = Memory->JobSystemQueue;
-		// TempState->GameAssets = AllocateGameAssets(TempState, &TempState->Allocator, 500000);
+		// TempState->GameAssets = AllocateGameAssets(TempState, &TempState->Allocator, 60000);
 		TempState->GameAssets = AllocateGameAssets(TempState, &TempState->Allocator, Megabytes(64));
 
 		TempState->IsInitialized = true;
@@ -521,85 +593,123 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	Camera->Pitch = Camera->Pitch > 89.0f ? 89.0f : Camera->Pitch;
 	Camera->Pitch = Camera->Pitch < -89.0f ? -89.0f : Camera->Pitch;
 
-	r32 PitchRadians = DEG2RAD(Camera->Pitch);
-	r32 HeadRadians = DEG2RAD(Camera->Head);
-	r32 HorizontalDistanceFromHero = Camera->DistanceFromHero*Cos(-PitchRadians);
-	r32 XOffsetFromHero = -HorizontalDistanceFromHero * Sin(HeadRadians);
-	r32 YOffsetFromHero = Camera->DistanceFromHero * Sin(-PitchRadians);
-	r32 ZOffsetFromHero = HorizontalDistanceFromHero * Cos(HeadRadians);
-	vec3 NewTargetOffsetFromHero = vec3(XOffsetFromHero, YOffsetFromHero, ZOffsetFromHero);
-	Camera->OffsetFromHero = Camera->DistanceFromHero * Normalize(Lerp(Camera->LastOffsetFromHero, NewTargetOffsetFromHero, 8.0f*Input->dt));
-	Camera->LastOffsetFromHero = Camera->OffsetFromHero;
+	if(!GameState->DEBUGCameraEnabled)
+	{
+		r32 PitchRadians = DEG2RAD(Camera->Pitch);
+		r32 HeadRadians = DEG2RAD(Camera->Head);
+		r32 HorizontalDistanceFromHero = Camera->DistanceFromHero*Cos(-PitchRadians);
+		r32 XOffsetFromHero = -HorizontalDistanceFromHero * Sin(HeadRadians);
+		r32 YOffsetFromHero = Camera->DistanceFromHero * Sin(-PitchRadians);
+		r32 ZOffsetFromHero = HorizontalDistanceFromHero * Cos(HeadRadians);
+		vec3 NewTargetOffsetFromHero = vec3(XOffsetFromHero, YOffsetFromHero, ZOffsetFromHero);
+		Camera->OffsetFromHero = Camera->DistanceFromHero * Normalize(Lerp(Camera->LastOffsetFromHero, NewTargetOffsetFromHero, 8.0f*Input->dt));
+		Camera->LastOffsetFromHero = Camera->OffsetFromHero;
+	}
+	else
+	{
+		r32 CameraTargetDirX = Sin(DEG2RAD(Camera->Head))*Cos(DEG2RAD(Camera->Pitch));
+		r32 CameraTargetDirY = Sin(DEG2RAD(Camera->Pitch));
+		r32 CameraTargetDirZ = -Cos(DEG2RAD(Camera->Head))*Cos(DEG2RAD(Camera->Pitch));
+		Camera->DEBUGFront = Normalize(vec3(CameraTargetDirX, CameraTargetDirY, CameraTargetDirZ));
+	}
 
 	Camera->AspectRatio = (r32)BufferWidth/(r32)BufferHeight;
 
-#if 0
-	r32 CameraTargetDirX = Sin(DEG2RAD(Camera->Head))*Cos(DEG2RAD(Camera->Pitch));
-	r32 CameraTargetDirY = Sin(DEG2RAD(Camera->Pitch));
-	r32 CameraTargetDirZ = -Cos(DEG2RAD(Camera->Head))*Cos(DEG2RAD(Camera->Pitch));
-	Camera->Front = Normalize(vec3(CameraTargetDirX, CameraTargetDirY, CameraTargetDirZ));
-#endif
-
-	vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), 0.0f, -Camera->OffsetFromHero.z()));
-	// vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), -Camera->OffsetFromHero.y(), -Camera->OffsetFromHero.z()));
+	vec3 Forward;
+	if(!GameState->DEBUGCameraEnabled)
+	{
+		Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), 0.0f, -Camera->OffsetFromHero.z()));
+	}
+	else
+	{
+		Forward = Camera->DEBUGFront;
+	}
 	vec3 Right = Normalize(Cross(Forward, vec3(0.0f, 1.0f, 0.0f)));
 	r32 Theta = -RAD2DEG(ATan2(Forward.z(), Forward.x())) + 90.0f;
 	GameState->Hero.ddP = vec3(0.0f, 0.0f, 0.0f);
-	if (Input->MoveForward)
+
+	if(!GameState->DEBUGCameraEnabled)
 	{
-		GameState->Hero.ddP += Forward;
-		GameState->Hero.AdditionalRotation = Theta;
+		if (Input->MoveForward.EndedDown)
+		{
+			GameState->Hero.ddP += Forward;
+			GameState->Hero.AdditionalRotation = Theta;
+		}
+		if (Input->MoveBack.EndedDown)
+		{
+			GameState->Hero.ddP -= Forward;
+			GameState->Hero.AdditionalRotation = Theta - 180.0f;
+		}
+		if (Input->MoveRight.EndedDown)
+		{
+			GameState->Hero.ddP += Right;
+			GameState->Hero.AdditionalRotation = Theta - 90.0f;
+		}
+		if (Input->MoveLeft.EndedDown)
+		{
+			GameState->Hero.ddP -= Right;
+			GameState->Hero.AdditionalRotation = Theta + 90.0f;
+		}
+
+		GameState->Hero.dY = 0.0f;
+		if(Input->MoveUp.EndedDown)
+		{
+			GameState->Hero.dY = 3.0f;
+		}
+
+		if (Input->MoveForward.EndedDown && Input->MoveRight.EndedDown)
+		{
+			GameState->Hero.AdditionalRotation = Theta - 45.0f;
+		}
+		if (Input->MoveForward.EndedDown && Input->MoveLeft.EndedDown)
+		{
+			GameState->Hero.AdditionalRotation = Theta + 45.0f;
+		}
+		if (Input->MoveBack.EndedDown && Input->MoveRight.EndedDown)
+		{
+			GameState->Hero.AdditionalRotation = Theta - 135.0f;
+		}
+		if (Input->MoveBack.EndedDown && Input->MoveLeft.EndedDown)
+		{
+			GameState->Hero.AdditionalRotation = Theta + 135.0f;
+		}
+
+		GameState->Hero.Fireball = WasDown(&Input->MouseRight);
+		if(GameState->Hero.Fireball)
+		{
+			GameState->Hero.AdditionalRotation = Theta;
+		}
 	}
-	if (Input->MoveBack)
+	else
 	{
-		GameState->Hero.ddP -= Forward;
-		GameState->Hero.AdditionalRotation = Theta - 180.0f;
-	}
-	if (Input->MoveRight)
-	{
-		GameState->Hero.ddP += Right;
-		GameState->Hero.AdditionalRotation = Theta - 90.0f;
-	}
-	if (Input->MoveLeft)
-	{
-		GameState->Hero.ddP -= Right;
-		GameState->Hero.AdditionalRotation = Theta + 90.0f;
+		if (Input->MoveForward.EndedDown)
+		{
+			Camera->DEBUGP += Forward;
+		}
+		if (Input->MoveBack.EndedDown)
+		{
+			Camera->DEBUGP  -= Forward;
+		}
+		if (Input->MoveRight.EndedDown)
+		{
+			Camera->DEBUGP  += Right;
+		}
+		if (Input->MoveLeft.EndedDown)
+		{
+			Camera->DEBUGP  -= Right;
+		}
 	}
 
-	GameState->Hero.dY = 0.0f;
-	if(Input->MoveUp)
+	if(WasDown(&Input->NumOne))
 	{
-		GameState->Hero.dY = 3.0f;
+		GameState->DEBUGCameraEnabled = !GameState->DEBUGCameraEnabled;
 	}
 
-	if (Input->MoveForward && Input->MoveRight)
-	{
-		GameState->Hero.AdditionalRotation = Theta - 45.0f;
-	}
-	if (Input->MoveForward && Input->MoveLeft)
-	{
-		GameState->Hero.AdditionalRotation = Theta + 45.0f;
-	}
-	if (Input->MoveBack && Input->MoveRight)
-	{
-		GameState->Hero.AdditionalRotation = Theta - 135.0f;
-	}
-	if (Input->MoveBack && Input->MoveLeft)
-	{
-		GameState->Hero.AdditionalRotation = Theta + 135.0f;
-	}
 
-	GameState->Hero.Fireball = Input->MouseRight;
-	if(GameState->Hero.Fireball)
-	{
-		GameState->Hero.AdditionalRotation = Theta;
-	}
-	
-	
 	temporary_memory WorldConstructionAndRenderMemory = BeginTemporaryMemory(&TempState->Allocator);
 
 	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-100.0f, -20.0f, -100.0f), vec3(100.0f, 20.0f, 100.0f));
-	sim_region *SimRegion = BeginSimulation(GameState, GameState->Hero.Entity->P, Forward, 
+	sim_region *SimRegion = BeginSimulation(GameState, GameState->Hero.Entity->P, 
 											SimRegionUpdatableBounds, &TempState->Allocator, Input->dt);	
 
 	Camera->RotationMatrix = RotationMatrixFromDirection(Camera->OffsetFromHero);
@@ -779,7 +889,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		Cascade1AABB = AddRadiusTo(Cascade1AABB, vec3(1.5f, 1.5f, 1.5f));
 		mat4 LightProjection = Ortho(Cascade1AABB.Min.y(), Cascade1AABB.Max.y(), 
 									 Cascade1AABB.Min.x(), Cascade1AABB.Max.x(),
-									-Cascade1AABB.Max.z() - 50.0f, -Cascade1AABB.Min.z());
+									-Cascade1AABB.Max.z() - 70.0f, -Cascade1AABB.Min.z());
 
 		LightSpaceMatrices[CascadeIndex] = LightProjection * LightView;
 		UseShader(GameState->WorldDepthShader);
@@ -806,11 +916,24 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 				Translate(-Camera->OffsetFromHero - Camera->TargetOffset);
 	mat4 Projection = Perspective(Camera->FoV, Camera->AspectRatio, Camera->NearDistance, Camera->FarDistance);
 	mat4 ViewProjection = Projection * View;
-	shader Shaders3D[] = {GameState->WorldShader, GameState->CharacterShader, 
-						  GameState->HitpointsShader, GameState->BillboardShader, GameState->BlockParticleShader};
-	Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), ViewProjection);
+	shader Shaders3D[] = { GameState->WorldShader, GameState->CharacterShader,
+							GameState->HitpointsShader, GameState->BillboardShader, GameState->BlockParticleShader };
+	if(!GameState->DEBUGCameraEnabled)
+	{
+		Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), ViewProjection);
+	}
+	else
+	{
+		mat4 DEBUGCameraView = LookAt(Camera->DEBUGP, Camera->DEBUGP + Camera->DEBUGFront);
+		mat4 DEBUGCameraViewProjection = Projection * DEBUGCameraView;
+		Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), DEBUGCameraViewProjection);
+	}
+	
 
 	UseShader(GameState->WorldShader);
+	// NOTE(georgy): This is for the situation when we use debug camera. Even if we use debug camera,
+	//  			 we want Output.ClipSpacePosZ to be as it is from our default camera, not debug one
+	SetMat4(GameState->WorldShader, "ViewProjectionForClipSpacePosZ", ViewProjection);
 	SetMat4Array(GameState->WorldShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
 	SetFloatArray(GameState->WorldShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
 	SetVec3(GameState->WorldShader, "DirectionalLightDir", GameState->DirectionalLightDir);
@@ -819,6 +942,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
 	
 	UseShader(GameState->CharacterShader);
+	SetMat4(GameState->CharacterShader, "ViewProjectionForClipSpacePosZ", ViewProjection);
 	SetMat4Array(GameState->CharacterShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
 	SetFloatArray(GameState->CharacterShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
 	SetVec3(GameState->CharacterShader, "DirectionalLightDir", GameState->DirectionalLightDir);
@@ -827,6 +951,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
 
 	UseShader(GameState->BlockParticleShader);
+	SetMat4(GameState->BlockParticleShader, "ViewProjectionForClipSpacePosZ", ViewProjection);
 	SetMat4Array(GameState->BlockParticleShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
 	SetFloatArray(GameState->BlockParticleShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
 	SetVec3(GameState->BlockParticleShader, "DirectionalLightDir", GameState->DirectionalLightDir);
@@ -842,6 +967,28 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 
 	EndSimulation(GameState, SimRegion, &GameState->WorldAllocator);
 	EndTemporaryMemory(WorldConstructionAndRenderMemory);
+
+	mat4 Orthographic = Ortho(-0.5f*BufferHeight, 0.5f*BufferHeight, -0.5f*BufferWidth, 0.5f*BufferWidth, 0.1f, 1000.0f);
+	UseShader(GameState->GlyphShader);
+	SetMat4(GameState->GlyphShader, "Projection", Orthographic);
+	SetInt(GameState->GlyphShader, "Texture", 0);
+	glActiveTexture(GL_TEXTURE0);
+
+	asset_tag_vector MatchVector = { };
+	MatchVector.E[Tag_FontType] = FontType_DebugFont;
+	font_id FontID = GetBestMatchFont(TempState->GameAssets, &MatchVector);
+	loaded_font *Font = GetFont(TempState->GameAssets, FontID);
+	if (Font)
+	{
+		YPos = 0.5f*BufferHeight - FontScale*Font->LineAdvance;
+	}
+	else
+	{
+		YPos = 0.0f;
+	}
+	DEBUGRenderTextLine(GameState, TempState->GameAssets, "Hello world!", BufferWidth);
+	DEBUGRenderTextLine(GameState, TempState->GameAssets, "SAruTObIpasdfgh", BufferWidth);
+	DEBUGRenderTextLine(GameState, TempState->GameAssets, "testline", BufferWidth);
 
 	UnloadAssetsIfNecessary(TempState->GameAssets);
 }

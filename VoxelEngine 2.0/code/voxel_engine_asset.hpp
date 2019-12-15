@@ -151,7 +151,7 @@ LoadCub(char *Filename, u64 *ModelSize, r32 AdditionalAlignmentY = 0.0f, r32 Add
 		*ModelSize = Model.VerticesP.EntriesCount*sizeof(vec3) + Model.Normals.EntriesCount*sizeof(vec3) + Model.VertexColors.EntriesCount*sizeof(vec3);
 
 		PlatformFreeMemory(VoxelsStates);
-		PlatformFreeFileMemory(FileData.Memory);
+		PlatformFreeMemory(FileData.Memory);
 	}
 
 	return (Model);
@@ -238,6 +238,36 @@ LoadBMP(char *Filename)
 	return(Result);
 }
 
+internal loaded_font
+LoadFont(char *Filename, char *FontName, u64 *AssetSize)
+{
+	loaded_font Result = {};
+	Result.FirstCodepoint = ' ';
+	Result.LastCodepoint = '~';
+	Result.GlyphsCount = (Result.LastCodepoint + 1) - Result.FirstCodepoint;
+
+	Result.Glyphs = (loaded_texture *)PlatformAllocateMemory(Result.GlyphsCount*sizeof(loaded_texture));
+
+	PlatformBeginFont(&Result, Filename, FontName);
+
+	for(u32 Character = Result.FirstCodepoint, GlyphIndex = 0;
+		Character <= Result.LastCodepoint;
+		Character++, GlyphIndex++)
+	{
+		loaded_texture *Glyph = Result.Glyphs + GlyphIndex;
+		Glyph->Data = PlatformLoadCodepointBitmap(&Result, Character, (u32 *)&Glyph->Width, (u32 *)&Glyph->Height, 
+												  &Glyph->AlignPercentageY);
+		Glyph->Free = Glyph->Data;
+		Glyph->ChannelsCount = 1;
+
+		*AssetSize += Glyph->Width*Glyph->Height*Glyph->ChannelsCount;
+	}
+
+	PlatformEndFont(&Result);
+
+	return(Result);
+}
+
 struct load_asset_job
 {
 	game_assets *GameAssets;
@@ -269,6 +299,14 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(LoadAssetJob)
 		{
 			Asset->Header->Texture = LoadBMP(Asset->Filename);
 			AssetSize = Asset->Header->Texture.Width*Asset->Header->Texture.Height*Asset->Header->Texture.ChannelsCount;
+		} break;
+
+		case AssetDataType_Font:
+		{
+			// NOTE(georgy): This lock is used because we don't want 2 different fonts to be in fly in platform layer in the same time
+			BeginAssetLock(Job->GameAssets);
+			Asset->Header->Font = LoadFont(Asset->Filename, Asset->FontName, &AssetSize);
+			EndAssetLock(Job->GameAssets);
 		} break;
 
 		InvalidDefaultCase;
@@ -325,6 +363,12 @@ LoadTexture(game_assets *GameAssets, texture_id Index)
 	LoadAsset(GameAssets, Index.Value);
 }
 
+internal void
+LoadFont(game_assets *GameAssets, font_id Index)
+{
+	LoadAsset(GameAssets, Index.Value);
+}
+
 inline u32 
 GetFirstAssetFromType(game_assets *GameAssets, asset_type_id TypeID)
 {
@@ -343,6 +387,13 @@ inline texture_id
 GetFirstTextureFromType(game_assets *GameAssets, asset_type_id TypeID)
 {
 	texture_id Result = { GetFirstAssetFromType(GameAssets, TypeID) };
+	return(Result);
+}
+
+inline font_id 
+GetFirstFont(game_assets *GameAssets)
+{
+	font_id Result = { GetFirstAssetFromType(GameAssets, AssetType_Font) };
 	return(Result);
 }
 
@@ -396,6 +447,13 @@ GetBestMatchTextureFromType(game_assets *GameAssets, asset_type_id TypeID, asset
 	return(Result);
 }
 
+inline font_id
+GetBestMatchFont(game_assets *GameAssets, asset_tag_vector *MatchVector)
+{
+	font_id Result = { GetBestMatchAssetFromType(GameAssets, AssetType_Font, MatchVector) };
+	return(Result);
+}
+
 internal void
 BeginAssetType(game_assets *Assets, asset_type_id ID)
 {
@@ -409,7 +467,8 @@ BeginAssetType(game_assets *Assets, asset_type_id ID)
 
 internal void
 AddAsset(game_assets *Assets, char *Filename, asset_data_type DataType, 
-		 r32 AdditionalAlignmentY = 0.0f, r32 AdditionalAlignmentX = 0.0f)
+		 r32 AdditionalAlignmentY = 0.0f, r32 AdditionalAlignmentX = 0.0f,
+		 char *FontName = 0)
 {
 	Assert(Assets->DEBUGAssetType);
 
@@ -419,6 +478,7 @@ AddAsset(game_assets *Assets, char *Filename, asset_data_type DataType,
 	Asset->Filename = Filename;
 	Asset->AdditionalAlignmentY = AdditionalAlignmentY;
 	Asset->AdditionalAlignmentX = AdditionalAlignmentX;
+	Asset->FontName = FontName;
 	Asset->FirstTagIndex = Assets->TagCount;
 	Asset->OnePastLastTagIndex = Assets->TagCount;
 	Asset->Header = 0;
@@ -460,8 +520,7 @@ AllocateGameAssets(temp_state *TempState, stack_allocator *Allocator, u64 Size)
 	GameAssets->MemorySizeRestriction = Size;
 	GameAssets->UsedMemory = 0;
 
-	GameAssets->MemoryHeaderSentinel.Next = &GameAssets->MemoryHeaderSentinel;
-	GameAssets->MemoryHeaderSentinel.Prev = &GameAssets->MemoryHeaderSentinel;
+	GameAssets->MemoryHeaderSentinel.Next = GameAssets->MemoryHeaderSentinel.Prev = &GameAssets->MemoryHeaderSentinel;
 
 	GameAssets->Lock = 0;
 
@@ -513,7 +572,24 @@ AllocateGameAssets(temp_state *TempState, stack_allocator *Allocator, u64 Size)
 	AddAsset(GameAssets, "data/textures/cosmic.bmp", AssetDataType_Texture);
 	EndAssetType(GameAssets);
 
+	// TODO(georgy): It's better to use asset packer I think, because this path may be different on an other machine
+	// 				 so we can pre-pack all textures for font on our machine
+	// 				 Also asset packer allows us to treat character bitmap as any other bitmap (texture)
+	BeginAssetType(GameAssets, AssetType_Font);
+	AddAsset(GameAssets, "C:/Windows/Fonts/Arial.ttf", AssetDataType_Font, 0, 0, "Arial");
+	AddTag(GameAssets, Tag_FontType, (r32)FontType_DebugFont);
+	AddAsset(GameAssets, "C:/Windows/Fonts/Comic Sans MS.ttf", AssetDataType_Font, 0, 0, "Comic Sans MS");
+	AddTag(GameAssets, Tag_FontType, (r32)FontType_GameFont);
+	EndAssetType(GameAssets);
+
 	return(GameAssets);
+}
+
+inline void 
+FreeTexture(loaded_texture *Texture)
+{
+	PLATFORM_FREE_MEMORY_AND_ZERO_POINTER(Texture->Free);
+	glDeleteTextures(1, &Texture->TextureID);
 }
 
 inline void
@@ -543,12 +619,20 @@ UnloadAssetsIfNecessary(game_assets *GameAssets)
 			
 				case AssetDataType_Texture:
 				{
-					if (LastUsedAsset->Texture.Free)
+					FreeTexture(&LastUsedAsset->Texture);
+				} break;
+
+				case AssetDataType_Font:
+				{
+					for(u32 GlyphIndex = 0;
+						GlyphIndex < LastUsedAsset->Font.GlyphsCount;
+						GlyphIndex++)
 					{
-						PlatformFreeFileMemory(LastUsedAsset->Texture.Free);
-						LastUsedAsset->Texture.Free = 0;
+						loaded_texture *Glyph = LastUsedAsset->Font.Glyphs + GlyphIndex; 
+						FreeTexture(Glyph);
 					}
-					glDeleteTextures(1, &LastUsedAsset->Texture.TextureID);
+					PLATFORM_FREE_MEMORY_AND_ZERO_POINTER(LastUsedAsset->Font.Glyphs);
+					PLATFORM_FREE_MEMORY_AND_ZERO_POINTER(LastUsedAsset->Font.HorizontalAdvances);
 				} break;
 
 				InvalidDefaultCase;
@@ -562,4 +646,47 @@ UnloadAssetsIfNecessary(game_assets *GameAssets)
 		}
 	}
 	EndAssetLock(GameAssets);
+}
+
+inline u32
+GlyphIndexFromCodepoint(loaded_font *Font, u32 Codepoint)
+{
+	u32 GlyphIndex = Codepoint - Font->FirstCodepoint;
+	return(GlyphIndex);
+}
+
+internal loaded_texture *
+GetBitmapForGlyph(game_assets *GameAssets, loaded_font *Font, u32 Codepoint)
+{
+	Assert((((i32)Codepoint - (i32)' ') >= 0) && 
+		   (((i32)Codepoint - (i32)' ') < Font->GlyphsCount));
+
+	u32 GlyphIndex = GlyphIndexFromCodepoint(Font, Codepoint);
+	loaded_texture* Glyph = Font->Glyphs + GlyphIndex;
+	if(!Glyph->TextureID)
+	{
+		InitTexture(Glyph, GL_CLAMP_TO_BORDER);
+	}
+
+	return(Glyph);
+}
+
+internal r32
+GetHorizontalAdvanceFor(loaded_font *Font, u32 Codepoint, u32 NextCodepoint)
+{
+	r32 Result = 0.0f;
+
+	if(Codepoint && NextCodepoint)
+	{
+		Assert((((i32)Codepoint - (i32)' ') >= 0) && 
+		   	   (((i32)Codepoint - (i32)' ') < Font->GlyphsCount));
+		Assert((((i32)NextCodepoint - (i32)' ') >= 0) && 
+			   (((i32)NextCodepoint - (i32)' ') < Font->GlyphsCount));
+
+		u32 GlyphIndex = GlyphIndexFromCodepoint(Font, Codepoint);
+		u32 NextGlyphIndex = GlyphIndexFromCodepoint(Font, NextCodepoint);
+		Result = Font->HorizontalAdvances[GlyphIndex*Font->GlyphsCount + NextGlyphIndex];
+	}
+
+	return(Result);
 }

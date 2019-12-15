@@ -19,6 +19,10 @@ uniform mat4 Model = mat4(1.0);
 uniform mat4 ViewProjection = mat4(1.0);
 uniform mat4 LightSpaceMatrices[3];
 
+// NOTE(georgy): This is for the situation when we use debug camera. Even if we use debug camera,
+//  			 we want Output.ClipSpacePosZ to be as it is from our default camera, not debug one
+uniform mat4 ViewProjectionForClipSpacePosZ = mat4(1.0);
+
 void main()
 {
 	vec4 SimPos = Model * vec4(aPos.xyz, 1.0); 
@@ -34,5 +38,6 @@ void main()
 	}
 
 	gl_Position = ViewProjection * SimPos;
-	Output.ClipSpacePosZ = gl_Position.z;
+	// Output.ClipSpacePosZ  = gl_Position.z;
+	Output.ClipSpacePosZ = (ViewProjectionForClipSpacePosZ * SimPos).z;
 }

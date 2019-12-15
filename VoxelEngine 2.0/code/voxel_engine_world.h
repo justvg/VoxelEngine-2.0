@@ -27,7 +27,7 @@ struct block
 struct chunk_blocks_info
 {
 	block Blocks[CHUNK_DIM*CHUNK_DIM*CHUNK_DIM];
-	// TODO(georgy): Can I delete Colors from here? I can allocate them in stack in SetupChunk()
+	// TODO(georgy): Can I delete Colors from here? I can allocate them in stack in SetupChunk()?
 	vec3 Colors[CHUNK_DIM*CHUNK_DIM*CHUNK_DIM];
 
 	chunk_blocks_info *Next;

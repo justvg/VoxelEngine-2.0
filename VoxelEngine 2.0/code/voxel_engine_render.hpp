@@ -47,8 +47,8 @@ CompileShader(shader *Shader, char *VertexPath, char *FragmentPath)
 		PlatformOutputDebugString("\n");
 	}
 
-	PlatformFreeFileMemory(VSSourceCode.Memory);
-	PlatformFreeFileMemory(FSSourceCode.Memory);
+	PlatformFreeMemory(VSSourceCode.Memory);
+	PlatformFreeMemory(FSSourceCode.Memory);
 	glDeleteShader(VS);
 	glDeleteShader(FS);
 }

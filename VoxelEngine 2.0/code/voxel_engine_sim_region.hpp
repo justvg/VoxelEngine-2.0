@@ -77,8 +77,8 @@ AddEntity(game_state *GameState, sim_region *SimRegion, stored_entity *StoredEnt
 }
 
 internal sim_region *
-BeginSimulation(game_state *GameState, world_position Origin, vec3 OriginForward, 
-				rect3 Bounds, stack_allocator *TempAllocator, r32 dt)
+BeginSimulation(game_state *GameState, world_position Origin, rect3 Bounds, 
+				stack_allocator *TempAllocator, r32 dt)
 {
 	world *World = &GameState->World;
 	stack_allocator *WorldAllocator = &GameState->WorldAllocator;
@@ -159,16 +159,11 @@ BeginSimulation(game_state *GameState, world_position Origin, vec3 OriginForward
 							world_position ChunkPosition = { ChunkX, ChunkY, ChunkZ, vec3(0.0f, 0.0f, 0.0f) };
 							Chunk->Translation = Substract(World, &ChunkPosition, &Origin);
 
-							// TODO(georgy): This is kind of cheesy pre-frustum culling. Think about it!
-							//if(!((Length(vec3(Chunk->Translation.x(), 0.0f, Chunk->Translation.z())) > 3.0f*World->ChunkDimInMeters) &&
-							//	(Dot(Chunk->Translation, OriginForward) < -0.25f)))
-							{
-								chunk *ChunkToRender = PushStruct(TempAllocator, chunk);
-								*ChunkToRender = *Chunk;
-								ChunkToRender->LengthSqTranslation = LengthSq(ChunkToRender->Translation);
-								ChunkToRender->Next = World->ChunksToRender;
-								World->ChunksToRender = ChunkToRender;
-							}
+							chunk *ChunkToRender = PushStruct(TempAllocator, chunk);
+							*ChunkToRender = *Chunk;
+							ChunkToRender->LengthSqTranslation = LengthSq(ChunkToRender->Translation);
+							ChunkToRender->Next = World->ChunksToRender;
+							World->ChunksToRender = ChunkToRender;
 						}
 
 						if(Chunk->IsFullySetup && Chunk->IsLoaded)

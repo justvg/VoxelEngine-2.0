@@ -18,6 +18,9 @@ struct loaded_texture
 	GLuint TextureID;
 	i32 Width, Height, ChannelsCount;
 
+	// NOTE(georgy): For glyphs (to count descent)
+	r32 AlignPercentageY;
+
 	u8 *Data;
 	void *Free;
 };
@@ -28,6 +31,11 @@ struct model_id
 };
 
 struct texture_id
+{
+	u32 Value;
+};
+
+struct font_id
 {
 	u32 Value;
 };
@@ -56,6 +64,13 @@ enum asset_type_id
 	AssetType_Fire,
 	AssetType_Cosmic,
 
+	// 
+	// NOTE(georgy): Fonts!
+	// 
+
+	AssetType_Font,
+	AssetType_FontGlyph,
+
 	AssetType_Count
 };
 
@@ -70,6 +85,7 @@ struct asset_memory_header
 	{
 		loaded_model Model;
 		loaded_texture Texture;
+		loaded_font Font;
 	};
 };
 
@@ -85,6 +101,7 @@ enum asset_data_type
 
 	AssetDataType_Model,
 	AssetDataType_Texture,
+	AssetDataType_Font,
 };
 struct asset
 {
@@ -92,9 +109,12 @@ struct asset
 	asset_data_type DataType;
 
 	char *Filename;
+
 	r32 AdditionalAlignmentY;
-	r32 AdditionalAlignmentX;
-	
+	r32 AdditionalAlignmentX;	
+
+	char *FontName;
+
 	u32 FirstTagIndex;
 	u32 OnePastLastTagIndex;
 	asset_memory_header *Header;
@@ -106,9 +126,15 @@ struct asset_type
 	u32 OnePastLastAssetIndex;
 };
 
+enum asset_font_type
+{
+	FontType_DebugFont = 1,
+	FontType_GameFont = 5,
+};
 enum asset_tag_id
 {
 	Tag_Color,
+	Tag_FontType,
 
 	Tag_Count
 };
@@ -244,6 +270,31 @@ GetModel(game_assets *GameAssets, model_id Index)
 	return(Result);
 }
 
+internal void
+InitTexture(loaded_texture *Texture, GLint Addressing)
+{
+	GLenum Format;
+	if(Texture->ChannelsCount == 1) Format = GL_RED;
+	else if(Texture->ChannelsCount == 3) Format = GL_RGB;
+	else if(Texture->ChannelsCount == 4) Format = GL_RGBA;
+
+	glGenTextures(1, &Texture->TextureID);
+	glBindTexture(GL_TEXTURE_2D, Texture->TextureID);
+	glTexImage2D(GL_TEXTURE_2D, 0, Format, Texture->Width, Texture->Height, 0, Format, GL_UNSIGNED_BYTE, Texture->Data);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, Addressing);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, Addressing);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	if(Addressing == GL_CLAMP_TO_BORDER)
+	{
+		r32 BorderColor[] = {0.0f, 0.0f, 0.0f, 0.0f};
+		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, BorderColor);
+	}
+
+	PLATFORM_FREE_MEMORY_AND_ZERO_POINTER(Texture->Free);
+}
+
 inline loaded_texture *
 GetTexture(game_assets *GameAssets, texture_id Index)
 {
@@ -256,23 +307,18 @@ GetTexture(game_assets *GameAssets, texture_id Index)
 
 		if(!Result->TextureID)
 		{
-			GLenum Format;
-			if(Result->ChannelsCount == 1) Format = GL_RED;
-			if(Result->ChannelsCount == 3) Format = GL_RGB;
-			if(Result->ChannelsCount == 4) Format = GL_RGBA;
-
-			glGenTextures(1, &Result->TextureID);
-			glBindTexture(GL_TEXTURE_2D, Result->TextureID);
-			glTexImage2D(GL_TEXTURE_2D, 0, Format, Result->Width, Result->Height, 0, Format, GL_UNSIGNED_BYTE, Result->Data);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-			PlatformFreeFileMemory(Result->Free);
-			Result->Free = 0;
+			InitTexture(Result, GL_REPEAT);
 		}
 	}
+
+	return(Result);
+}
+
+inline loaded_font *
+GetFont(game_assets *GameAssets, font_id Index)
+{
+	asset_memory_header *Header = GetAsset(GameAssets, Index.Value);
+	loaded_font *Result = Header ? &Header->Font : 0;
 
 	return(Result);
 }

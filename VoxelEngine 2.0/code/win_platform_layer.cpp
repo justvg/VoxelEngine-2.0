@@ -32,11 +32,6 @@ OUTPUT_DEBUG_STRING(WinOutputDebugString)
 	OutputDebugString(String);
 }
 
-FREE_FILE_MEMORY(WinFreeFileMemory)
-{
-	VirtualFree(Memory, 0, MEM_RELEASE);
-}
-
 READ_ENTIRE_FILE(WinReadEntireFile)
 {
 	read_entire_file_result Result = {};
@@ -58,13 +53,192 @@ READ_ENTIRE_FILE(WinReadEntireFile)
 				}
 				else
 				{
-					WinFreeFileMemory(Result.Memory);
+					WinFreeMemory(Result.Memory);
 					Result.Memory = 0;
 				}
 			}
 		}
 
 		CloseHandle(FileHandle);
+	}
+
+	return(Result);
+}
+
+
+global_variable bool32 GlobalIsFontRenderTargetInitialized;
+global_variable HDC GlobalFontDeviceContext;
+global_variable HBITMAP GlobalFontBitmap;
+global_variable void *GlobalFontBits;
+global_variable HFONT GlobalFont;
+global_variable TEXTMETRIC GlobalTextMetric;
+#define MAX_GLYPH_WIDTH 300
+#define MAX_GLYPH_HEIGHT 300
+PLATFORM_BEGIN_FONT(WinBeginFont)
+{
+	if(!GlobalIsFontRenderTargetInitialized)
+	{
+		GlobalFontDeviceContext = CreateCompatibleDC(GetDC(0));
+
+		BITMAPINFO Info = {};
+		Info.bmiHeader.biSize = sizeof(Info.bmiHeader);
+		Info.bmiHeader.biWidth = MAX_GLYPH_WIDTH;
+		Info.bmiHeader.biHeight = MAX_GLYPH_HEIGHT;
+		Info.bmiHeader.biPlanes = 1;
+		Info.bmiHeader.biBitCount = 32;
+		Info.bmiHeader.biCompression = BI_RGB;
+		GlobalFontBitmap = CreateDIBSection(GlobalFontDeviceContext, &Info, DIB_RGB_COLORS, &GlobalFontBits, 0 , 0);
+		SelectObject(GlobalFontDeviceContext, GlobalFontBitmap);
+		SetBkColor(GlobalFontDeviceContext, RGB(0, 0, 0));
+
+		GlobalIsFontRenderTargetInitialized = true;
+	}
+	
+	AddFontResourceEx(Filename, FR_PRIVATE, 0);
+	int PixelHeight = 128;
+	GlobalFont = CreateFontA(PixelHeight, 0, 0, 0,
+							 FW_NORMAL,
+							 FALSE, // NOTE(georgy): Italic
+							 FALSE, // NOTE(georgy): Underline,
+							 FALSE, // NOTE(georgy): StrikeOut,
+							 DEFAULT_CHARSET,
+							 OUT_DEFAULT_PRECIS,
+							 CLIP_DEFAULT_PRECIS,
+							 ANTIALIASED_QUALITY,
+							 DEFAULT_PITCH|FF_DONTCARE,
+							 FontName);
+
+	SelectObject(GlobalFontDeviceContext, GlobalFont);
+	GetTextMetrics(GlobalFontDeviceContext, &GlobalTextMetric);
+
+	Font->HorizontalAdvances = (r32 *)WinAllocateMemory(Font->GlyphsCount*Font->GlyphsCount*sizeof(r32));
+	Font->LineAdvance = GlobalTextMetric.tmAscent + GlobalTextMetric.tmDescent + GlobalTextMetric.tmExternalLeading;
+}
+
+PLATFORM_END_FONT(WinEndFont)
+{
+	DWORD KerningPairsCount = GetKerningPairsW(GlobalFontDeviceContext, 0, 0);
+	KERNINGPAIR *KerningPairs = (KERNINGPAIR *)WinAllocateMemory(KerningPairsCount*sizeof(KERNINGPAIR));
+	GetKerningPairsW(GlobalFontDeviceContext, KerningPairsCount, KerningPairs);
+	for(u32 KerningPairIndex = 0;
+		KerningPairIndex < KerningPairsCount;
+		KerningPairIndex++)
+	{
+		KERNINGPAIR *Pair = KerningPairs + KerningPairIndex;
+		if((Pair->wFirst >= Font->FirstCodepoint) && (Pair->wFirst <= Font->LastCodepoint) &&
+		   (Pair->wSecond >= Font->FirstCodepoint) && (Pair->wSecond <= Font->LastCodepoint))
+		{
+			u32 FirstGlyphIndex = Pair->wFirst - Font->FirstCodepoint;
+			u32 SecondGlyphIndex = Pair->wSecond - Font->FirstCodepoint;
+			Font->HorizontalAdvances[FirstGlyphIndex*Font->GlyphsCount + SecondGlyphIndex] += (r32)Pair->iKernAmount;
+		}
+	}
+	WinFreeMemory(KerningPairs);
+
+	DeleteObject(GlobalFont);
+	GlobalFont = 0;
+	GlobalTextMetric = {};
+}
+
+PLATFORM_LOAD_CODEPOINT_BITMAP(WinLoadCodepointBitmap)
+{
+	SelectObject(GlobalFontDeviceContext, GlobalFont);
+
+	wchar_t WPoint = (wchar_t) Codepoint;
+
+	SIZE Size;
+	GetTextExtentPoint32W(GlobalFontDeviceContext, &WPoint, 1, &Size);
+
+	PatBlt(GlobalFontDeviceContext, 0, 0, MAX_GLYPH_WIDTH, MAX_GLYPH_HEIGHT, BLACKNESS);
+	SetTextColor(GlobalFontDeviceContext, RGB(255, 255, 255));
+	int PreStepX = 128; 
+	TextOutW(GlobalFontDeviceContext, PreStepX, 0, &WPoint, 1);
+
+	i32 MinX = 10000;
+	i32 MinY = 10000;
+	i32 MaxX = -10000;
+	i32 MaxY = -10000;
+	u32 *Row = (u32 *)GlobalFontBits;
+	for(i32 Y = 0;
+		Y < MAX_GLYPH_HEIGHT;
+		Y++)
+	{
+		u32 *Pixel = Row;
+		for(i32 X = 0;
+			X < MAX_GLYPH_WIDTH;
+			X++)
+		{
+			if (*Pixel != 0)
+			{
+				if(MinX > X)
+				{
+					MinX = X;
+				}
+				if(MinY > Y)
+				{
+					MinY = Y;
+				}
+				if(MaxX < X)
+				{
+					MaxX = X;
+				}
+				if(MaxY < Y)
+				{
+					MaxY = Y;
+				}
+			}
+
+			Pixel++;
+		}
+
+		Row += MAX_GLYPH_WIDTH;
+	}
+
+	u8* Result = 0;
+	r32 KerningChange = 0.0f;
+	if(MinX <= MaxX)
+	{
+		*Width = (MaxX + 1) - MinX;
+		*Height = (MaxY + 1) - MinY;
+
+		Result = (u8 *)WinAllocateMemory(*Width * *Height * 1);
+
+		u8 *DestRow = Result;
+		u32 *SourceRow = (u32 *)GlobalFontBits + MinY*MAX_GLYPH_WIDTH;
+		for(i32 Y = MinY;
+			Y <= MaxY;
+			Y++)
+		{
+			u8 *Dest = (u8 *)DestRow;
+			u32 *Source = SourceRow + MinX;
+			for(i32 X = MinX;
+				X <= MaxX;
+				X++)
+			{
+				*Dest = *(u8 *)Source;
+				Dest++;
+				Source++;
+			}
+			
+			DestRow += *Width*1;
+			SourceRow += MAX_GLYPH_WIDTH;
+		}
+
+		*AlignPercentageY = ((MAX_GLYPH_HEIGHT - MinY) - (Size.cy - GlobalTextMetric.tmDescent)) / (r32)*Height;
+
+		KerningChange = (r32)(MinX - PreStepX);
+	}
+
+	INT ThisCharWidth;
+	GetCharWidth32W(GlobalFontDeviceContext, Codepoint, Codepoint, &ThisCharWidth);
+	
+	u32 ThisGlyphIndex = Codepoint - Font->FirstCodepoint;
+	for(u32 OtherGlyphIndex = 0;
+		OtherGlyphIndex < Font->GlyphsCount;
+		OtherGlyphIndex++)
+	{
+		Font->HorizontalAdvances[ThisGlyphIndex*Font->GlyphsCount + OtherGlyphIndex] += ThisCharWidth - KerningChange;
+		Font->HorizontalAdvances[OtherGlyphIndex*Font->GlyphsCount + ThisGlyphIndex] += KerningChange;
 	}
 
 	return(Result);
@@ -159,6 +333,7 @@ WinInitOpenGL(HWND Window, HINSTANCE Instance, LPCSTR WindowClassName)
 					glEnable(GL_DEPTH_TEST);
 					glEnable(GL_CULL_FACE);
 					glEnable(GL_MULTISAMPLE);
+					glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 					// glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 				}
 				else
@@ -282,8 +457,7 @@ struct platform_job_system_queue
 	platform_job_system_entry Entries[128];
 };
 
-internal void
-WinAddEntry(platform_job_system_queue *JobSystem, platform_job_system_callback *Callback, void *Data)
+PLATFORM_ADD_ENTRY(WinAddEntry)
 {
 	u32 NewEntryToWrite = (JobSystem->EntryToWrite + 1) % ArrayCount(JobSystem->Entries);
 	Assert(NewEntryToWrite != JobSystem->EntryToRead);
@@ -323,8 +497,7 @@ WinDoNextJobQueueEntry(platform_job_system_queue *JobSystem)
 	return(Sleep);
 }
 
-inline void
-WinCompleteAllWork(platform_job_system_queue *JobSystem)
+PLATFORM_COMPLETE_ALL_WORK(WinCompleteAllWork)
 {
 	for(;;)
 	{
@@ -367,6 +540,17 @@ WinInitializeJobSystem(platform_job_system_queue *JobSystem, u32 ThreadCount)
 		HANDLE ThreadHandle = CreateThread(0, 0, ThreadProc, JobSystem, 0, 0);
 		CloseHandle(ThreadHandle);
 	}
+}
+
+inline void
+WinProcessKey(button *Button, bool IsDown)
+{
+	if(Button->EndedDown != IsDown)
+	{
+		Button->HalfTransitionCount++;
+	}
+
+	Button->EndedDown = IsDown;
 }
 
 int CALLBACK
@@ -429,10 +613,14 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			GameMemory.PlatformAddEntry = WinAddEntry;
 			GameMemory.PlatformCompleteAllWork = WinCompleteAllWork;
 			GameMemory.PlatformReadEntireFile = WinReadEntireFile;
-			GameMemory.PlatformFreeFileMemory = WinFreeFileMemory;
 			GameMemory.PlatformAllocateMemory = WinAllocateMemory;
 			GameMemory.PlatformFreeMemory = WinFreeMemory;
 			GameMemory.PlatformOutputDebugString = WinOutputDebugString;
+
+			GameMemory.PlatformLoadCodepointBitmap = WinLoadCodepointBitmap;
+			GameMemory.PlatformBeginFont = WinBeginFont;
+			GameMemory.PlatformLoadCodepointBitmap = WinLoadCodepointBitmap;
+			GameMemory.PlatformEndFont = WinEndFont;
 
 			game_input GameInput = {};
 			GameInput.dt = TargetSecondsPerFrame;
@@ -464,7 +652,15 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				}
 
 				GameInput.MouseXDisplacement = GameInput.MouseYDisplacement = 0;
-				GameInput.MouseRight = GameInput.MouseLeft = false;
+				GameInput.MouseRight.HalfTransitionCount = GameInput.MouseLeft.HalfTransitionCount = 0;
+
+				for(u32 ButtonIndex = 0;
+					ButtonIndex < ArrayCount(GameInput.Buttons);
+					ButtonIndex++)
+				{
+					button *Button = GameInput.Buttons + ButtonIndex;
+					Button->HalfTransitionCount = 0;
+				}
 
 				MSG Message;
 				while (PeekMessage(&Message, 0, 0, 0, PM_REMOVE))
@@ -489,23 +685,28 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 							{
 								if (KeyCode == 'W')
 								{
-									GameInput.MoveForward = IsDown;
+									WinProcessKey(&GameInput.MoveForward, IsDown);
 								}
 								if (KeyCode == 'S')
 								{
-									GameInput.MoveBack = IsDown;
+									WinProcessKey(&GameInput.MoveBack, IsDown);
 								}
 								if (KeyCode == 'D')
 								{
-									GameInput.MoveRight = IsDown;
+									WinProcessKey(&GameInput.MoveRight, IsDown);
 								}
 								if (KeyCode == 'A')
 								{
-									GameInput.MoveLeft = IsDown;
+									WinProcessKey(&GameInput.MoveLeft, IsDown);
 								}
 								if (KeyCode == VK_SPACE)
 								{
-									GameInput.MoveUp = IsDown;
+									WinProcessKey(&GameInput.MoveUp, IsDown);
+								}
+
+								if (KeyCode == 0x31)
+								{
+									WinProcessKey(&GameInput.NumOne, IsDown);
 								}
 							}
 						} break;
@@ -524,8 +725,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 								GameInput.MouseX += RawInput.data.mouse.lLastX;
 								GameInput.MouseY += RawInput.data.mouse.lLastY;
 								
-								GameInput.MouseRight = RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN;
-								GameInput.MouseLeft= RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN;
+								WinProcessKey(&GameInput.MouseRight, RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN);
+								WinProcessKey(&GameInput.MouseLeft, RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN);
 							}
 						} break;
 						

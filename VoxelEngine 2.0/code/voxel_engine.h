@@ -2,11 +2,18 @@
 
 global_variable platform_add_entry *PlatformAddEntry;
 global_variable platform_complete_all_work *PlatformCompleteAllWork;
-global_variable read_entire_file *PlatformReadEntireFile;
-global_variable free_file_memory *PlatformFreeFileMemory;
-global_variable allocate_memory *PlatformAllocateMemory;
-global_variable free_memory *PlatformFreeMemory;
-global_variable output_debug_string *PlatformOutputDebugString;
+global_variable platform_read_entire_file *PlatformReadEntireFile;
+global_variable platform_allocate_memory *PlatformAllocateMemory;
+global_variable platform_free_memory *PlatformFreeMemory;
+global_variable platform_output_debug_string *PlatformOutputDebugString;
+
+global_variable platform_begin_font *PlatformBeginFont;
+global_variable platform_load_codepoint_bitmap *PlatformLoadCodepointBitmap;
+global_variable platform_end_font *PlatformEndFont;
+
+#define PLATFORM_FREE_MEMORY_AND_ZERO_POINTER(Memory) \
+		PlatformFreeMemory(Memory); \
+		(Memory) = 0;
 
 struct stack_allocator
 {
@@ -110,6 +117,10 @@ struct camera
 	vec3 OffsetFromHero;
 	vec3 TargetOffset;
 	vec3 LastOffsetFromHero;
+
+
+	vec3 DEBUGP;
+	vec3 DEBUGFront;
 };
 
 struct dynamic_array_vec3
@@ -240,6 +251,7 @@ struct game_state
 	shader WorldDepthShader;
 	shader CharacterDepthShader;
 	shader BlockParticleDepthShader;
+	shader GlyphShader;
 	shader FramebufferScreenShader;
 
 	animation CharacterAnimations[CharacterAnimation_Count];
@@ -258,8 +270,13 @@ struct game_state
 
 	block_particle_generator BlockParticleGenerator;
 
+	loaded_texture Glyph;
+	GLuint GlyphVAO, GlyphVBO;
+
 	GLuint CubeVAO, CubeVBO;
 	GLuint QuadVAO, QuadVBO;
+
+	bool32 DEBUGCameraEnabled;
 };
 
 internal void AddCollisionRule(game_state *GameState, u32 StorageIndexA, u32 StorageIndexB, bool32 CanCollide);
