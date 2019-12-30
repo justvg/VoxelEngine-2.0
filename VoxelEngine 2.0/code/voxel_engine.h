@@ -100,29 +100,6 @@ ZeroSize(void *Ptr, u64 Size)
 #include "voxel_engine_intrinsics.h"
 #include "voxel_engine_math.h"
 
-struct camera
-{
-	r32 DistanceFromHero;
-	r32 Pitch, Head;
-
-	r32 RotSensetivity;
-
-	r32 NearDistance;
-	r32 FarDistance;
-	r32 FoV;
-	r32 AspectRatio;
-
-	mat4 RotationMatrix;
-
-	vec3 OffsetFromHero;
-	vec3 TargetOffset;
-	vec3 LastOffsetFromHero;
-
-
-	vec3 DEBUGP;
-	vec3 DEBUGFront;
-};
-
 struct dynamic_array_vec3
 {
 	u32 MaxEntriesCount;
@@ -197,9 +174,34 @@ AddQuad(dynamic_array_vec3 *Array, vec3 A, vec3 B, vec3 C, vec3 D)
 }
 
 #include "voxel_engine_asset.h"
-#include "voxel_engine_animation.h"
 #include "voxel_engine_world.h"
 #include "voxel_engine_render.h"
+#include "voxel_engine_debug.h"
+
+struct camera
+{
+	r32 DistanceFromHero;
+	r32 Pitch, Head;
+
+	r32 RotSensetivity;
+
+	r32 NearDistance;
+	r32 FarDistance;
+	r32 FoV;
+	r32 AspectRatio;
+
+	mat4 RotationMatrix;
+
+	vec3 OffsetFromHero;
+	vec3 TargetOffset;
+	vec3 LastOffsetFromHero;
+
+
+	vec3 DEBUGP;
+	vec3 DEBUGFront;
+};
+
+#include "voxel_engine_animation.h"
 #include "voxel_engine_sim_region.h"
 
 struct stored_entity
@@ -251,7 +253,6 @@ struct game_state
 	shader WorldDepthShader;
 	shader CharacterDepthShader;
 	shader BlockParticleDepthShader;
-	shader GlyphShader;
 	shader FramebufferScreenShader;
 
 	animation CharacterAnimations[CharacterAnimation_Count];
@@ -269,9 +270,6 @@ struct game_state
 	GLuint ParticleVAO, ParticleVBO, ParticlePVBO, ParticleOffsetVBO, ParticleScaleVBO; 
 
 	block_particle_generator BlockParticleGenerator;
-
-	loaded_texture Glyph;
-	GLuint GlyphVAO, GlyphVBO;
 
 	GLuint CubeVAO, CubeVBO;
 	GLuint QuadVAO, QuadVBO;

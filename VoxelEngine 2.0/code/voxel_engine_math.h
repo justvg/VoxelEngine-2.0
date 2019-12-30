@@ -1163,6 +1163,88 @@ TransformBox(box *Box, mat3 Transformation, vec3 Translation = vec3(0.0f, 0.0f, 
 }
 
 //
+// NOTE(georgy): rect2
+//
+
+struct rect2
+{
+	vec2 Min;
+	vec2 Max;
+};
+
+inline rect2 __vectorcall
+RectMinMax(vec2 Min, vec2 Max)
+{
+	rect2 Result;
+	
+	Result.Min = Min;
+	Result.Max = Max;
+
+	return(Result);
+}
+
+inline rect2 __vectorcall
+RectCenterHalfDim(vec2 Center, vec2 HalfDim)
+{
+	rect2 Result;
+
+	Result.Min = Center - HalfDim;
+	Result.Max = Center + HalfDim;
+
+	return(Result);
+}
+
+inline rect2 __vectorcall
+RectCenterDim(vec2 Center, vec2 Dim)
+{
+	rect2 Result = RectCenterHalfDim(Center, 0.5f*Dim);
+
+	return(Result);
+}
+
+inline rect2 __vectorcall
+RectBottomFaceCenterDim(vec2 BottomFaceCenter, vec2 Dim)
+{
+	vec2 Center = BottomFaceCenter + 0.5f*vec2(0.0f, Dim.y);
+	rect2 Result = RectCenterDim(Center, Dim);
+
+	return(Result);		
+}
+
+inline rect2 
+AddRadiusTo(rect2 A, vec2 Radius)
+{
+	rect2 Result;
+
+	Result.Min = A.Min - Radius;
+	Result.Max = A.Max + Radius;
+
+	return(Result);
+}
+
+inline bool32
+IsInRect(rect2 A, vec2 Point)
+{
+	bool32 Result = ((Point.x >= A.Min.x) &&
+					 (Point.y >= A.Min.y) &&
+					 (Point.x < A.Max.x) &&
+					 (Point.y < A.Max.y));
+
+	return(Result);
+}
+
+inline bool32
+RectIntersect(rect2 A, rect2 B)
+{
+	bool32 Result = !((B.Max.x <= A.Min.x) ||
+					  (B.Max.y <= A.Min.y) ||
+					  (B.Min.x >= A.Max.x) ||
+					  (B.Min.y >= A.Max.y));
+
+	return(Result);
+}
+
+//
 // NOTE(georgy): rect3
 //
 

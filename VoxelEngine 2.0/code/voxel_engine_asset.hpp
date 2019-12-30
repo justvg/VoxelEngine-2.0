@@ -656,13 +656,13 @@ GlyphIndexFromCodepoint(loaded_font *Font, u32 Codepoint)
 }
 
 internal loaded_texture *
-GetBitmapForGlyph(game_assets *GameAssets, loaded_font *Font, u32 Codepoint)
+GetBitmapForGlyph(loaded_font *Font, u32 Codepoint)
 {
-	Assert((((i32)Codepoint - (i32)' ') >= 0) && 
-		   (((i32)Codepoint - (i32)' ') < Font->GlyphsCount));
+	Assert((((i32)Codepoint - (i32)Font->FirstCodepoint) >= 0) && 
+		   (((i32)Codepoint - (i32)Font->FirstCodepoint) < Font->GlyphsCount));
 
 	u32 GlyphIndex = GlyphIndexFromCodepoint(Font, Codepoint);
-	loaded_texture* Glyph = Font->Glyphs + GlyphIndex;
+	loaded_texture *Glyph = Font->Glyphs + GlyphIndex;
 	if(!Glyph->TextureID)
 	{
 		InitTexture(Glyph, GL_CLAMP_TO_BORDER);

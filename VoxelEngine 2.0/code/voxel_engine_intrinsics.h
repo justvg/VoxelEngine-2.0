@@ -13,6 +13,36 @@ inline u32 AtomicCompareExchangeU32(u32 volatile *Value, u32 New, u32 Expected)
     
 	return(Result);
 }
+inline u32 AtomicExchangeU32(u32 volatile *Value, u32 New)
+{
+    u32 Result = _InterlockedExchange((long volatile *)Value, New);
+
+    return(Result);
+}
+inline u64 AtomicExchangeU64(u64 volatile *Value, u64 New)
+{
+    u64 Result = _InterlockedExchange64((__int64 volatile *)Value, New);
+
+    return(Result);
+}
+inline u32 AtomicIncrementU32(u32 volatile *Value)
+{
+    // NOTE(georgy): The return value is the resulting incremented value
+    u32 Result = _InterlockedIncrement((long *)Value);
+    return(Result);
+}
+inline u64 AtomicAddU64(u64 volatile *Value, u64 Addend)
+{
+    u64 Result = _InterlockedExchangeAdd64((__int64 volatile *)Value, Addend);
+    return(Result);
+}
+inline u32 GetThreadID(void)
+{
+    u8 *ThreadLocalStorage = (u8 *)__readgsqword(0x30);
+    u32 ThreadID = *(u32 *)(ThreadLocalStorage + 0x48);
+    
+    return(ThreadID);
+}
 #endif
 
 inline r32

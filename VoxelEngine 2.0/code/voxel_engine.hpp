@@ -243,57 +243,6 @@ AddTree(game_state *GameState, world_position P)
 	Entity.StoredEntity->Sim.Collision = GameState->TreeCollision;
 }
 
-static r32 YPos = 300;
-static r32 XPos = -0.5f * 400;
-static r32 FontScale = 0.5f;
-internal void
-DEBUGRenderTextLine(game_state *GameState, game_assets *GameAssets, char *String, r32 BufferWidth)
-{
-	asset_tag_vector MatchVector = { };
-	MatchVector.E[Tag_FontType] = FontType_DebugFont;
-	font_id FontID = GetBestMatchFont(GameAssets, &MatchVector);
-	loaded_font *Font = GetFont(GameAssets, FontID);
-	if(Font)
-	{
-		glBindVertexArray(GameState->GlyphVAO);
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		glDisable(GL_DEPTH_TEST);
-
-		XPos = -0.5f * BufferWidth;
-
-		for(char *C = String;
-			*C;
-			C++)
-		{
-			char Character = *C;
-			char NextCharacter = *(C + 1);
-
-			if(Character != ' ')
-			{
-				loaded_texture *Glyph = GetBitmapForGlyph(GameAssets, Font, Character);
-
-				SetVec2(GameState->GlyphShader, "ScreenP", vec2(XPos, YPos));
-				SetVec3(GameState->GlyphShader, "WidthHeightScale", vec3(Glyph->Width, Glyph->Height, FontScale));
-				SetFloat(GameState->GlyphShader, "AlignPercentageY", Glyph->AlignPercentageY);
-				glBindTexture(GL_TEXTURE_2D, Glyph->TextureID);
-				glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-			}
-
-			XPos += FontScale*GetHorizontalAdvanceFor(Font, Character, NextCharacter);
-		}
-		YPos -= FontScale*Font->LineAdvance;
-		
-		glEnable(GL_DEPTH_TEST);
-		glDisable(GL_BLEND);
-		glBindVertexArray(0);
-	}
-	else
-	{
-		LoadFont(GameAssets, FontID);
-	}
-}
-
 internal void
 GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHeight)
 {
@@ -344,7 +293,6 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		CompileShader(&GameState->CharacterDepthShader, "data/shaders/CharacterDepthVS.glsl", "data/shaders/EmptyFS.glsl");
 		CompileShader(&GameState->WorldDepthShader, "data/shaders/WorldDepthVS.glsl", "data/shaders/EmptyFS.glsl");
 		CompileShader(&GameState->BlockParticleDepthShader, "data/shaders/BlockParticleDepthVS.glsl", "data/shaders/EmptyFS.glsl");
-		CompileShader(&GameState->GlyphShader, "data/shaders/GlyphVS.glsl", "data/shaders/GlyphFS.glsl");
 		CompileShader(&GameState->FramebufferScreenShader, "data/shaders/FramebufferScreenVS.glsl", "data/shaders/FramebufferScreenFS.glsl");
 
 		GameState->BlockParticleGenerator = {};
@@ -552,22 +500,6 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		InitializeDefaultAnimations(GameState->CharacterAnimations);
-
-		r32 GlyphVertices[] = 
-		{
-			0.0f, 1.0f,
-			0.0f, 0.0f,
-			1.0f, 1.0f,
-			1.0f, 0.0f
-		};
-		glGenVertexArrays(1, &GameState->GlyphVAO);
-		glGenBuffers(1, &GameState->GlyphVBO);
-		glBindVertexArray(GameState->GlyphVAO);
-		glBindBuffer(GL_ARRAY_BUFFER, GameState->GlyphVBO);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(GlyphVertices), GlyphVertices, GL_STATIC_DRAW);
-		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void *)0);
-		glBindVertexArray(0);
 
 		GameState->IsInitialized = true;
 	}
@@ -967,28 +899,6 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 
 	EndSimulation(GameState, SimRegion, &GameState->WorldAllocator);
 	EndTemporaryMemory(WorldConstructionAndRenderMemory);
-
-	mat4 Orthographic = Ortho(-0.5f*BufferHeight, 0.5f*BufferHeight, -0.5f*BufferWidth, 0.5f*BufferWidth, 0.1f, 1000.0f);
-	UseShader(GameState->GlyphShader);
-	SetMat4(GameState->GlyphShader, "Projection", Orthographic);
-	SetInt(GameState->GlyphShader, "Texture", 0);
-	glActiveTexture(GL_TEXTURE0);
-
-	asset_tag_vector MatchVector = { };
-	MatchVector.E[Tag_FontType] = FontType_DebugFont;
-	font_id FontID = GetBestMatchFont(TempState->GameAssets, &MatchVector);
-	loaded_font *Font = GetFont(TempState->GameAssets, FontID);
-	if (Font)
-	{
-		YPos = 0.5f*BufferHeight - FontScale*Font->LineAdvance;
-	}
-	else
-	{
-		YPos = 0.0f;
-	}
-	DEBUGRenderTextLine(GameState, TempState->GameAssets, "Hello world!", BufferWidth);
-	DEBUGRenderTextLine(GameState, TempState->GameAssets, "SAruTObIpasdfgh", BufferWidth);
-	DEBUGRenderTextLine(GameState, TempState->GameAssets, "testline", BufferWidth);
 
 	UnloadAssetsIfNecessary(TempState->GameAssets);
 }

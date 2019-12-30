@@ -290,6 +290,9 @@ InitTexture(loaded_texture *Texture, GLint Addressing)
 	{
 		r32 BorderColor[] = {0.0f, 0.0f, 0.0f, 0.0f};
 		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, BorderColor);
+		glGenerateMipmap(GL_TEXTURE_2D);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 	}
 
 	PLATFORM_FREE_MEMORY_AND_ZERO_POINTER(Texture->Free);

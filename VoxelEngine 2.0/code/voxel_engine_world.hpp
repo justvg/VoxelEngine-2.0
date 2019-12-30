@@ -517,6 +517,7 @@ struct setup_chunk_blocks_job
 };
 internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 {
+	TIME_BLOCK;
 	setup_chunk_blocks_job *Job = (setup_chunk_blocks_job *)Data;
 	world *World = Job->World;
 	chunk *Chunk = Job->Chunk;
@@ -732,6 +733,7 @@ struct setup_chunk_vertices_job
 };
 internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkVertices)
 {
+	TIME_BLOCK;
 	setup_chunk_vertices_job *Job = (setup_chunk_vertices_job *)Data;
 	world *World = Job->World;
 	chunk *Chunk = Job->Chunk;
@@ -751,6 +753,7 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkVertices)
 internal void
 SetupChunksVertices(world *World, temp_state *TempState)
 {
+	Assert(World->ChunksToSetupFullyThisFrameCount <= MAX_CHUNKS_TO_SETUP_FULLY);
 	for(u32 ChunkIndex = 0;
 		ChunkIndex < World->ChunksToSetupFullyThisFrameCount;
 		ChunkIndex++)

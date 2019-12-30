@@ -85,9 +85,11 @@ typedef PLATFORM_COMPLETE_ALL_WORK(platform_complete_all_work);
 struct loaded_texture;
 struct loaded_font
 {
-	u32 LineAdvance;
 	loaded_texture *Glyphs;
 	r32 *HorizontalAdvances;
+	
+	u32 LineAdvance;
+	u32 AscenderHeight;
 
 	u32 GlyphsCount;
 	u32 FirstCodepoint;
@@ -113,13 +115,13 @@ struct button
 struct game_input
 {
 	r32 dt;
-	i32 MouseX, MouseY;
+	r32 MouseX, MouseY;
 	i32 MouseXDisplacement, MouseYDisplacement;
 	button MouseLeft, MouseRight;
 
 	union
 	{
-		button Buttons[6];
+		button Buttons[7];
 		struct
 		{
 			button MoveForward;
@@ -129,6 +131,7 @@ struct game_input
 			button MoveUp;
 
 			button NumOne;
+			button NumTwo;
 		};
 	};
 };
@@ -149,6 +152,9 @@ struct game_memory
 
 	u64 TemporaryStorageSize;
 	void *TemporaryStorage;
+
+	u64 DebugStorageSize;
+	void *DebugStorage;
 
 	platform_job_system_queue *JobSystemQueue;
 

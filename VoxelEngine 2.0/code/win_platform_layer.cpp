@@ -5,13 +5,17 @@
 #include "voxel_engine_platform.h"
 #include "voxel_engine.hpp"
 
+// TOOD(georgy): Get rid of this
+#include <stdio.h>
+
 #include <Windows.h>
 #include <timeapi.h>
-#include <stdio.h>
 
 global_variable bool8 GlobalRunning;
 global_variable bool8 GlobalCursorShouldBeClipped;
 global_variable LARGE_INTEGER GlobalPerformanceFrequency;
+
+global_variable bool8 GlobalDEBUGCursor;
 
 ALLOCATE_MEMORY(WinAllocateMemory)
 {
@@ -113,6 +117,7 @@ PLATFORM_BEGIN_FONT(WinBeginFont)
 
 	Font->HorizontalAdvances = (r32 *)WinAllocateMemory(Font->GlyphsCount*Font->GlyphsCount*sizeof(r32));
 	Font->LineAdvance = GlobalTextMetric.tmAscent + GlobalTextMetric.tmDescent + GlobalTextMetric.tmExternalLeading;
+	Font->AscenderHeight = GlobalTextMetric.tmAscent;
 }
 
 PLATFORM_END_FONT(WinEndFont)
@@ -407,6 +412,7 @@ WinWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 			}
 			else
 			{
+				ShowCursor(TRUE);
 				GlobalCursorShouldBeClipped = false;
 			}
 		} break;
@@ -450,6 +456,9 @@ struct platform_job_system_entry
 };
 struct platform_job_system_queue
 {
+	u32 volatile JobsToCompleteCount;
+	u32 volatile JobsToCompleteGoal;
+
 	u32 volatile EntryToRead;
 	u32 volatile EntryToWrite;
 	HANDLE Semaphore;
@@ -466,6 +475,7 @@ PLATFORM_ADD_ENTRY(WinAddEntry)
 	Entry->Callback = Callback;
 	Entry->Data = Data;
 
+	 JobSystem->JobsToCompleteGoal++;
 	_WriteBarrier();
 
 	JobSystem->EntryToWrite = NewEntryToWrite;
@@ -487,6 +497,7 @@ WinDoNextJobQueueEntry(platform_job_system_queue *JobSystem)
 		{
 			platform_job_system_entry *Entry = JobSystem->Entries + Index;
 			Entry->Callback(JobSystem, Entry->Data);
+			InterlockedIncrement((LONG volatile *)&JobSystem->JobsToCompleteCount);
 		}
 	}
 	else
@@ -499,13 +510,13 @@ WinDoNextJobQueueEntry(platform_job_system_queue *JobSystem)
 
 PLATFORM_COMPLETE_ALL_WORK(WinCompleteAllWork)
 {
-	for(;;)
-	{
-		if(WinDoNextJobQueueEntry(JobSystem))
-		{
-			break;
-		}
-	}
+	while(JobSystem->JobsToCompleteCount != JobSystem->JobsToCompleteGoal) 
+    { 
+        WinDoNextJobQueueEntry(JobSystem);
+    }
+
+	JobSystem->JobsToCompleteCount = 0;
+	JobSystem->JobsToCompleteGoal = 0;
 }
 
 DWORD WINAPI
@@ -527,6 +538,9 @@ ThreadProc(LPVOID lpParameter)
 internal void 
 WinInitializeJobSystem(platform_job_system_queue *JobSystem, u32 ThreadCount)
 {
+	JobSystem->JobsToCompleteCount = 0;
+    JobSystem->JobsToCompleteGoal = 0;
+
 	JobSystem->EntryToRead = 0;
 	JobSystem->EntryToWrite = 0;
 
@@ -553,11 +567,15 @@ WinProcessKey(button *Button, bool IsDown)
 	Button->EndedDown = IsDown;
 }
 
+internal void DEBUGRenderAllDebugRecords(game_memory *Memory, r32 BufferWidth, r32 BufferHeight);
+
 int CALLBACK
 WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
 {	
 	platform_job_system_queue JobSystem;
 	WinInitializeJobSystem(&JobSystem, 3);
+
+	DWORD ThreadID = GetCurrentThreadId();
 
 	QueryPerformanceFrequency(&GlobalPerformanceFrequency);
 
@@ -589,25 +607,18 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				RefreshRate = WinRefreshRate;
 			}
 			int GameRefreshRate = RefreshRate / 2;
-#if VOXEL_ENGINE_DEBUG_BUILD
-			GameRefreshRate = RefreshRate / 2;
-#endif
 			r32 TargetSecondsPerFrame = 1.0f / GameRefreshRate;
 			ReleaseDC(Window, WindowDC);
 
 			game_memory GameMemory = {};
-#if 0
-			GameMemory.PermanentStorageSize = Gigabytes(4);
+			GameMemory.PermanentStorageSize = Gigabytes(3);
 			GameMemory.TemporaryStorageSize = Gigabytes(2);
-			GameMemory.PermanentStorage = VirtualAlloc(0, GameMemory.PermanentStorageSize + GameMemory.TemporaryStorageSize, 
+			GameMemory.DebugStorageSize = Gigabytes(1);
+			GameMemory.PermanentStorage = VirtualAlloc(0, GameMemory.PermanentStorageSize + GameMemory.TemporaryStorageSize + GameMemory.DebugStorageSize, 
 													   MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 			GameMemory.TemporaryStorage = (u8 *)GameMemory.PermanentStorage + GameMemory.PermanentStorageSize;
-#else
-			GameMemory.PermanentStorageSize = Gigabytes(3);
-			GameMemory.PermanentStorage = VirtualAlloc(0, GameMemory.PermanentStorageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-			GameMemory.TemporaryStorageSize = Gigabytes(2);
-			GameMemory.TemporaryStorage = VirtualAlloc(0, GameMemory.TemporaryStorageSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-#endif
+			GameMemory.DebugStorage = (u8 *)GameMemory.TemporaryStorage + GameMemory.TemporaryStorageSize;
+
 			GameMemory.JobSystemQueue = &JobSystem;
 
 			GameMemory.PlatformAddEntry = WinAddEntry;
@@ -636,6 +647,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			LARGE_INTEGER LastCounter = WinGetPerformanceCounter();
 			while(GlobalRunning)
 			{
+				BEGIN_BLOCK(InputAndMessageTime);
 				if (GlobalCursorShouldBeClipped)
 				{
 					RECT WindowRect, ClientRect;
@@ -651,6 +663,13 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					ClipCursor(0);
 				}
 
+				if(WasDown(&GameInput.NumTwo))
+				{
+					GlobalCursorShouldBeClipped = !GlobalCursorShouldBeClipped;
+					GlobalDEBUGCursor = !GlobalDEBUGCursor;
+					ShowCursor(GlobalDEBUGCursor);
+				}
+
 				GameInput.MouseXDisplacement = GameInput.MouseYDisplacement = 0;
 				GameInput.MouseRight.HalfTransitionCount = GameInput.MouseLeft.HalfTransitionCount = 0;
 
@@ -661,6 +680,13 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					button *Button = GameInput.Buttons + ButtonIndex;
 					Button->HalfTransitionCount = 0;
 				}
+
+				window_dimension Dimension = WinGetWindowDimension(Window);
+				POINT MouseP;
+				GetCursorPos(&MouseP);
+				ScreenToClient(Window, &MouseP);
+				GameInput.MouseX = (MouseP.x - 0.5f*Dimension.Width);
+				GameInput.MouseY = (0.5f*Dimension.Height - MouseP.y);				
 
 				MSG Message;
 				while (PeekMessage(&Message, 0, 0, 0, PM_REMOVE))
@@ -708,6 +734,11 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 								{
 									WinProcessKey(&GameInput.NumOne, IsDown);
 								}
+
+								if (KeyCode == 0x32)
+								{
+									WinProcessKey(&GameInput.NumTwo, IsDown);
+								}
 							}
 						} break;
 
@@ -716,14 +747,17 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 							RAWINPUT RawInput;
 							UINT RawInputSize = sizeof(RawInput);
 							GetRawInputData((HRAWINPUT)Message.lParam, RID_INPUT,
-								&RawInput, &RawInputSize, sizeof(RAWINPUTHEADER));
+											&RawInput, &RawInputSize, sizeof(RAWINPUTHEADER));
 							
 							if (RawInput.header.dwType == RIM_TYPEMOUSE)
 							{
-								GameInput.MouseXDisplacement = RawInput.data.mouse.lLastX;
-								GameInput.MouseYDisplacement = RawInput.data.mouse.lLastY;
-								GameInput.MouseX += RawInput.data.mouse.lLastX;
-								GameInput.MouseY += RawInput.data.mouse.lLastY;
+								if(!GlobalDEBUGCursor)
+								{
+									GameInput.MouseXDisplacement = RawInput.data.mouse.lLastX;
+									GameInput.MouseYDisplacement = RawInput.data.mouse.lLastY;
+								}
+								// GameInput.MouseX += RawInput.data.mouse.lLastX;
+								// GameInput.MouseY += RawInput.data.mouse.lLastY;
 								
 								WinProcessKey(&GameInput.MouseRight, RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN);
 								WinProcessKey(&GameInput.MouseLeft, RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN);
@@ -737,14 +771,23 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 						} break;
 					}
 				}
+				END_BLOCK(InputAndMessageTime);
 
-				window_dimension Dimension = WinGetWindowDimension(Window);
+				BEGIN_BLOCK(GameUpdateTime);
 				GameUpdate(&GameMemory, &GameInput, Dimension.Width, Dimension.Height);
+				END_BLOCK(GameUpdateTime);
 
+				BEGIN_BLOCK(DebugStuffTime);
+				DEBUGRenderAllDebugRecords(&GameMemory, Dimension.Width, Dimension.Height);
+				END_BLOCK(DebugStuffTime);
+
+				BEGIN_BLOCK(UpdateWindowTime);
 				HDC DeviceContext = GetDC(Window);
 				WinUpdateWindow(DeviceContext, Dimension.Width, Dimension.Height);
 				ReleaseDC(Window, DeviceContext);
-
+				END_BLOCK(UpdateWindowTime);
+				
+				BEGIN_BLOCK(SleepTime);
 #if 1
 				r32 SecondsElapsedForFrame = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
 				if(SecondsElapsedForFrame < TargetSecondsPerFrame)
@@ -765,19 +808,17 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					}
 				}
 #endif
+				END_BLOCK(SleepTime);
 
 				LARGE_INTEGER EndCounter = WinGetPerformanceCounter();
 				r32 MSPerFrame = 1000.0f * WinGetSecondsElapsed(LastCounter, EndCounter);
+				FRAME_MARKER(MSPerFrame);
 				LastCounter = EndCounter;
-				
-#if 0
-				char MSBuffer[256];
-				_snprintf_s(MSBuffer, sizeof(MSBuffer), "All frame: %.02fms/f\n", MSPerFrame);
-				OutputDebugString(MSBuffer);
-#endif
 			}
 		}
 	}
 
 	return(0);
 }
+
+#include "voxel_engine_debug.hpp"
