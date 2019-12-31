@@ -27,7 +27,6 @@ struct vec3
 	inline explicit vec3(r32 *V) { m = _mm_set_ps(V[2], V[2], V[1], V[0]); }
 	inline explicit vec3(r32 X, r32 Y, r32 Z) { m = _mm_set_ps(Z, Z, Y, X); }
 	inline explicit vec3(__m128 V) { m = V; }
-	inline vec3 __vectorcall vec3i(int32_t X, int32_t Y, int32_t Z) { return(vec3((r32)X, (r32)Y, (r32)Z)); }
 
 	inline r32 __vectorcall x() { return(_mm_cvtss_f32(m)); }
 	inline r32 __vectorcall y() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(1, 1, 1, 1)))); }
@@ -65,6 +64,12 @@ struct vec3
 
 	inline r32 operator[] (size_t I) { return(m.m128_f32[I]); };
 };
+
+inline vec3 __vectorcall 
+vec3i(i32 X, i32 Y, i32 Z) 
+{ 
+	return(vec3((r32)X, (r32)Y, (r32)Z)); 
+}
 
 inline vec3 __vectorcall
 operator+ (vec3 A, vec3 B)
@@ -258,7 +263,6 @@ struct vec4
 	inline explicit vec4(r32 X, r32 Y, r32 Z, r32 W) { m = _mm_set_ps(W, Z, Y, X); }
 	inline explicit vec4(__m128 V) { m = V; }
 	inline explicit vec4(vec3 V, r32 W) { m = V.m; SetW(W); }
-	inline vec4 __vectorcall vec4i(int32_t X, int32_t Y, int32_t Z, int32_t W) { return(vec4((r32)X, (r32)Y, (r32)Z, (r32)W)); }
 
 	inline r32 __vectorcall x() { return(_mm_cvtss_f32(m)); }
 	inline r32 __vectorcall y() { return(_mm_cvtss_f32(_mm_shuffle_ps(m, m, _MM_SHUFFLE(1, 1, 1, 1)))); }
@@ -293,6 +297,12 @@ struct vec4
 
 	inline r32 operator[] (size_t I) { return(m.m128_f32[I]); };
 };
+
+inline vec4 __vectorcall 
+vec4i(i32 X, i32 Y, i32 Z, i32 W) 
+{ 
+	return(vec4((r32)X, (r32)Y, (r32)Z, (r32)W)); 
+}
 
 inline vec4 __vectorcall
 operator+ (vec4 A, vec4 B)
@@ -771,6 +781,13 @@ union vec2
 	};
 	r32 E[2];
 };
+
+inline vec2
+vec2i(i32 X, i32 Y) 
+{ 
+	vec2 Result = vec2((r32)X, (r32)Y);
+	return(Result);
+}
 
 inline vec2
 operator+ (vec2 A, vec2 B)
@@ -1396,13 +1413,13 @@ IsPointInTriangle(vec3 P, vec3 A, vec3 B, vec3 C)
 global_variable vec2 Gradients2D[8] = 
 {
 	vec2(0.0f, 1.0f),
-	vec2(-0.7071f, 0.7071),
+	vec2(-0.7071f, 0.7071f),
 	vec2(-1.0f, 0.0f),
-	vec2(-0.7071f, -0.7071),
+	vec2(-0.7071f, -0.7071f),
 	vec2(0.0f, -1.0f),
-	vec2(0.7071f, -0.7071),
+	vec2(0.7071f, -0.7071f),
 	vec2(1.0f, 0.0f),
-	vec2(0.7071f, 0.7071)
+	vec2(0.7071f, 0.7071f)
 };
 
 // NOTE(georgy): Must be a power of 2!

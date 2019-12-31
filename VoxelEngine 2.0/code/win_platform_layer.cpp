@@ -408,7 +408,7 @@ WinWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 			if (WParam)
 			{
 				ShowCursor(FALSE);
-				GlobalCursorShouldBeClipped = true;
+				GlobalCursorShouldBeClipped = true && !GlobalDEBUGCursor;
 			}
 			else
 			{
@@ -559,7 +559,7 @@ WinInitializeJobSystem(platform_job_system_queue *JobSystem, u32 ThreadCount)
 inline void
 WinProcessKey(button *Button, bool IsDown)
 {
-	if(Button->EndedDown != IsDown)
+	if(Button->EndedDown != (bool32)IsDown)
 	{
 		Button->HalfTransitionCount++;
 	}
@@ -567,7 +567,7 @@ WinProcessKey(button *Button, bool IsDown)
 	Button->EndedDown = IsDown;
 }
 
-internal void DEBUGRenderAllDebugRecords(game_memory *Memory, r32 BufferWidth, r32 BufferHeight);
+internal void DEBUGRenderAllDebugRecords(game_memory *Memory, game_input *Input, r32 BufferWidth, r32 BufferHeight);
 
 int CALLBACK
 WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
@@ -634,6 +634,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			GameMemory.PlatformEndFont = WinEndFont;
 
 			game_input GameInput = {};
+			// GameInput.dt = TargetSecondsPerFrame / 2.0f; // Slowmo
 			GameInput.dt = TargetSecondsPerFrame;
 
 			RAWINPUTDEVICE RID;
@@ -650,7 +651,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				BEGIN_BLOCK(InputAndMessageTime);
 				if (GlobalCursorShouldBeClipped)
 				{
-					RECT WindowRect, ClientRect;
+					RECT WindowRect;
 					GetWindowRect(Window, &WindowRect);
 					LONG WindowRectHeight = WindowRect.bottom - WindowRect.top;
 					LONG WindowRectWidth = WindowRect.right - WindowRect.left;
@@ -665,8 +666,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 				if(WasDown(&GameInput.NumTwo))
 				{
-					GlobalCursorShouldBeClipped = !GlobalCursorShouldBeClipped;
 					GlobalDEBUGCursor = !GlobalDEBUGCursor;
+					GlobalCursorShouldBeClipped = !GlobalDEBUGCursor;
 					ShowCursor(GlobalDEBUGCursor);
 				}
 
@@ -778,7 +779,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				END_BLOCK(GameUpdateTime);
 
 				BEGIN_BLOCK(DebugStuffTime);
-				DEBUGRenderAllDebugRecords(&GameMemory, Dimension.Width, Dimension.Height);
+				DEBUGRenderAllDebugRecords(&GameMemory, &GameInput, (r32)Dimension.Width, (r32)Dimension.Height);
 				END_BLOCK(DebugStuffTime);
 
 				BEGIN_BLOCK(UpdateWindowTime);

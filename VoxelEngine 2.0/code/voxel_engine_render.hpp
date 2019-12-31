@@ -149,6 +149,7 @@ DrawModel(shader Shader, game_assets *GameAssets, model_id ModelIndex, r32 Rotat
 internal void
 UpdateParticles(particle_emitter *Particles, camera *Camera, vec3 BaseP, r32 dt)
 {
+	TIME_BLOCK;
 	for(u32 ParticleIndex = 0;
 		ParticleIndex < ArrayCount(Particles->Particles);
 		ParticleIndex++)
@@ -205,6 +206,7 @@ SpawnParticles(particle_emitter *Particles, camera *Camera, vec3 BaseP, r32 dt)
 internal void
 SortParticles(particle *Particles, u32 ParticlesCount)
 {
+	TIME_BLOCK;
 	for(u32 StartIndex = 0;
 		StartIndex < ParticlesCount - 1;
 		StartIndex++)
@@ -248,6 +250,7 @@ AddBlockParticle(block_particle_generator *Generator, world_position BaseP, vec3
 internal void
 BlockParticlesUpdate(block_particle_generator *Generator, r32 dt)
 {
+	TIME_BLOCK;
 	for(u32 BlockParticleIndex = 0;
 		BlockParticleIndex < ArrayCount(Generator->Particles);
 		BlockParticleIndex++)
@@ -263,11 +266,13 @@ BlockParticlesUpdate(block_particle_generator *Generator, r32 dt)
 }
 
 internal void
-RenderBlockParticles(block_particle_generator *Generator, world *World, shader Shader, world_position Origin)
+RenderBlockParticles(block_particle_generator *Generator, world *World, stack_allocator *Allocator, 
+					 shader Shader, world_position Origin)
 {
+	TIME_BLOCK;
 	u32 BlockParticlesCount = 0;
-	vec3 BlockParticlesPositions[MAX_BLOCK_PARTICLES_COUNT];
-	vec3 BlockParticlesColors[MAX_BLOCK_PARTICLES_COUNT];
+	vec3 *BlockParticlesPositions = PushArray(Allocator, MAX_BLOCK_PARTICLES_COUNT, vec3);
+	vec3 *BlockParticlesColors = PushArray(Allocator, MAX_BLOCK_PARTICLES_COUNT, vec3);
 
 	for(u32 BlockParticleIndex = 0;
 		BlockParticleIndex < ArrayCount(Generator->Particles);

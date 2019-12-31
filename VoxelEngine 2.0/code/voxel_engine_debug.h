@@ -21,8 +21,6 @@ struct debug_event
 
 struct debug_record
 {
-    u64 CyclesElapsed_HitCount;
-
     char *FileName;
     char *BlockName;
     u32 LineNumber;
@@ -87,10 +85,15 @@ struct debug_state
 	vec2 TextP;
 	r32 FontScale;
 
+	font_id FontID;
+    loaded_font *Font;
+
 	shader GlyphShader;
     shader QuadShader;
 
 	GLuint GlyphVAO, GlyphVBO;
+
+    bool32 ProfilePause;
 
     u32 FrameCount;
     debug_frame Frames[MAX_FRAME_COUNT];
@@ -98,6 +101,8 @@ struct debug_state
 
     u32 LaneCount;
     debug_thread *FirstThread;
+
+    debug_record *ProfileBlockRecord;
 
     u32 DebugRegionsCount;
     debug_region *DebugRegions;
@@ -141,13 +146,9 @@ RecordDebugEvent(u16 DebugRecordIndex, debug_event_type Type)
 
 #define END_BLOCK_(CounterInit, ...) \
    {debug_record *Record = GlobalDebugRecords + CounterInit; \
-    u32 CyclesElapsed##__VA_ARGS__ = (u32)(__rdtsc() - StartClock##__VA_ARGS__); \
-    u64 CyclesElapsed_HitCount##__VA_ARGS__ = (((u64)CyclesElapsed##__VA_ARGS__ << 32) | 1); \
-    AtomicAddU64(&Record->CyclesElapsed_HitCount, CyclesElapsed_HitCount##__VA_ARGS__); \
     RecordDebugEvent(CounterInit, DebugEvent_EndBlock);}
 
 #define BEGIN_BLOCK(Name) \
-    u64 StartClock##Name = __rdtsc(); \
     u32 Counter##Name = __COUNTER__; \
     BEGIN_BLOCK_(Counter##Name, __FILE__, #Name, __LINE__)
 
@@ -156,12 +157,10 @@ RecordDebugEvent(u16 DebugRecordIndex, debug_event_type Type)
 
 struct timed_block
 {
-    u64 StartClock;
     u32 Counter;
     
     timed_block(u32 CounterInit, char *FileName, char *BlockName, u32 LineNumber)
     {
-        StartClock = __rdtsc();
         Counter = CounterInit;
 
         BEGIN_BLOCK_(Counter, FileName, BlockName, LineNumber);

@@ -80,6 +80,7 @@ internal sim_region *
 BeginSimulation(game_state *GameState, world_position Origin, rect3 Bounds, 
 				stack_allocator *TempAllocator, r32 dt)
 {
+	TIME_BLOCK;
 	world *World = &GameState->World;
 	stack_allocator *WorldAllocator = &GameState->WorldAllocator;
 
@@ -197,7 +198,7 @@ BeginSimulation(game_state *GameState, world_position Origin, rect3 Bounds,
 	}
 
 	// TODO(georgy): Need more accurate value for this! Profile! Can be based upon sim region bounds!
-#define MAX_CHUNKS_IN_MEMORY 4096
+#define MAX_CHUNKS_IN_MEMORY 2048
 	if(World->RecentlyUsedCount >= MAX_CHUNKS_IN_MEMORY)
 	{
 		UnloadChunks(World, &MinChunkP, &MaxChunkP);
@@ -606,6 +607,7 @@ internal void
 CameraCollisionDetection(world *World, stack_allocator *WorldAllocator, 
 						 camera *Camera, world_position *OriginP)
 {
+	TIME_BLOCK;
 	r32 NearDistance = Camera->NearDistance;
 	r32 FoV = Camera->FoV;
 	r32 NearPlaneHalfHeight = Tan(DEG2RAD(FoV)*0.5f)*NearDistance;
@@ -1106,6 +1108,7 @@ internal void
 RenderParticleEffects(game_state *GameState, temp_state *TempState, sim_region *SimRegion, 
 					  shader BillboardShader, vec3 Right)
 {
+	TIME_BLOCK;
 	UseShader(BillboardShader);
 	SetVec3(BillboardShader, "CameraRight", Right);
 	SetVec3(BillboardShader, "CameraUp", vec3(0.0f, 1.0f, 0.0f));

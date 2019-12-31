@@ -273,7 +273,7 @@ GetModel(game_assets *GameAssets, model_id Index)
 internal void
 InitTexture(loaded_texture *Texture, GLint Addressing)
 {
-	GLenum Format;
+	GLenum Format = 0;
 	if(Texture->ChannelsCount == 1) Format = GL_RED;
 	else if(Texture->ChannelsCount == 3) Format = GL_RGB;
 	else if(Texture->ChannelsCount == 4) Format = GL_RGBA;

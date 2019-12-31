@@ -59,7 +59,7 @@ PushSize(stack_allocator *Allocator, u64 Size, u64 Alignment = 16)
 	u64 AlignmentOffset = GetAlignmentOffset(Allocator, Alignment);
 	Size += AlignmentOffset;
 
-	Assert((Allocator->Used + Size) <= Allocator->Size);
+   	Assert((Allocator->Used + Size) <= Allocator->Size);
 	void *Result = Allocator->Base + Allocator->Used + AlignmentOffset;
 	Allocator->Used += Size;
 
@@ -115,9 +115,9 @@ ExpandDynamicArray(dynamic_array_vec3 *Array)
 	u32 NewMaxEntriesCount = Array->MaxEntriesCount ? Array->MaxEntriesCount * 2 : INITIAL_MAX_ENTRIES_COUNT;
 	vec3 *NewMemory = (vec3 *)PlatformAllocateMemory(NewMaxEntriesCount * sizeof(vec3));
 	Assert(NewMemory);
-	Assert(((i32)NewMemory & 15) == 0);
+	Assert(((u64)NewMemory & 15) == 0);
 
-	for (u32 EntryIndex = 0;
+	for(u32 EntryIndex = 0;
 		EntryIndex < Array->MaxEntriesCount;
 		EntryIndex++)
 	{
@@ -135,7 +135,7 @@ InitializeDynamicArray(dynamic_array_vec3 *Array, u32 InitialMaxEntriesCount = I
 	Array->MaxEntriesCount = InitialMaxEntriesCount;
 	Array->EntriesCount = 0;
 	Array->Entries = (vec3 *)PlatformAllocateMemory(Array->MaxEntriesCount * sizeof(vec3));
-	Assert(((i32)Array->Entries & 15) == 0);
+	Assert(((u64)Array->Entries & 15) == 0);
 }
 
 internal void

@@ -479,7 +479,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		TestTreeP.Offset = vec3(0.0f, 2.0f, 3.0f);
 		AddTree(GameState, TestTreeP);
 
-		GameState->DirectionalLightDir = -vec3(3.0, 5.0, 4.0);
+		GameState->DirectionalLightDir = -vec3(3.0f, 5.0f, 4.0f);
 
 		glGenFramebuffers(1, &GameState->ShadowMapFBO);
 		glBindFramebuffer(GL_FRAMEBUFFER, GameState->ShadowMapFBO);
@@ -836,7 +836,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		RenderEntities(GameState, TempState, SimRegion, GameState->WorldDepthShader, 
 					   GameState->CharacterDepthShader, GameState->BillboardShader, 
 					   Right);
-		RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, GameState->BlockParticleDepthShader, GameState->Hero.Entity->P);
+		RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, &TempState->Allocator, 
+							 GameState->BlockParticleDepthShader, GameState->Hero.Entity->P);
 	}
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -894,7 +895,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	RenderChunks(&GameState->World, GameState->WorldShader, ViewProjection);
 	RenderEntities(GameState, TempState, SimRegion, GameState->WorldShader, GameState->CharacterShader,
 				   GameState->BillboardShader, Right);
-	RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, GameState->BlockParticleShader, GameState->Hero.Entity->P);
+	RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, &TempState->Allocator, 
+						 GameState->BlockParticleShader, GameState->Hero.Entity->P);
 	RenderParticleEffects(GameState, TempState, SimRegion, GameState->BillboardShader, Right);
 
 	EndSimulation(GameState, SimRegion, &GameState->WorldAllocator);

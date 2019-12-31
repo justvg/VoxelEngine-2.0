@@ -174,7 +174,7 @@ RecanonicalizeCoords(world *World, world_position *Pos)
 	i32 ChunkZOffset = (i32)FloorReal32ToInt32(Pos->Offset.z() / World->ChunkDimInMeters);
 	Pos->ChunkZ += ChunkZOffset;
 
-	vec3 ChunkOffset = vec3(ChunkXOffset, ChunkYOffset, ChunkZOffset);
+	vec3 ChunkOffset = vec3i(ChunkXOffset, ChunkYOffset, ChunkZOffset);
 	Pos->Offset = Pos->Offset - ChunkOffset*World->ChunkDimInMeters;
 }
 
@@ -798,6 +798,7 @@ LoadChunk(chunk *Chunk)
 internal void
 LoadChunks(world *World)
 {
+	TIME_BLOCK;
 	for(u32 ChunkIndex = 0;
 		ChunkIndex < World->ChunksToLoadThisFrameCount;
 		ChunkIndex++)

@@ -3,6 +3,7 @@
 internal loaded_model
 LoadCub(char *Filename, u64 *ModelSize, r32 AdditionalAlignmentY = 0.0f, r32 AdditionalAlignmentX = 0.0f)
 {
+	TIME_BLOCK;
 	loaded_model Model = {};
 
 	u32 Width, Height, Depth;
@@ -185,6 +186,7 @@ struct bmp_file_header
 internal loaded_texture
 LoadBMP(char *Filename)
 {
+	TIME_BLOCK;
 	loaded_texture Result = {};
 
 	read_entire_file_result FileData = PlatformReadEntireFile(Filename);
@@ -241,6 +243,7 @@ LoadBMP(char *Filename)
 internal loaded_font
 LoadFont(char *Filename, char *FontName, u64 *AssetSize)
 {
+	TIME_BLOCK;
 	loaded_font Result = {};
 	Result.FirstCodepoint = ' ';
 	Result.LastCodepoint = '~';
@@ -311,7 +314,7 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(LoadAssetJob)
 
 		InvalidDefaultCase;
 	}
-	Asset->Header->TotalSize = sizeof(asset_memory_header) + AssetSize;
+	Asset->Header->TotalSize = (u32)(sizeof(asset_memory_header) + AssetSize);
 
 	BeginAssetLock(Job->GameAssets);
 	if(Job->FinalState == AssetState_Loaded)
@@ -420,7 +423,7 @@ GetBestMatchAssetFromType(game_assets *GameAssets, asset_type_id TypeID, asset_t
 			r32 A = MatchVector->E[Tag->ID];
 			r32 B = Tag->Value;
 
-			Diff += fabs(A - B);
+			Diff += abs(A - B);
 		}
 
 		if(Diff < MinDiff)
@@ -659,7 +662,7 @@ internal loaded_texture *
 GetBitmapForGlyph(loaded_font *Font, u32 Codepoint)
 {
 	Assert((((i32)Codepoint - (i32)Font->FirstCodepoint) >= 0) && 
-		   (((i32)Codepoint - (i32)Font->FirstCodepoint) < Font->GlyphsCount));
+		   (((i32)Codepoint - (i32)Font->FirstCodepoint) < (i32)Font->GlyphsCount));
 
 	u32 GlyphIndex = GlyphIndexFromCodepoint(Font, Codepoint);
 	loaded_texture *Glyph = Font->Glyphs + GlyphIndex;
@@ -678,10 +681,10 @@ GetHorizontalAdvanceFor(loaded_font *Font, u32 Codepoint, u32 NextCodepoint)
 
 	if(Codepoint && NextCodepoint)
 	{
-		Assert((((i32)Codepoint - (i32)' ') >= 0) && 
-		   	   (((i32)Codepoint - (i32)' ') < Font->GlyphsCount));
-		Assert((((i32)NextCodepoint - (i32)' ') >= 0) && 
-			   (((i32)NextCodepoint - (i32)' ') < Font->GlyphsCount));
+		Assert((((i32)Codepoint - (i32)Font->FirstCodepoint) >= 0) && 
+		   	   (((i32)Codepoint - (i32)Font->FirstCodepoint) < (i32)Font->GlyphsCount));
+		Assert((((i32)NextCodepoint - (i32)Font->FirstCodepoint) >= 0) && 
+			   (((i32)NextCodepoint - (i32)Font->FirstCodepoint) < (i32)Font->GlyphsCount));
 
 		u32 GlyphIndex = GlyphIndexFromCodepoint(Font, Codepoint);
 		u32 NextGlyphIndex = GlyphIndexFromCodepoint(Font, NextCodepoint);
