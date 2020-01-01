@@ -12,6 +12,7 @@
 #include <timeapi.h>
 
 global_variable bool8 GlobalRunning;
+global_variable bool8 GlobalGamePause;
 global_variable bool8 GlobalCursorShouldBeClipped;
 global_variable LARGE_INTEGER GlobalPerformanceFrequency;
 
@@ -394,6 +395,7 @@ WinUpdateWindow(HDC DeviceContext, int WindowWidth, int WindowHeight)
 	glClearColor(0.0f, 0.175f, 0.375f, 1.0f);
 	
 	SwapBuffers(DeviceContext);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
 LRESULT CALLBACK 
@@ -648,7 +650,22 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			LARGE_INTEGER LastCounter = WinGetPerformanceCounter();
 			while(GlobalRunning)
 			{
+				if(WasDown(&GameInput.NumTwo))
+				{
+					GlobalDEBUGCursor = !GlobalDEBUGCursor;
+					GlobalCursorShouldBeClipped = !GlobalDEBUGCursor;
+					ShowCursor(GlobalDEBUGCursor);
+				}
+
+				if(WasDown(&GameInput.Pause))
+				{
+					GlobalGamePause = !GlobalGamePause;
+					GameInput.dt = GlobalGamePause ? 0.0f : TargetSecondsPerFrame;
+					GlobalProfilePause = !GlobalProfilePause || GlobalGamePause;
+				}
+
 				BEGIN_BLOCK(InputAndMessageTime);
+
 				if (GlobalCursorShouldBeClipped)
 				{
 					RECT WindowRect;
@@ -662,13 +679,6 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				else
 				{
 					ClipCursor(0);
-				}
-
-				if(WasDown(&GameInput.NumTwo))
-				{
-					GlobalDEBUGCursor = !GlobalDEBUGCursor;
-					GlobalCursorShouldBeClipped = !GlobalDEBUGCursor;
-					ShowCursor(GlobalDEBUGCursor);
 				}
 
 				GameInput.MouseXDisplacement = GameInput.MouseYDisplacement = 0;
@@ -731,11 +741,15 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 									WinProcessKey(&GameInput.MoveUp, IsDown);
 								}
 
+								if (KeyCode == 'P')
+								{
+									WinProcessKey(&GameInput.Pause, IsDown);
+								}
+
 								if (KeyCode == 0x31)
 								{
 									WinProcessKey(&GameInput.NumOne, IsDown);
 								}
-
 								if (KeyCode == 0x32)
 								{
 									WinProcessKey(&GameInput.NumTwo, IsDown);
@@ -772,23 +786,35 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 						} break;
 					}
 				}
+				
 				END_BLOCK(InputAndMessageTime);
 
+
 				BEGIN_BLOCK(GameUpdateTime);
-				GameUpdate(&GameMemory, &GameInput, Dimension.Width, Dimension.Height);
+
+				GameUpdate(&GameMemory, &GameInput, GlobalGamePause, Dimension.Width, Dimension.Height);
+
 				END_BLOCK(GameUpdateTime);
 
+
 				BEGIN_BLOCK(DebugStuffTime);
+
 				DEBUGRenderAllDebugRecords(&GameMemory, &GameInput, (r32)Dimension.Width, (r32)Dimension.Height);
+
 				END_BLOCK(DebugStuffTime);
 
+
 				BEGIN_BLOCK(UpdateWindowTime);
+
 				HDC DeviceContext = GetDC(Window);
 				WinUpdateWindow(DeviceContext, Dimension.Width, Dimension.Height);
 				ReleaseDC(Window, DeviceContext);
+
 				END_BLOCK(UpdateWindowTime);
 				
+
 				BEGIN_BLOCK(SleepTime);
+
 #if 1
 				r32 SecondsElapsedForFrame = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
 				if(SecondsElapsedForFrame < TargetSecondsPerFrame)
@@ -809,7 +835,9 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					}
 				}
 #endif
+
 				END_BLOCK(SleepTime);
+
 
 				LARGE_INTEGER EndCounter = WinGetPerformanceCounter();
 				r32 MSPerFrame = 1000.0f * WinGetSecondsElapsed(LastCounter, EndCounter);

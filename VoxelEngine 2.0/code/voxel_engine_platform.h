@@ -121,7 +121,7 @@ struct game_input
 
 	union
 	{
-		button Buttons[7];
+		button Buttons[8];
 		struct
 		{
 			button MoveForward;
@@ -132,6 +132,8 @@ struct game_input
 
 			button NumOne;
 			button NumTwo;
+
+			button Pause;
 		};
 	};
 };

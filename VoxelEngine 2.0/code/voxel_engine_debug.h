@@ -63,10 +63,12 @@ struct debug_frame
     debug_region *Regions;
 }; 
 
-#define DEBUG_EVENTS_ARRAYS_COUNT 8
+#define DEBUG_EVENTS_ARRAYS_COUNT 10
 #define MAX_FRAME_COUNT DEBUG_EVENTS_ARRAYS_COUNT*8
 #define MAX_DEBUG_EVENT_COUNT 1024
 #define MAX_REGIONS_PER_FRAME 1024
+global_variable bool32 GlobalProfilePause;
+global_variable u32 GlobalCurrentEventArrayIndex;
 global_variable volatile u64 GlobalEventArrayIndex_EventIndex;
 global_variable u32 GlobalDebugEventsCounts[DEBUG_EVENTS_ARRAYS_COUNT];
 global_variable debug_event GlobalDebugEventsArrays[DEBUG_EVENTS_ARRAYS_COUNT][MAX_DEBUG_EVENT_COUNT];
@@ -111,17 +113,21 @@ struct debug_state
 inline debug_event *
 RecordDebugEvent(u16 DebugRecordIndex, debug_event_type Type)
 {
-    u64 ArrayIndex_EventIndex = AtomicAddU64(&GlobalEventArrayIndex_EventIndex, 1);
-    u32 ArrayIndex = ArrayIndex_EventIndex >> 32;
-    u32 EventIndex = ArrayIndex_EventIndex & 0xFFFFFFFF;
-    Assert(EventIndex < MAX_DEBUG_EVENT_COUNT);
-    debug_event *Event = GlobalDebugEventsArrays[ArrayIndex] + EventIndex;
-    Event->Clock = __rdtsc();
-    Event->DebugRecordIndex = DebugRecordIndex;
-    Event->ThreadID = GetThreadID();
-    Event->Type = Type;
+	debug_event *Event = 0;
+    if(!GlobalProfilePause)
+    {
+        u64 ArrayIndex_EventIndex = AtomicAddU64(&GlobalEventArrayIndex_EventIndex, 1);
+        u32 ArrayIndex = ArrayIndex_EventIndex >> 32;
+        u32 EventIndex = ArrayIndex_EventIndex & 0xFFFFFFFF;
+        Assert(EventIndex < MAX_DEBUG_EVENT_COUNT);
+        Event = GlobalDebugEventsArrays[ArrayIndex] + EventIndex;
+        Event->Clock = __rdtsc();
+        Event->DebugRecordIndex = DebugRecordIndex;
+        Event->ThreadID = GetThreadID();
+        Event->Type = Type;
+	}
 
-    return(Event);
+	return(Event);
 }
 
 #define TIME_BLOCK__(Number) timed_block TimedBlock_##Number(__COUNTER__, __FILE__, __FUNCTION__, __LINE__); 
@@ -135,7 +141,7 @@ RecordDebugEvent(u16 DebugRecordIndex, debug_event_type Type)
     Record->BlockName = "Frame Marker"; \
     Record->LineNumber = __LINE__; \
     debug_event *Event = RecordDebugEvent(Counter, DebugEvent_FrameMarker); \
-    Event->MSElapsed = MSElapsedInit;}
+    if(Event) Event->MSElapsed = MSElapsedInit;}
 
 #define BEGIN_BLOCK_(CounterInit, FileNameInit, BlockNameInit, LineNumberInit) \
    {debug_record *Record = GlobalDebugRecords + CounterInit; \

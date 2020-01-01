@@ -239,6 +239,19 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 	}
 }
 
+inline void
+RestartCollation(debug_state *DebugState)
+{
+	EndTemporaryMemory(DebugState->CollateTemp);
+	DebugState->CollateTemp = BeginTemporaryMemory(&DebugState->Allocator);
+
+	DebugState->LaneCount = 0;
+	DebugState->FirstThread = 0;
+
+	DebugState->FrameCount = 0;
+	DebugState->CollationFrame = 0;
+}
+
 internal void
 DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 {
@@ -267,7 +280,7 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 	// vec2 StartP = vec2(0.5f*-DebugState->BufferDim.x, 0.5f*DebugState->BufferDim.y - LaneHeight);
 	r32 MinY = StartP.y;
 
-	bool32 WasInteracted = false;
+	debug_record *HotRecord = 0;
 
 	u32 MaxFrameCount = DebugState->FrameCount > 0 ? DebugState->FrameCount - 1 : 0;
 	u32 FrameCount = MaxFrameCount > 8 ? 8 : MaxFrameCount;
@@ -302,8 +315,6 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 				rect2 RegionRect = RectMinMax(ScreenP, ScreenP + vec2(PxEnd - PxStart, LaneHeight));
 				if(IsInRect(RegionRect, MouseP))
 				{
-					WasInteracted = true;
-
 					debug_record *Record = Region->Record;
 					char Buffer[256];
 					_snprintf_s(Buffer, sizeof(Buffer), "%s(%u): %ucy", 
@@ -313,10 +324,7 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 					DEBUGRenderTextLine(DebugState, Buffer, 
 										true, vec2(ScreenP + vec2(TableWidth - PxStart + BarSpacing, LaneHeight)));
 
-					if(WasDown(&Input->MouseLeft))
-					{
-						DebugState->ProfileBlockRecord = Record;
-					}
+					HotRecord = Record;
 				}
 			}
 		}
@@ -329,18 +337,38 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 	SetVec3(DebugState->QuadShader, "Color", vec3(0.0f, 0.0f, 0.0f));
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
-	rect2 RegionTableRect = RectMinMax(vec2(StartP.x, MinY), vec2(StartP.x + TableWidth, StartP.y + LaneHeight));
-	if(IsInRect(RegionTableRect, MouseP))
+	rect2 ProfilingTableRect = RectMinMax(vec2(StartP.x, MinY), 
+										  vec2(StartP.x + TableWidth, StartP.y + LaneHeight));
+	if(IsInRect(ProfilingTableRect, MouseP))
 	{
 		if(WasDown(&Input->MouseRight))
 		{
-			if(WasInteracted)
+			GlobalProfilePause = !GlobalProfilePause || GlobalGamePause;
+			if(!GlobalProfilePause)
 			{
-				DebugState->ProfileBlockRecord = 0;
+				RestartCollation(DebugState);
+			}
+		}
+
+		if(WasDown(&Input->MouseLeft))
+		{
+			if(HotRecord)
+			{
+				DebugState->ProfileBlockRecord = HotRecord;
 			}
 			else 
 			{
-				DebugState->ProfilePause = !DebugState->ProfilePause;	
+				DebugState->ProfileBlockRecord = 0;	
+			}
+
+			RestartCollation(DebugState);
+
+			for(u32 EventArrayIndex = 0;
+				EventArrayIndex < ArrayCount(GlobalDebugEventsArrays) - 1;
+				EventArrayIndex++)
+			{
+				DEBUGCollateEvents(DebugState, 
+								((GlobalCurrentEventArrayIndex + 1) + EventArrayIndex) % ArrayCount(GlobalDebugEventsArrays));
 			}
 		}
 	}
@@ -351,38 +379,36 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 internal void
 DEBUGRenderAllDebugRecords(game_memory *Memory, game_input *Input, r32 BufferWidth, r32 BufferHeight)
 {
-	u32 EventArrayIndex = (u32)(GlobalEventArrayIndex_EventIndex >> 32) + 1;
-	if(EventArrayIndex >= ArrayCount(GlobalDebugEventsArrays))
-	{
-		EventArrayIndex = 0;
-	}
-	u64 EventArrayIndex_EventIndex = AtomicExchangeU64(&GlobalEventArrayIndex_EventIndex,
-													   (u64)EventArrayIndex << 32);
-
-	EventArrayIndex = EventArrayIndex_EventIndex >> 32;
-	u32 EventsCount = EventArrayIndex_EventIndex & 0xFFFFFFFF;
-	GlobalDebugEventsCounts[EventArrayIndex] = EventsCount;
-
 	Assert(sizeof(debug_state) <= Memory->DebugStorageSize);
-    debug_state *DebugState = (debug_state *)Memory->DebugStorage;
-	game_assets *GameAssets = DEBUGGetGameAssets(Memory);
+	debug_state* DebugState = (debug_state*)Memory->DebugStorage;
+	game_assets* GameAssets = DEBUGGetGameAssets(Memory);
+
+	u32 EventArrayIndex = 0;
+	if(!GlobalProfilePause)
+	{
+		GlobalCurrentEventArrayIndex++;
+		if(GlobalCurrentEventArrayIndex >= ArrayCount(GlobalDebugEventsArrays))
+		{
+			GlobalCurrentEventArrayIndex = 0;
+		}
+		u64 EventArrayIndex_EventIndex = AtomicExchangeU64(&GlobalEventArrayIndex_EventIndex,
+													 	   (u64)GlobalCurrentEventArrayIndex << 32);
+
+		EventArrayIndex = EventArrayIndex_EventIndex >> 32;
+		u32 EventsCount = EventArrayIndex_EventIndex & 0xFFFFFFFF;
+		GlobalDebugEventsCounts[EventArrayIndex] = EventsCount;
+	}
+	
 	if(DebugState && GameAssets)
 	{
 		DEBUGReset(DebugState, Memory, GameAssets, BufferWidth, BufferHeight);
 
 		if(DebugState->FrameCount >= ArrayCount(DebugState->Frames))
 		{
-			EndTemporaryMemory(DebugState->CollateTemp);
-			DebugState->CollateTemp = BeginTemporaryMemory(&DebugState->Allocator);
-
-			DebugState->LaneCount = 0;
-			DebugState->FirstThread = 0;
-
-			DebugState->FrameCount = 0;
-			DebugState->CollationFrame = 0;
+			RestartCollation(DebugState);
 		}
 
-		if(!DebugState->ProfilePause)
+		if(!GlobalProfilePause)
 		{
 			DEBUGCollateEvents(DebugState, EventArrayIndex);
 		}
@@ -393,25 +419,7 @@ DEBUGRenderAllDebugRecords(game_memory *Memory, game_input *Input, r32 BufferWid
 	char Buffer[256];
 	if(DebugState->FrameCount > 1)
 	{
-		_snprintf_s(Buffer, sizeof(Buffer), "FPSy: %.02fms/f", DebugState->Frames[DebugState->FrameCount - 2].MSElapsed);
+		_snprintf_s(Buffer, sizeof(Buffer), "FPS: %.02fms/f", DebugState->Frames[DebugState->FrameCount - 2].MSElapsed);
 		DEBUGRenderTextLine(DebugState, Buffer);
 	}
-
-#if 0
-	for(u32 DebugRecordIndex = 0;
-		DebugRecordIndex < ArrayCount(GlobalDebugRecords);
-		DebugRecordIndex++)
-	{
-		debug_record *Record = GlobalDebugRecords + DebugRecordIndex;
-		u64 CyclesElapsed_HitCount = AtomicExchangeU64(&Record->CyclesElapsed_HitCount, 0);
-		u32 CyclesElapsed = CyclesElapsed_HitCount >> 32;
-		u32 HitCount = CyclesElapsed_HitCount & 0xFFFFFFFF;
-		if(HitCount > 0)
-		{
-			u32 CyclesPerHit = CyclesElapsed / HitCount;
-			_snprintf_s(Buffer, sizeof(Buffer), "%s(%u): %ucy/h %u", Record->BlockName, Record->LineNumber, CyclesPerHit, HitCount);
-			DEBUGRenderTextLine(DebugState, Buffer);
-		}
-	}
-#endif
 }

@@ -244,7 +244,7 @@ AddTree(game_state *GameState, world_position P)
 }
 
 internal void
-GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHeight)
+GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, int BufferWidth, int BufferHeight)
 {
 	Assert(sizeof(game_state) <= Memory->PermanentStorageSize);
 	game_state *GameState = (game_state *)Memory->PermanentStorage;
@@ -562,54 +562,57 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 
 	if(!GameState->DEBUGCameraEnabled)
 	{
-		if (Input->MoveForward.EndedDown)
+		if(!GameProfilingPause)
 		{
-			GameState->Hero.ddP += Forward;
-			GameState->Hero.AdditionalRotation = Theta;
-		}
-		if (Input->MoveBack.EndedDown)
-		{
-			GameState->Hero.ddP -= Forward;
-			GameState->Hero.AdditionalRotation = Theta - 180.0f;
-		}
-		if (Input->MoveRight.EndedDown)
-		{
-			GameState->Hero.ddP += Right;
-			GameState->Hero.AdditionalRotation = Theta - 90.0f;
-		}
-		if (Input->MoveLeft.EndedDown)
-		{
-			GameState->Hero.ddP -= Right;
-			GameState->Hero.AdditionalRotation = Theta + 90.0f;
-		}
+			if (Input->MoveForward.EndedDown)
+			{
+				GameState->Hero.ddP += Forward;
+				GameState->Hero.AdditionalRotation = Theta;
+			}
+			if (Input->MoveBack.EndedDown)
+			{
+				GameState->Hero.ddP -= Forward;
+				GameState->Hero.AdditionalRotation = Theta - 180.0f;
+			}
+			if (Input->MoveRight.EndedDown)
+			{
+				GameState->Hero.ddP += Right;
+				GameState->Hero.AdditionalRotation = Theta - 90.0f;
+			}
+			if (Input->MoveLeft.EndedDown)
+			{
+				GameState->Hero.ddP -= Right;
+				GameState->Hero.AdditionalRotation = Theta + 90.0f;
+			}
 
-		GameState->Hero.dY = 0.0f;
-		if(Input->MoveUp.EndedDown)
-		{
-			GameState->Hero.dY = 3.0f;
-		}
+			GameState->Hero.dY = 0.0f;
+			if(Input->MoveUp.EndedDown)
+			{
+				GameState->Hero.dY = 3.0f;
+			}
 
-		if (Input->MoveForward.EndedDown && Input->MoveRight.EndedDown)
-		{
-			GameState->Hero.AdditionalRotation = Theta - 45.0f;
-		}
-		if (Input->MoveForward.EndedDown && Input->MoveLeft.EndedDown)
-		{
-			GameState->Hero.AdditionalRotation = Theta + 45.0f;
-		}
-		if (Input->MoveBack.EndedDown && Input->MoveRight.EndedDown)
-		{
-			GameState->Hero.AdditionalRotation = Theta - 135.0f;
-		}
-		if (Input->MoveBack.EndedDown && Input->MoveLeft.EndedDown)
-		{
-			GameState->Hero.AdditionalRotation = Theta + 135.0f;
-		}
+			if (Input->MoveForward.EndedDown && Input->MoveRight.EndedDown)
+			{
+				GameState->Hero.AdditionalRotation = Theta - 45.0f;
+			}
+			if (Input->MoveForward.EndedDown && Input->MoveLeft.EndedDown)
+			{
+				GameState->Hero.AdditionalRotation = Theta + 45.0f;
+			}
+			if (Input->MoveBack.EndedDown && Input->MoveRight.EndedDown)
+			{
+				GameState->Hero.AdditionalRotation = Theta - 135.0f;
+			}
+			if (Input->MoveBack.EndedDown && Input->MoveLeft.EndedDown)
+			{
+				GameState->Hero.AdditionalRotation = Theta + 135.0f;
+			}
 
-		GameState->Hero.Fireball = WasDown(&Input->MouseRight);
-		if(GameState->Hero.Fireball)
-		{
-			GameState->Hero.AdditionalRotation = Theta;
+			GameState->Hero.Fireball = WasDown(&Input->MouseRight);
+			if(GameState->Hero.Fireball)
+			{
+				GameState->Hero.AdditionalRotation = Theta;
+			}
 		}
 	}
 	else
@@ -843,7 +846,6 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 
 	// NOTE(georgy): World and entities rendering
 	glViewport(0, 0, BufferWidth, BufferHeight);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	mat4 View = Camera->RotationMatrix * 
 				Translate(-Camera->OffsetFromHero - Camera->TargetOffset);
