@@ -1,3 +1,5 @@
+#define VOXEL_ENGINE_INTERNAL 1
+
 // TODO(georgy): Replace glew lib with my code
 #include <gl\glew.h>
 #include <gl\wglew.h>
@@ -68,6 +70,23 @@ READ_ENTIRE_FILE(WinReadEntireFile)
 	}
 
 	return(Result);
+}
+
+internal void
+WinWriteEntireFile(HANDLE FileHandle, void *Memory, u64 MemorySize)
+{
+	if(FileHandle != INVALID_HANDLE_VALUE)
+	{
+		DWORD BytesWritten;
+		if(WriteFile(FileHandle, Memory, (DWORD)MemorySize, &BytesWritten, 0))
+		{
+			Assert(MemorySize == BytesWritten);
+		}
+		else
+		{
+			// TODO(georgy): Logging
+		}
+	}
 }
 
 
@@ -569,11 +588,100 @@ WinProcessKey(button *Button, bool IsDown)
 	Button->EndedDown = IsDown;
 }
 
-internal void DEBUGRenderAllDebugRecords(game_memory *Memory, game_input *Input, r32 BufferWidth, r32 BufferHeight);
+struct win_state
+{
+	u64 GameMemorySize;
+	void *GameMemory;
+	
+	HANDLE RecordStateFile;
+	HANDLE RecordStateMemoryMap;
+	void *RecordStateMemory;
+
+	HANDLE RecordInputFile;	
+	bool32 InputRecording;
+
+	HANDLE PlaybackInputFile;
+	bool32 InputPlayback;
+};
+
+#if VOXEL_ENGINE_INTERNAL 
+internal void DEBUGEndDebugFrameAndRender(game_memory* Memory, game_input* Input, r32 BufferWidth, r32 BufferHeight);
+
+internal void
+WinBeginRecordingInput(win_state *WinState)
+{
+	Assert(!WinState->InputRecording);
+
+	WinState->InputRecording = true;
+	WinState->RecordInputFile = 
+		CreateFileA("C:/Users/georg/source/repos/VoxelEngine 2.0/build/playback_input.vep", GENERIC_WRITE,
+					0, 0, CREATE_ALWAYS, 0, 0);
+
+	CopyMemory(WinState->RecordStateMemory, WinState->GameMemory, WinState->GameMemorySize);
+}
+
+internal void
+WinRecordInput(win_state *WinState, game_input *GameInput)
+{
+	DWORD BytesWritten;
+	WriteFile(WinState->RecordInputFile, GameInput, sizeof(*GameInput), &BytesWritten, 0);
+}
+
+internal void
+WinEndRecordingInput(win_state *WinState)
+{
+	Assert(WinState->InputRecording);
+
+	CloseHandle(WinState->RecordInputFile);
+	WinState->RecordInputFile = 0;
+	WinState->InputRecording = false;
+}
+
+internal void
+WinBeginInputPlayback(win_state *WinState)
+{
+	Assert(!WinState->InputPlayback);
+
+	WinState->InputPlayback = true;
+	WinState->PlaybackInputFile = 
+		CreateFileA("C:/Users/georg/source/repos/VoxelEngine 2.0/build/playback_input.vep", GENERIC_READ,
+					0, 0, OPEN_EXISTING, 0, 0);
+
+	CopyMemory(WinState->GameMemory, WinState->RecordStateMemory, WinState->GameMemorySize);
+	DEBUGGlobalPlaybackRefresh = true;
+}
+
+internal void
+WinEndInputPlayback(win_state *WinState)
+{
+	Assert(WinState->InputPlayback);
+
+	CloseHandle(WinState->PlaybackInputFile);
+	WinState->PlaybackInputFile = 0;
+	WinState->InputPlayback = false;
+}
+
+internal void
+WinPlaybackInput(win_state *WinState, game_input *GameInput)
+{
+	DWORD BytesRead = 0;
+    if(ReadFile(WinState->PlaybackInputFile, GameInput, sizeof(*GameInput), &BytesRead, 0))
+	{
+		if(BytesRead == 0)
+		{
+			WinEndInputPlayback(WinState);
+			WinBeginInputPlayback(WinState);
+			ReadFile(WinState->PlaybackInputFile, GameInput, sizeof(*GameInput), &BytesRead, 0);
+		}
+	}
+}
+#endif
 
 int CALLBACK
 WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
 {	
+	win_state WinState = {};
+
 	platform_job_system_queue JobSystem;
 	WinInitializeJobSystem(&JobSystem, 3);
 
@@ -613,11 +721,12 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			ReleaseDC(Window, WindowDC);
 
 			game_memory GameMemory = {};
-			GameMemory.PermanentStorageSize = Gigabytes(3);
-			GameMemory.TemporaryStorageSize = Gigabytes(2);
-			GameMemory.DebugStorageSize = Gigabytes(1);
-			GameMemory.PermanentStorage = VirtualAlloc(0, GameMemory.PermanentStorageSize + GameMemory.TemporaryStorageSize + GameMemory.DebugStorageSize, 
-													   MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+			GameMemory.PermanentStorageSize = Gigabytes(2);
+			GameMemory.TemporaryStorageSize = Megabytes(256);
+			GameMemory.DebugStorageSize = Megabytes(64);
+			WinState.GameMemorySize = GameMemory.PermanentStorageSize + GameMemory.TemporaryStorageSize + GameMemory.DebugStorageSize;
+			WinState.GameMemory = VirtualAlloc(0, WinState.GameMemorySize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+			GameMemory.PermanentStorage = WinState.GameMemory;
 			GameMemory.TemporaryStorage = (u8 *)GameMemory.PermanentStorage + GameMemory.PermanentStorageSize;
 			GameMemory.DebugStorage = (u8 *)GameMemory.TemporaryStorage + GameMemory.TemporaryStorageSize;
 
@@ -635,8 +744,22 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			GameMemory.PlatformLoadCodepointBitmap = WinLoadCodepointBitmap;
 			GameMemory.PlatformEndFont = WinEndFont;
 
+			// TODO(georgy): Make the path to be created automatically in .exe directory
+			WinState.RecordStateFile = 
+				CreateFileA("C:/Users/georg/source/repos/VoxelEngine 2.0/build/playback_state.vep", GENERIC_WRITE|GENERIC_READ, 
+							0, 0, CREATE_ALWAYS, 0, 0);
+
+			LARGE_INTEGER MaxSize;
+			MaxSize.QuadPart = WinState.GameMemorySize;
+			WinState.RecordStateMemoryMap = 
+				CreateFileMapping(WinState.RecordStateFile, 0, PAGE_READWRITE,
+								  MaxSize.HighPart, MaxSize.LowPart, 0);
+
+			WinState.RecordStateMemory = 
+				MapViewOfFile(WinState.RecordStateMemoryMap, FILE_MAP_ALL_ACCESS, 0, 0, WinState.GameMemorySize);
+
+
 			game_input GameInput = {};
-			// GameInput.dt = TargetSecondsPerFrame / 2.0f; // Slowmo
 			GameInput.dt = TargetSecondsPerFrame;
 
 			RAWINPUTDEVICE RID;
@@ -650,19 +773,14 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			LARGE_INTEGER LastCounter = WinGetPerformanceCounter();
 			while(GlobalRunning)
 			{
-				if(WasDown(&GameInput.NumTwo))
-				{
-					GlobalDEBUGCursor = !GlobalDEBUGCursor;
-					GlobalCursorShouldBeClipped = !GlobalDEBUGCursor;
-					ShowCursor(GlobalDEBUGCursor);
-				}
-
+#if VOXEL_ENGINE_INTERNAL
 				if(WasDown(&GameInput.Pause))
 				{
 					GlobalGamePause = !GlobalGamePause;
 					GameInput.dt = GlobalGamePause ? 0.0f : TargetSecondsPerFrame;
-					GlobalProfilePause = !GlobalProfilePause || GlobalGamePause;
+					GlobalDebugTable.ProfilePause = !GlobalDebugTable.ProfilePause || GlobalGamePause;
 				}
+#endif
 
 				BEGIN_BLOCK(InputAndMessageTime);
 
@@ -743,17 +861,52 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 								if (KeyCode == 'P')
 								{
+									// TODO(georgy): I don't want the pause button to be _game_ input
 									WinProcessKey(&GameInput.Pause, IsDown);
+									// if(IsDown)
+									// {
+									// 	GlobalGamePause = !GlobalGamePause;
+									// 	GameInput.dt = GlobalGamePause ? 0.0f : TargetSecondsPerFrame;
+									// 	GlobalDebugTable.ProfilePause = !GlobalDebugTable.ProfilePause || GlobalGamePause;
+									// }
 								}
-
+#if VOXEL_ENGINE_INTERNAL
+								if (KeyCode == 'L')
+								{
+									if(IsDown)
+									{
+										if(!WinState.InputPlayback)
+										{
+											if(!WinState.InputRecording)
+											{
+												WinBeginRecordingInput(&WinState);
+											}
+											else
+											{
+												WinEndRecordingInput(&WinState);
+												WinBeginInputPlayback(&WinState);
+											}
+										}
+										else
+										{
+											WinEndInputPlayback(&WinState);
+										}
+									}
+								}
 								if (KeyCode == 0x31)
 								{
 									WinProcessKey(&GameInput.NumOne, IsDown);
 								}
 								if (KeyCode == 0x32)
 								{
-									WinProcessKey(&GameInput.NumTwo, IsDown);
+									if(IsDown)
+									{
+										GlobalDEBUGCursor = !GlobalDEBUGCursor;
+										GlobalCursorShouldBeClipped = !GlobalDEBUGCursor;
+										ShowCursor(GlobalDEBUGCursor);
+									}
 								}
+#endif
 							}
 						} break;
 
@@ -789,6 +942,25 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				
 				END_BLOCK(InputAndMessageTime);
 
+#if VOXEL_ENGINE_INTERNAL
+				if(!GlobalGamePause)
+				{
+					if(WinState.InputRecording)
+					{
+						WinRecordInput(&WinState, &GameInput);
+					}
+
+					if(WinState.InputPlayback)
+					{
+						game_input TempInput = GameInput;
+						WinPlaybackInput(&WinState, &GameInput);
+						GameInput.MouseX = TempInput.MouseX;
+						GameInput.MouseY = TempInput.MouseY;
+						GameInput.MouseLeft = TempInput.MouseLeft;
+						GameInput.Pause = TempInput.Pause;
+					}
+				}
+#endif
 
 				BEGIN_BLOCK(GameUpdateTime);
 
@@ -796,13 +968,13 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 				END_BLOCK(GameUpdateTime);
 
-
+#if VOXEL_ENGINE_INTERNAL
 				BEGIN_BLOCK(DebugStuffTime);
 
-				DEBUGRenderAllDebugRecords(&GameMemory, &GameInput, (r32)Dimension.Width, (r32)Dimension.Height);
+				DEBUGEndDebugFrameAndRender(&GameMemory, &GameInput, (r32)Dimension.Width, (r32)Dimension.Height);
 
 				END_BLOCK(DebugStuffTime);
-
+#endif
 
 				BEGIN_BLOCK(UpdateWindowTime);
 
@@ -850,4 +1022,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	return(0);
 }
 
+#if VOXEL_ENGINE_INTERNAL
+
 #include "voxel_engine_debug.hpp"
+
+#endif

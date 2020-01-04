@@ -523,7 +523,6 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 	chunk *Chunk = Job->Chunk;
 	stack_allocator *WorldAllocator = Job->WorldAllocator;
 
-	Chunk->IsSetupBlocks = true;
 	Chunk->IsNotEmpty = false;
 	
 	BeginWorldLock(World);
@@ -666,6 +665,10 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 			}
 		}
 	}
+
+	CompletePreviousWritesBeforeFutureWrites;
+
+	Chunk->IsSetupBlocks = true;
 }
 
 internal void
@@ -738,8 +741,6 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkVertices)
 	world *World = Job->World;
 	chunk *Chunk = Job->Chunk;
 
-	Chunk->IsFullySetup = true;
-
 	InitializeDynamicArray(&Chunk->VerticesP);
 	InitializeDynamicArray(&Chunk->VerticesNormals);
 	InitializeDynamicArray(&Chunk->VerticesColors);
@@ -748,6 +749,10 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkVertices)
 	vec3 *Colors = Chunk->BlocksInfo->Colors;
 
 	GenerateChunkVertices(World, Chunk);
+
+	CompletePreviousWritesBeforeFutureWrites;
+
+	Chunk->IsFullySetup = true;
 }
 
 internal void
@@ -773,8 +778,6 @@ SetupChunksVertices(world *World, temp_state *TempState)
 internal void
 LoadChunk(chunk *Chunk)
 {
-	Chunk->IsLoaded = true;
-
 	glGenVertexArrays(1, &Chunk->VAO);
 	glGenBuffers(1, &Chunk->PVBO);
 	glBindVertexArray(Chunk->VAO);
@@ -793,6 +796,10 @@ LoadChunk(chunk *Chunk)
 	glEnableVertexAttribArray(2);
 	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
 	glBindVertexArray(0);
+
+	CompletePreviousWritesBeforeFutureWrites;
+
+	Chunk->IsLoaded = true;
 }
 
 internal void
@@ -902,19 +909,32 @@ UpdateChunk(world *World, chunk *Chunk)
 		}
 	}
 
-	Chunk->VerticesP.EntriesCount = 0;
-	Chunk->VerticesNormals.EntriesCount = 0;
-	Chunk->VerticesColors.EntriesCount = 0;
-	GenerateChunkVertices(World, Chunk);
+	if(Chunk->IsNotEmpty)
+	{
+#if 0
+		Chunk->VerticesP.EntriesCount = 0;
+		Chunk->VerticesNormals.EntriesCount = 0;
+		Chunk->VerticesColors.EntriesCount = 0;
+#else
+		// NOTE(georgy): This path is used for record and playback feature!
+		FreeDynamicArray(&Chunk->VerticesP);
+		FreeDynamicArray(&Chunk->VerticesNormals);
+		FreeDynamicArray(&Chunk->VerticesColors);
+		InitializeDynamicArray(&Chunk->VerticesP);
+		InitializeDynamicArray(&Chunk->VerticesNormals);
+		InitializeDynamicArray(&Chunk->VerticesColors);
+#endif
+		GenerateChunkVertices(World, Chunk);
 
-	glBindVertexArray(Chunk->VAO);
-	glBindBuffer(GL_ARRAY_BUFFER, Chunk->PVBO);
-	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesP.EntriesCount*sizeof(vec3), Chunk->VerticesP.Entries, GL_STATIC_DRAW);
-	glBindBuffer(GL_ARRAY_BUFFER, Chunk->NormalsVBO);
-	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesNormals.EntriesCount*sizeof(vec3), Chunk->VerticesNormals.Entries, GL_STATIC_DRAW);
-	glBindBuffer(GL_ARRAY_BUFFER, Chunk->ColorsVBO);
-	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesColors.EntriesCount*sizeof(vec3), Chunk->VerticesColors.Entries, GL_STATIC_DRAW);
-	glBindVertexArray(0);
+		glBindVertexArray(Chunk->VAO);
+		glBindBuffer(GL_ARRAY_BUFFER, Chunk->PVBO);
+		glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesP.EntriesCount*sizeof(vec3), Chunk->VerticesP.Entries, GL_STATIC_DRAW);
+		glBindBuffer(GL_ARRAY_BUFFER, Chunk->NormalsVBO);
+		glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesNormals.EntriesCount*sizeof(vec3), Chunk->VerticesNormals.Entries, GL_STATIC_DRAW);
+		glBindBuffer(GL_ARRAY_BUFFER, Chunk->ColorsVBO);
+		glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesColors.EntriesCount*sizeof(vec3), Chunk->VerticesColors.Entries, GL_STATIC_DRAW);
+		glBindVertexArray(0);
+	}
 
 	Chunk->IsModified = false;
 }

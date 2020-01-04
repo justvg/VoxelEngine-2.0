@@ -999,7 +999,8 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 
 internal void
 RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegion, 
-			   shader WorldShader, shader CharacterShader, shader BillboardShader, vec3 Right)
+			   shader WorldShader, shader CharacterShader, shader BillboardShader, vec3 Right,
+			   bool32 DEBUGRenderBB = false)
 {
 	for(u32 EntityIndex = 0;
 		EntityIndex < SimRegion->EntityCount;
@@ -1067,6 +1068,12 @@ RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegi
 					SetInt(CharacterShader, "BoneID", CharacterBone_Foot_Left);
 					DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Foot),
 							Entity->Rotation, 1.4f, -HeroRight, Entity->P);
+
+					if(DEBUGRenderBB)
+					{
+						DEBUGRenderAxes(Identity(1.0f));
+						DEBUGRenderSphere(Entity->P + Entity->Collision->OffsetP, Entity->Collision->Dim, Entity->Rotation);
+					}
 				} break;
 
 				case EntityType_Fireball:
@@ -1074,12 +1081,22 @@ RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegi
 					mat4 Model = Translate(vec3(0.0f, 0.5f*0.25f, 0.0f) + Entity->P) * Scale(vec3(0.25f, 0.25f, 0.25f));
 					SetMat4(WorldShader, "Model", Model);
 					DrawFromVAO(GameState->CubeVAO, 36);
+
+					if(DEBUGRenderBB)
+					{
+						DEBUGRenderCube(Entity->P + Entity->Collision->OffsetP, Entity->Collision->Dim, Entity->Rotation);
+					}
 				} break;
 
 				case EntityType_Tree:
 				{
 					DrawModel(WorldShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Tree),
 								0.0f, 1.0f, vec3(0.0f, 0.0f, 0.0f), Entity->P);
+
+					if(DEBUGRenderBB)
+					{
+						DEBUGRenderCube(Entity->P + Entity->Collision->OffsetP, Entity->Collision->Dim, Entity->Rotation);
+					}
 				} break;
 
 				// TEST
@@ -1098,6 +1115,11 @@ RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegi
 					glBindVertexArray(GameState->QuadVAO);
 					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 					glBindVertexArray(0);
+
+					if(DEBUGRenderBB)
+					{
+						DEBUGRenderCube(Entity->P + Entity->Collision->OffsetP, Entity->Collision->Dim, Entity->Rotation);
+					}
 				}  break;
 			}
 		}

@@ -60,3 +60,20 @@ struct block_particle_generator
 	shader Shader;
 	GLuint VAO, VBO, SimPVBO, ColorVBO;
 };
+
+// 
+// 
+// 
+
+struct debug_draw_info
+{
+	bool32 IsInitialized;
+
+	shader Shader, AxesShader;
+	GLuint CubeVAO, CubeVBO;
+	GLuint AxesVAO, AxesVBO;
+	GLuint LineVAO, LineVBO;
+
+	GLuint SphereVAO, SphereVBO, SphereEBO;
+	dynamic_array_u32 SphereIndices;
+};

@@ -1,9 +1,15 @@
 #include "voxel_engine_debug.h"
 
-internal void
+struct debug_render_text_line_result
+{
+	rect2 ScreenRegion;
+};
+internal debug_render_text_line_result
 DEBUGRenderTextLine(debug_state *DebugState, char *String, 
 					bool32 RenderAtP = false, vec2 P = vec2(0.0f, 0.0f))
 {
+	debug_render_text_line_result Result = {};
+	Result.ScreenRegion = RectMinMax(vec2(FLT_MAX, FLT_MAX), vec2(-FLT_MAX, -FLT_MAX));
 	if(DebugState->Font)
 	{
 		loaded_font *Font = DebugState->Font;
@@ -30,10 +36,29 @@ DEBUGRenderTextLine(debug_state *DebugState, char *String,
 			{
 				loaded_texture *Glyph = GetBitmapForGlyph(Font, Character);
 
-				r32 Py = ScreenP.y - Glyph->AlignPercentageY*FontScale*Glyph->Height;
-				if(TextMinY > Py)
+				vec2 LeftBotCornerP = ScreenP - vec2(0.0f, Glyph->AlignPercentageY*FontScale*Glyph->Height);
+				for(u32 GlyphVertexIndex = 0;
+					GlyphVertexIndex < ArrayCount(DebugState->GlyphVertices);
+					GlyphVertexIndex++)
 				{
-					TextMinY = Py;
+					vec2 P = LeftBotCornerP + FontScale*Hadamard(vec2i(Glyph->Width, Glyph->Height),
+															 DebugState->GlyphVertices[GlyphVertexIndex]);
+					if(Result.ScreenRegion.Min.x > P.x)
+					{
+						Result.ScreenRegion.Min.x = P.x;
+					}
+					if(Result.ScreenRegion.Min.y > P.y)
+					{
+						Result.ScreenRegion.Min.y = P.y;
+					}
+					if(Result.ScreenRegion.Max.x < P.x)
+					{
+						Result.ScreenRegion.Max.x = P.x;
+					}
+					if(Result.ScreenRegion.Max.y < P.y)
+					{
+						Result.ScreenRegion.Max.y = P.y;
+					}
 				}
 
 				SetVec2(DebugState->GlyphShader, "ScreenP", ScreenP);
@@ -48,13 +73,15 @@ DEBUGRenderTextLine(debug_state *DebugState, char *String,
 
 		if(!RenderAtP)
 		{
-			DebugState->TextP = vec2(ScreenP.x, TextMinY);
+			DebugState->TextP = vec2(-0.5f*DebugState->BufferDim.x, Result.ScreenRegion.Min.y);
 		}
-		
+
 		glEnable(GL_DEPTH_TEST);
 		glDisable(GL_BLEND);
 		glBindVertexArray(0);
 	}
+
+	return(Result);
 }
 
 global_variable debug_record GlobalDebugRecords[__COUNTER__]; 
@@ -87,18 +114,16 @@ DEBUGReset(debug_state *DebugState, game_memory *Memory, game_assets *GameAssets
 		CompileShader(&DebugState->GlyphShader, "data/shaders/GlyphVS.glsl", "data/shaders/GlyphFS.glsl");
 		CompileShader(&DebugState->QuadShader, "data/shaders/2DQuadVS.glsl", "data/shaders/2DQuadFS.glsl");
 
-		r32 GlyphVertices[] = 
-		{
-			0.0f, 1.0f,
-			0.0f, 0.0f,
-			1.0f, 1.0f,
-			1.0f, 0.0f
-		};
+		DebugState->GlyphVertices[0] = { 0.0f, 1.0f };
+		DebugState->GlyphVertices[1] = { 0.0f, 0.0f };
+		DebugState->GlyphVertices[2] = { 1.0f, 1.0f };
+		DebugState->GlyphVertices[3] = { 1.0f, 0.0f };
+
 		glGenVertexArrays(1, &DebugState->GlyphVAO);
 		glGenBuffers(1, &DebugState->GlyphVBO);
 		glBindVertexArray(DebugState->GlyphVAO);
 		glBindBuffer(GL_ARRAY_BUFFER, DebugState->GlyphVBO);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(GlyphVertices), GlyphVertices, GL_STATIC_DRAW);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(DebugState->GlyphVertices), DebugState->GlyphVertices, GL_STATIC_DRAW);
 		glEnableVertexAttribArray(0);
 		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void *)0);
 		glBindVertexArray(0);
@@ -169,10 +194,10 @@ internal void
 DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 {
 	for(u32 EventIndex = 0;
-		EventIndex < GlobalDebugEventsCounts[EventArrayIndex];
+		EventIndex < GlobalDebugTable.EventsCounts[EventArrayIndex];
 		EventIndex++)
 	{
-		debug_event *Event = GlobalDebugEventsArrays[EventArrayIndex] + EventIndex;
+		debug_event *Event = GlobalDebugTable.EventsArrays[EventArrayIndex] + EventIndex;
 		debug_record *Record = GlobalDebugRecords + Event->DebugRecordIndex;
 
 		if(Event->Type == DebugEvent_FrameMarker)
@@ -214,7 +239,7 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 							if((MatchingBlock->Event->DebugRecordIndex == Event->DebugRecordIndex) &&
 							   (MatchingBlock->Event->ThreadID == Event->ThreadID))
 							{
-								if(GetRecordFrom(MatchingBlock->Parent) == DebugState->ProfileBlockRecord)
+								if(GetRecordFrom(MatchingBlock->Parent) == GlobalDebugTable.ProfileBlockRecord)
 								{
 									debug_region *Region = DebugState->CollationFrame->Regions + DebugState->CollationFrame->RegionsCount++;
 									Region->Record = Record;
@@ -343,8 +368,8 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 	{
 		if(WasDown(&Input->MouseRight))
 		{
-			GlobalProfilePause = !GlobalProfilePause || GlobalGamePause;
-			if(!GlobalProfilePause)
+			GlobalDebugTable.ProfilePause = !GlobalDebugTable.ProfilePause || GlobalGamePause;
+			if(!GlobalDebugTable.ProfilePause)
 			{
 				RestartCollation(DebugState);
 			}
@@ -354,21 +379,21 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 		{
 			if(HotRecord)
 			{
-				DebugState->ProfileBlockRecord = HotRecord;
+				GlobalDebugTable.ProfileBlockRecord = HotRecord;
 			}
 			else 
 			{
-				DebugState->ProfileBlockRecord = 0;	
+				GlobalDebugTable.ProfileBlockRecord = 0;	
 			}
 
 			RestartCollation(DebugState);
 
 			for(u32 EventArrayIndex = 0;
-				EventArrayIndex < ArrayCount(GlobalDebugEventsArrays) - 1;
+				EventArrayIndex < ArrayCount(GlobalDebugTable.EventsArrays) - 1;
 				EventArrayIndex++)
 			{
 				DEBUGCollateEvents(DebugState, 
-								((GlobalCurrentEventArrayIndex + 1) + EventArrayIndex) % ArrayCount(GlobalDebugEventsArrays));
+								((GlobalDebugTable.CurrentEventArrayIndex + 1) + EventArrayIndex) % ArrayCount(GlobalDebugTable.		EventsArrays));
 			}
 		}
 	}
@@ -376,27 +401,59 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 	glBindVertexArray(0);
 }
 
+inline void
+DEBUGAddMainMenuElement(debug_state *DebugState, game_input* Input, bool32 *ElementState, char *Name)
+{
+	char Buffer[256];
+	char *At = Buffer;
+	At += _snprintf_s(Buffer, sizeof(Buffer), "%s: ", Name);
+	_snprintf_s(At, sizeof(Buffer) - (At - Buffer), sizeof(Buffer) - (At - Buffer), 
+				"%s", *ElementState ? "true" : "false");
+
+	debug_render_text_line_result TextRegion = DEBUGRenderTextLine(DebugState, Buffer);
+	if(IsInRect(TextRegion.ScreenRegion, vec2(Input->MouseX, Input->MouseY)))
+	{
+		if(WasDown(&Input->MouseLeft))
+		{
+			*ElementState = !(*ElementState);
+		}
+	}
+}
+
 internal void
-DEBUGRenderAllDebugRecords(game_memory *Memory, game_input *Input, r32 BufferWidth, r32 BufferHeight)
+DEBUGRenderMainMenu(debug_state *DebugState, game_input *Input)
+{
+	DEBUGAddMainMenuElement(DebugState, Input, &DEBUGGlobalShowDebugDrawings, "ShowDebugDrawings");
+	DEBUGAddMainMenuElement(DebugState, Input, &DEBUGGlobalRenderShadows, "RenderShadows");
+	DEBUGAddMainMenuElement(DebugState, Input, &DEBUGGlobalShowProfiling, "ShowProfiling");
+
+	if(DEBUGGlobalShowProfiling)
+	{
+		DEBUGRenderRegions(DebugState, Input);
+	}
+}
+
+internal void
+DEBUGEndDebugFrameAndRender(game_memory *Memory, game_input *Input, r32 BufferWidth, r32 BufferHeight)
 {
 	Assert(sizeof(debug_state) <= Memory->DebugStorageSize);
 	debug_state* DebugState = (debug_state*)Memory->DebugStorage;
 	game_assets* GameAssets = DEBUGGetGameAssets(Memory);
 
 	u32 EventArrayIndex = 0;
-	if(!GlobalProfilePause)
+	if(!GlobalDebugTable.ProfilePause)
 	{
-		GlobalCurrentEventArrayIndex++;
-		if(GlobalCurrentEventArrayIndex >= ArrayCount(GlobalDebugEventsArrays))
+		GlobalDebugTable.CurrentEventArrayIndex++;
+		if(GlobalDebugTable.CurrentEventArrayIndex >= ArrayCount(GlobalDebugTable.EventsArrays))
 		{
-			GlobalCurrentEventArrayIndex = 0;
+			GlobalDebugTable.CurrentEventArrayIndex = 0;
 		}
-		u64 EventArrayIndex_EventIndex = AtomicExchangeU64(&GlobalEventArrayIndex_EventIndex,
-													 	   (u64)GlobalCurrentEventArrayIndex << 32);
+		u64 EventArrayIndex_EventIndex = AtomicExchangeU64(&GlobalDebugTable.EventArrayIndex_EventIndex,
+													 	   (u64)GlobalDebugTable.CurrentEventArrayIndex << 32);
 
 		EventArrayIndex = EventArrayIndex_EventIndex >> 32;
 		u32 EventsCount = EventArrayIndex_EventIndex & 0xFFFFFFFF;
-		GlobalDebugEventsCounts[EventArrayIndex] = EventsCount;
+		GlobalDebugTable.EventsCounts[EventArrayIndex] = EventsCount;
 	}
 	
 	if(DebugState && GameAssets)
@@ -408,18 +465,18 @@ DEBUGRenderAllDebugRecords(game_memory *Memory, game_input *Input, r32 BufferWid
 			RestartCollation(DebugState);
 		}
 
-		if(!GlobalProfilePause)
+		if(!GlobalDebugTable.ProfilePause)
 		{
 			DEBUGCollateEvents(DebugState, EventArrayIndex);
 		}
 	}
 
-	DEBUGRenderRegions(DebugState, Input);
+	DEBUGRenderMainMenu(DebugState, Input);
 
 	char Buffer[256];
 	if(DebugState->FrameCount > 1)
 	{
-		_snprintf_s(Buffer, sizeof(Buffer), "FPS: %.02fms/f", DebugState->Frames[DebugState->FrameCount - 2].MSElapsed);
+		_snprintf_s(Buffer, sizeof(Buffer), "%.02fms/f", DebugState->Frames[DebugState->FrameCount - 2].MSElapsed);
 		DEBUGRenderTextLine(DebugState, Buffer);
 	}
 }

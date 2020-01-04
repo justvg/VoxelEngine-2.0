@@ -1,5 +1,7 @@
 #pragma once
 
+#if VOXEL_ENGINE_INTERNAL
+
 enum debug_event_type
 {
     DebugEvent_FrameMarker,
@@ -67,12 +69,19 @@ struct debug_frame
 #define MAX_FRAME_COUNT DEBUG_EVENTS_ARRAYS_COUNT*8
 #define MAX_DEBUG_EVENT_COUNT 1024
 #define MAX_REGIONS_PER_FRAME 1024
-global_variable bool32 GlobalProfilePause;
-global_variable u32 GlobalCurrentEventArrayIndex;
-global_variable volatile u64 GlobalEventArrayIndex_EventIndex;
-global_variable u32 GlobalDebugEventsCounts[DEBUG_EVENTS_ARRAYS_COUNT];
-global_variable debug_event GlobalDebugEventsArrays[DEBUG_EVENTS_ARRAYS_COUNT][MAX_DEBUG_EVENT_COUNT];
+struct debug_table
+{
+    bool32 ProfilePause;
+    u32 CurrentEventArrayIndex;
+    volatile u64 EventArrayIndex_EventIndex;
+    u32 EventsCounts[DEBUG_EVENTS_ARRAYS_COUNT];
+    debug_event EventsArrays[DEBUG_EVENTS_ARRAYS_COUNT][MAX_DEBUG_EVENT_COUNT];
+
+    debug_record *ProfileBlockRecord;
+};
+
 debug_record GlobalDebugRecords[]; 
+global_variable debug_table GlobalDebugTable;
 
 struct debug_state
 {
@@ -93,6 +102,7 @@ struct debug_state
 	shader GlyphShader;
     shader QuadShader;
 
+    vec2 GlyphVertices[4];
 	GLuint GlyphVAO, GlyphVBO;
 
     bool32 ProfilePause;
@@ -104,8 +114,6 @@ struct debug_state
     u32 LaneCount;
     debug_thread *FirstThread;
 
-    debug_record *ProfileBlockRecord;
-
     u32 DebugRegionsCount;
     debug_region *DebugRegions;
 };
@@ -114,13 +122,13 @@ inline debug_event *
 RecordDebugEvent(u16 DebugRecordIndex, debug_event_type Type)
 {
 	debug_event *Event = 0;
-    if(!GlobalProfilePause)
+    if(!GlobalDebugTable.ProfilePause)
     {
-        u64 ArrayIndex_EventIndex = AtomicAddU64(&GlobalEventArrayIndex_EventIndex, 1);
+        u64 ArrayIndex_EventIndex = AtomicAddU64(&GlobalDebugTable.EventArrayIndex_EventIndex, 1);
         u32 ArrayIndex = ArrayIndex_EventIndex >> 32;
         u32 EventIndex = ArrayIndex_EventIndex & 0xFFFFFFFF;
         Assert(EventIndex < MAX_DEBUG_EVENT_COUNT);
-        Event = GlobalDebugEventsArrays[ArrayIndex] + EventIndex;
+        Event = GlobalDebugTable.EventsArrays[ArrayIndex] + EventIndex;
         Event->Clock = __rdtsc();
         Event->DebugRecordIndex = DebugRecordIndex;
         Event->ThreadID = GetThreadID();
@@ -177,3 +185,26 @@ struct timed_block
         END_BLOCK_(Counter);
     }
 };
+
+global_variable bool32 DEBUGGlobalPlaybackRefresh;
+
+global_variable bool32 DEBUGGlobalShowDebugDrawings;
+global_variable bool32 DEBUGGlobalRenderShadows;
+global_variable bool32 DEBUGGlobalShowProfiling;
+
+#else 
+
+#define TIME_BLOCK__(...)
+#define TIME_BLOCK_(...)
+#define TIME_BLOCK
+#define FRAME_MARKER(...)
+#define BEGIN_BLOCK_(...)
+#define END_BLOCK_(...)
+#define BEGIN_BLOCK(...)
+#define END_BLOCK(...)
+
+global_variable bool32 DEBUGGlobalShowDebugDrawings;
+global_variable bool32 DEBUGGlobalRenderShadows = true;
+global_variable bool32 DEBUGGlobalShowProfiling;
+
+#endif

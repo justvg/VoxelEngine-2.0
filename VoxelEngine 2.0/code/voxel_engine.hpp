@@ -295,7 +295,6 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 		CompileShader(&GameState->BlockParticleDepthShader, "data/shaders/BlockParticleDepthVS.glsl", "data/shaders/EmptyFS.glsl");
 		CompileShader(&GameState->FramebufferScreenShader, "data/shaders/FramebufferScreenVS.glsl", "data/shaders/FramebufferScreenFS.glsl");
 
-		GameState->BlockParticleGenerator = {};
 		block_particle_generator *BlockParticleGenerator = &GameState->BlockParticleGenerator;
 		r32 BlockParticleVertices[] = 
 		{
@@ -641,6 +640,33 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	}
 
 
+#if VOXEL_ENGINE_INTERNAL
+	if(DEBUGGlobalPlaybackRefresh)
+	{
+		for(u32 ChunkHashBucket = 0;
+		    (ChunkHashBucket < ArrayCount(GameState->World.ChunkHash));
+			ChunkHashBucket++)
+		{
+			chunk *Chunk = GameState->World.ChunkHash[ChunkHashBucket];
+			while(Chunk)
+			{
+				if(Chunk->IsRecentlyUsed)
+				{
+					if(Chunk->IsSetupBlocks && Chunk->IsFullySetup && Chunk->IsLoaded)
+					{
+						UpdateChunk(&GameState->World, Chunk);
+					}
+				}
+
+				Chunk = Chunk->Next;
+			}
+		}
+
+		DEBUGGlobalPlaybackRefresh = false;
+	}
+#endif
+
+
 	temporary_memory WorldConstructionAndRenderMemory = BeginTemporaryMemory(&TempState->Allocator);
 
 	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-100.0f, -20.0f, -100.0f), vec3(100.0f, 20.0f, 100.0f));
@@ -764,85 +790,89 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	}
 	BlockParticlesUpdate(&GameState->BlockParticleGenerator, Input->dt);
 	
+	
 	// NOTE(georgy): Directional shadow map rendering
 	r32 CascadesDistances[CASCADES_COUNT + 1] = {Camera->NearDistance, 25.0f, 65.0f, Camera->FarDistance};
 	mat4 LightSpaceMatrices[CASCADES_COUNT];
-	glViewport(0, 0, GameState->ShadowMapsWidth, GameState->ShadowMapsHeight);
-	glBindFramebuffer(GL_FRAMEBUFFER, GameState->ShadowMapFBO);
-	for(u32 CascadeIndex = 0;
-		CascadeIndex < CASCADES_COUNT;
-		CascadeIndex++)
+	if (DEBUGGlobalRenderShadows)
 	{
-		glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GameState->ShadowMapsArray, 0, CascadeIndex);
-		glClear(GL_DEPTH_BUFFER_BIT);
-
-		vec3 CameraRight = vec3(Camera->RotationMatrix.FirstColumn.x(), Camera->RotationMatrix.SecondColumn.x(), Camera->RotationMatrix.ThirdColumn.x());;
-		vec3 CameraUp = vec3(Camera->RotationMatrix.FirstColumn.y(), Camera->RotationMatrix.SecondColumn.y(), Camera->RotationMatrix.ThirdColumn.y());;
-		vec3 CameraOut = -vec3(Camera->RotationMatrix.FirstColumn.z(), Camera->RotationMatrix.SecondColumn.z(), Camera->RotationMatrix.ThirdColumn.z());
-
-		r32 NearPlaneHalfHeight = Tan(0.5f*DEG2RAD(Camera->FoV))*CascadesDistances[CascadeIndex];
-		r32 NearPlaneHalfWidth = NearPlaneHalfHeight*Camera->AspectRatio;
-		r32 FarPlaneHalfHeight = Tan(0.5f*DEG2RAD(Camera->FoV))*CascadesDistances[CascadeIndex + 1];
-		r32 FarPlaneHalfWidth = FarPlaneHalfHeight*Camera->AspectRatio;
-
-		vec4 Cascade1[8];
-		Cascade1[0] = vec4(CameraRight*NearPlaneHalfWidth + CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
-		Cascade1[1] = vec4(CameraRight*NearPlaneHalfWidth - CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
-		Cascade1[2] = vec4(-CameraRight*NearPlaneHalfWidth + CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
-		Cascade1[3] = vec4(-CameraRight*NearPlaneHalfWidth - CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
-		Cascade1[4] = vec4(CameraRight*FarPlaneHalfWidth + CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
-		Cascade1[5] = vec4(CameraRight*FarPlaneHalfWidth - CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
-		Cascade1[6] = vec4(-CameraRight*FarPlaneHalfWidth + CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
-		Cascade1[7] = vec4(-CameraRight*FarPlaneHalfWidth - CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
-
-		for(u32 PointIndex = 0;
-			PointIndex < ArrayCount(Cascade1);
-			PointIndex++)
+		glViewport(0, 0, GameState->ShadowMapsWidth, GameState->ShadowMapsHeight);
+		glBindFramebuffer(GL_FRAMEBUFFER, GameState->ShadowMapFBO);
+		for(u32 CascadeIndex = 0;
+			CascadeIndex < CASCADES_COUNT;
+			CascadeIndex++)
 		{
-			Cascade1[PointIndex] = Cascade1[PointIndex] + vec4(Camera->OffsetFromHero + Camera->TargetOffset, 0.0f);
+			glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GameState->ShadowMapsArray, 0, CascadeIndex);
+			glClear(GL_DEPTH_BUFFER_BIT);
+
+			vec3 CameraRight = vec3(Camera->RotationMatrix.FirstColumn.x(), Camera->RotationMatrix.SecondColumn.x(), Camera->RotationMatrix.ThirdColumn.x());;
+			vec3 CameraUp = vec3(Camera->RotationMatrix.FirstColumn.y(), Camera->RotationMatrix.SecondColumn.y(), Camera->RotationMatrix.ThirdColumn.y());;
+			vec3 CameraOut = -vec3(Camera->RotationMatrix.FirstColumn.z(), Camera->RotationMatrix.SecondColumn.z(), Camera->RotationMatrix.ThirdColumn.z());
+
+			r32 NearPlaneHalfHeight = Tan(0.5f*DEG2RAD(Camera->FoV))*CascadesDistances[CascadeIndex];
+			r32 NearPlaneHalfWidth = NearPlaneHalfHeight*Camera->AspectRatio;
+			r32 FarPlaneHalfHeight = Tan(0.5f*DEG2RAD(Camera->FoV))*CascadesDistances[CascadeIndex + 1];
+			r32 FarPlaneHalfWidth = FarPlaneHalfHeight*Camera->AspectRatio;
+
+			vec4 Cascade1[8];
+			Cascade1[0] = vec4(CameraRight*NearPlaneHalfWidth + CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
+			Cascade1[1] = vec4(CameraRight*NearPlaneHalfWidth - CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
+			Cascade1[2] = vec4(-CameraRight*NearPlaneHalfWidth + CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
+			Cascade1[3] = vec4(-CameraRight*NearPlaneHalfWidth - CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
+			Cascade1[4] = vec4(CameraRight*FarPlaneHalfWidth + CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
+			Cascade1[5] = vec4(CameraRight*FarPlaneHalfWidth - CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
+			Cascade1[6] = vec4(-CameraRight*FarPlaneHalfWidth + CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
+			Cascade1[7] = vec4(-CameraRight*FarPlaneHalfWidth - CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
+
+			for(u32 PointIndex = 0;
+				PointIndex < ArrayCount(Cascade1);
+				PointIndex++)
+			{
+				Cascade1[PointIndex] = Cascade1[PointIndex] + vec4(Camera->OffsetFromHero + Camera->TargetOffset, 0.0f);
+			}
+
+			// mat4 LightView = LookAt(vec3(0.0f, 0.0f, 0.0f), -vec3(0.0f, 1.0f, 0.0f), vec3(0.0f, 0.0f, -1.0f));
+			mat4 LightView = LookAt(vec3(0.0f, 0.0f, 0.0f), GameState->DirectionalLightDir);
+			for(u32 PointIndex = 0;
+				PointIndex < ArrayCount(Cascade1);
+				PointIndex++)
+			{
+				Cascade1[PointIndex] = LightView * Cascade1[PointIndex];
+			}
+			
+			rect3 Cascade1AABB;
+			Cascade1AABB.Min = vec3(FLT_MAX, FLT_MAX, FLT_MAX);
+			Cascade1AABB.Max = vec3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+			for(u32 PointIndex = 0;
+				PointIndex < ArrayCount(Cascade1);
+				PointIndex++)
+			{
+				Cascade1AABB.Min = Min(Cascade1AABB.Min, vec3(Cascade1[PointIndex].m));
+				Cascade1AABB.Max = Max(Cascade1AABB.Max, vec3(Cascade1[PointIndex].m));
+			}
+			Cascade1AABB = AddRadiusTo(Cascade1AABB, vec3(1.5f, 1.5f, 1.5f));
+			mat4 LightProjection = Ortho(Cascade1AABB.Min.y(), Cascade1AABB.Max.y(), 
+										Cascade1AABB.Min.x(), Cascade1AABB.Max.x(),
+										-Cascade1AABB.Max.z() - 70.0f, -Cascade1AABB.Min.z());
+
+			LightSpaceMatrices[CascadeIndex] = LightProjection * LightView;
+			UseShader(GameState->WorldDepthShader);
+			SetMat4(GameState->WorldDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
+			UseShader(GameState->CharacterDepthShader);
+			SetMat4(GameState->CharacterDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
+			UseShader(GameState->BlockParticleDepthShader);
+			SetMat4(GameState->BlockParticleDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
+
+			RenderChunks(&GameState->World, GameState->WorldDepthShader, LightSpaceMatrices[CascadeIndex]);
+
+			RenderEntities(GameState, TempState, SimRegion, GameState->WorldDepthShader, 
+						GameState->CharacterDepthShader, GameState->BillboardShader, 
+						Right);
+			RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, &TempState->Allocator, 
+								GameState->BlockParticleDepthShader, GameState->Hero.Entity->P);
 		}
-
-		// mat4 LightView = LookAt(vec3(0.0f, 0.0f, 0.0f), -vec3(0.0f, 1.0f, 0.0f), vec3(0.0f, 0.0f, -1.0f));
-		mat4 LightView = LookAt(vec3(0.0f, 0.0f, 0.0f), GameState->DirectionalLightDir);
-		for(u32 PointIndex = 0;
-			PointIndex < ArrayCount(Cascade1);
-			PointIndex++)
-		{
-			Cascade1[PointIndex] = LightView * Cascade1[PointIndex];
-		}
-		
-		rect3 Cascade1AABB;
-		Cascade1AABB.Min = vec3(FLT_MAX, FLT_MAX, FLT_MAX);
-		Cascade1AABB.Max = vec3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-		for(u32 PointIndex = 0;
-			PointIndex < ArrayCount(Cascade1);
-			PointIndex++)
-		{
-			Cascade1AABB.Min = Min(Cascade1AABB.Min, vec3(Cascade1[PointIndex].m));
-			Cascade1AABB.Max = Max(Cascade1AABB.Max, vec3(Cascade1[PointIndex].m));
-		}
-		Cascade1AABB = AddRadiusTo(Cascade1AABB, vec3(1.5f, 1.5f, 1.5f));
-		mat4 LightProjection = Ortho(Cascade1AABB.Min.y(), Cascade1AABB.Max.y(), 
-									 Cascade1AABB.Min.x(), Cascade1AABB.Max.x(),
-									-Cascade1AABB.Max.z() - 70.0f, -Cascade1AABB.Min.z());
-
-		LightSpaceMatrices[CascadeIndex] = LightProjection * LightView;
-		UseShader(GameState->WorldDepthShader);
-		SetMat4(GameState->WorldDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
-		UseShader(GameState->CharacterDepthShader);
-		SetMat4(GameState->CharacterDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
-		UseShader(GameState->BlockParticleDepthShader);
-		SetMat4(GameState->BlockParticleDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
-
-		RenderChunks(&GameState->World, GameState->WorldDepthShader, LightSpaceMatrices[CascadeIndex]);
-
-		RenderEntities(GameState, TempState, SimRegion, GameState->WorldDepthShader, 
-					   GameState->CharacterDepthShader, GameState->BillboardShader, 
-					   Right);
-		RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, &TempState->Allocator, 
-							 GameState->BlockParticleDepthShader, GameState->Hero.Entity->P);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 	// NOTE(georgy): World and entities rendering
 	glViewport(0, 0, BufferWidth, BufferHeight);
@@ -850,12 +880,13 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	mat4 View = Camera->RotationMatrix * 
 				Translate(-Camera->OffsetFromHero - Camera->TargetOffset);
 	mat4 Projection = Perspective(Camera->FoV, Camera->AspectRatio, Camera->NearDistance, Camera->FarDistance);
-	mat4 ViewProjection = Projection * View;
+	GlobalViewProjection = Projection * View;
 	shader Shaders3D[] = { GameState->WorldShader, GameState->CharacterShader,
-							GameState->HitpointsShader, GameState->BillboardShader, GameState->BlockParticleShader };
+						   GameState->HitpointsShader, GameState->BillboardShader, GameState->BlockParticleShader,
+						   GlobalDebugDrawInfo.Shader, GlobalDebugDrawInfo.AxesShader};
 	if(!GameState->DEBUGCameraEnabled)
 	{
-		Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), ViewProjection);
+		Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), GlobalViewProjection);
 	}
 	else
 	{
@@ -868,35 +899,38 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	UseShader(GameState->WorldShader);
 	// NOTE(georgy): This is for the situation when we use debug camera. Even if we use debug camera,
 	//  			 we want Output.ClipSpacePosZ to be as it is from our default camera, not debug one
-	SetMat4(GameState->WorldShader, "ViewProjectionForClipSpacePosZ", ViewProjection);
+	SetMat4(GameState->WorldShader, "ViewProjectionForClipSpacePosZ", GlobalViewProjection);
 	SetMat4Array(GameState->WorldShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
 	SetFloatArray(GameState->WorldShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
 	SetVec3(GameState->WorldShader, "DirectionalLightDir", GameState->DirectionalLightDir);
+	SetInt(GameState->WorldShader, "ShadowsEnabled", DEBUGGlobalRenderShadows);
 	SetInt(GameState->WorldShader, "ShadowMaps", 0);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
 	
 	UseShader(GameState->CharacterShader);
-	SetMat4(GameState->CharacterShader, "ViewProjectionForClipSpacePosZ", ViewProjection);
+	SetMat4(GameState->CharacterShader, "ViewProjectionForClipSpacePosZ", GlobalViewProjection);
 	SetMat4Array(GameState->CharacterShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
 	SetFloatArray(GameState->CharacterShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
 	SetVec3(GameState->CharacterShader, "DirectionalLightDir", GameState->DirectionalLightDir);
+	SetInt(GameState->CharacterShader, "ShadowsEnabled", DEBUGGlobalRenderShadows);
 	SetInt(GameState->CharacterShader, "ShadowMaps", 0);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
 
 	UseShader(GameState->BlockParticleShader);
-	SetMat4(GameState->BlockParticleShader, "ViewProjectionForClipSpacePosZ", ViewProjection);
+	SetMat4(GameState->BlockParticleShader, "ViewProjectionForClipSpacePosZ", GlobalViewProjection);
 	SetMat4Array(GameState->BlockParticleShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
 	SetFloatArray(GameState->BlockParticleShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
 	SetVec3(GameState->BlockParticleShader, "DirectionalLightDir", GameState->DirectionalLightDir);
+	SetInt(GameState->BlockParticleShader, "ShadowsEnabled", DEBUGGlobalRenderShadows);
 	SetInt(GameState->BlockParticleShader, "ShadowMaps", 0);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
 
-	RenderChunks(&GameState->World, GameState->WorldShader, ViewProjection);
+	RenderChunks(&GameState->World, GameState->WorldShader, GlobalViewProjection);
 	RenderEntities(GameState, TempState, SimRegion, GameState->WorldShader, GameState->CharacterShader,
-				   GameState->BillboardShader, Right);
+				   GameState->BillboardShader, Right, DEBUGGlobalShowDebugDrawings);
 	RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, &TempState->Allocator, 
 						 GameState->BlockParticleShader, GameState->Hero.Entity->P);
 	RenderParticleEffects(GameState, TempState, SimRegion, GameState->BillboardShader, Right);

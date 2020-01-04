@@ -12,6 +12,7 @@ in vs_out
 	float ClipSpacePosZ;
 } Input;
 
+uniform bool ShadowsEnabled;
 uniform sampler2DArray ShadowMaps;
 uniform float CascadesDistances[CASCADES_COUNT + 1];
 
@@ -36,7 +37,6 @@ float ShadowCalc(float ShadowMapIndex, vec4 FragPosLightSpace, vec3 Normal, vec3
 	vec3 ProjectedCoords = FragPosLightSpace.xyz / FragPosLightSpace.w;
 	ProjectedCoords = ProjectedCoords * 0.5 + 0.5;
 	float DepthInShadowMap = texture(ShadowMaps, vec3(ProjectedCoords.xy, ShadowMapIndex)).r;
-	// float Bias = max(0.002 * (1.0 - max(dot(Normal, LightDir), 0.0)), 0.0015);
 	float Bias = 0.0015;
 	float CurrentFragmentDepth = ProjectedCoords.z - Bias;
 
@@ -65,17 +65,20 @@ void main()
 	vec3 Diffuse = 0.5 * max(dot(LightDir, Normal), 0.0) * DirectionalLightColor * Input.Color;
 
 	float ShadowFactor = 0.0;
-	if(Input.ClipSpacePosZ <= CascadesDistances[1])
+	if(ShadowsEnabled)
 	{
-		ShadowFactor = ShadowCalc(0.0, Input.FragPosLightSpace[0], Normal, LightDir);
-	}
-	else if(Input.ClipSpacePosZ <= CascadesDistances[2])
-	{
-		ShadowFactor = ShadowCalc(1.0, Input.FragPosLightSpace[1], Normal, LightDir);
-	}
-	else
-	{
-		ShadowFactor = ShadowCalc(2.0, Input.FragPosLightSpace[2], Normal, LightDir);
+		if(Input.ClipSpacePosZ <= CascadesDistances[1])
+		{
+			ShadowFactor = ShadowCalc(0.0, Input.FragPosLightSpace[0], Normal, LightDir);
+		}
+		else if(Input.ClipSpacePosZ <= CascadesDistances[2])
+		{
+			ShadowFactor = ShadowCalc(1.0, Input.FragPosLightSpace[1], Normal, LightDir);
+		}
+		else
+		{
+			ShadowFactor = ShadowCalc(2.0, Input.FragPosLightSpace[2], Normal, LightDir);
+		}
 	}
 	vec3 FinalColor = Ambient + (1.0 - ShadowFactor)*Diffuse;
 	FinalColor = Fog(FinalColor, length(Input.FragPosSim), RayDir, LightDir);

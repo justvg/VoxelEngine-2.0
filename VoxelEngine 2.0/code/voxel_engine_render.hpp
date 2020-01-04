@@ -307,3 +307,289 @@ RenderBlockParticles(block_particle_generator *Generator, world *World, stack_al
 
 	glBindVertexArray(0);
 }
+
+// 
+// 
+// 
+
+global_variable debug_draw_info GlobalDebugDrawInfo;
+
+internal void
+InitializeGlobalDrawInfo(void)
+{
+	CompileShader(&GlobalDebugDrawInfo.Shader, "data/shaders/DebugDrawingVS.glsl", "data/shaders/DebugDrawingFS.glsl");
+	CompileShader(&GlobalDebugDrawInfo.AxesShader, "data/shaders/DebugDrawingAxesVS.glsl", "data/shaders/DebugDrawingAxesFS.glsl");
+
+	// NOTE(georgy): Cube data
+	{
+		r32 CubeVertices[] = 
+		{
+			// Back face
+			-0.5f, -0.5f, -0.5f,
+			0.5f,  0.5f, -0.5f,
+			0.5f, -0.5f, -0.5f,
+			0.5f,  0.5f, -0.5f,
+			-0.5f, -0.5f, -0.5f,
+			-0.5f,  0.5f, -0.5f,
+			// Front face
+			-0.5f, -0.5f,  0.5f,
+			0.5f, -0.5f,  0.5f,
+			0.5f,  0.5f,  0.5f,
+			0.5f,  0.5f,  0.5f,
+			-0.5f,  0.5f,  0.5f,
+			-0.5f, -0.5f,  0.5f,
+			// Left face
+			-0.5f,  0.5f,  0.5f,
+			-0.5f,  0.5f, -0.5f,
+			-0.5f, -0.5f, -0.5f,
+			-0.5f, -0.5f, -0.5f,
+			-0.5f, -0.5f,  0.5f,
+			-0.5f,  0.5f,  0.5f,
+			// Right face
+			0.5f,  0.5f,  0.5f,
+			0.5f, -0.5f, -0.5f,
+			0.5f,  0.5f, -0.5f,
+			0.5f, -0.5f, -0.5f,
+			0.5f,  0.5f,  0.5f,
+			0.5f, -0.5f,  0.5f,
+			// Bottom face
+			-0.5f, -0.5f, -0.5f,
+			0.5f, -0.5f, -0.5f,
+			0.5f, -0.5f,  0.5f,
+			0.5f, -0.5f,  0.5f,
+			-0.5f, -0.5f,  0.5f,
+			-0.5f, -0.5f, -0.5f,
+			// Top face
+			-0.5f,  0.5f, -0.5f,
+			0.5f,  0.5f , 0.5f,
+			0.5f,  0.5f, -0.5f,
+			0.5f,  0.5f,  0.5f,
+			-0.5f,  0.5f, -0.5f,
+			-0.5f,  0.5f,  0.5f,
+		};
+
+		glGenVertexArrays(1, &GlobalDebugDrawInfo.CubeVAO);
+		glGenBuffers(1, &GlobalDebugDrawInfo.CubeVBO);
+		glBindVertexArray(GlobalDebugDrawInfo.CubeVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, GlobalDebugDrawInfo.CubeVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(CubeVertices), CubeVertices, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(r32), (void *)0);
+		glBindVertexArray(0);
+	}
+
+	// NOTE(georgy): Sphere data
+	{
+		r32 Radius = 0.5f;
+		u32 ParallelCount = 10;
+		u32 MeridianCount = 10;
+
+		dynamic_array_vec3 Vertices;
+		InitializeDynamicArray(&Vertices);
+		InitializeDynamicArray(&GlobalDebugDrawInfo.SphereIndices);
+
+		PushEntry(&Vertices, Radius*vec3(0.0f, -1.0f, 0.0f));
+		for(u32 Parallel = 0;
+			Parallel < ParallelCount;
+			Parallel++)
+		{
+			r32 Phi = ((PI *  (Parallel + 1)) / (ParallelCount + 1)) - 0.5f*PI;
+			for(u32 Meridian = 0;
+				Meridian < MeridianCount;
+				Meridian++)
+			{
+				r32 Theta = (2.0f*PI *  Meridian) / MeridianCount;
+				r32 X = Sin(Theta)*Cos(Phi);
+				r32 Y = Sin(Phi);
+				r32 Z = -Cos(Theta)*Cos(Phi);
+				vec3 P = Radius*Normalize(vec3(X, Y, Z));
+				PushEntry(&Vertices, P);
+			}
+		}
+		PushEntry(&Vertices, Radius*vec3(0.0f, 1.0f, 0.0f));
+
+		for(u32 Meridian = 0;
+			Meridian < MeridianCount;
+			Meridian++)
+		{
+			AddTriangle(&GlobalDebugDrawInfo.SphereIndices, 0, 
+								   							Meridian + 1, 
+								   							((Meridian + 1) % MeridianCount) + 1);
+		}
+
+		for(u32 Parallel = 0;
+			Parallel < ParallelCount - 1;
+			Parallel++)
+		{
+			for(u32 Meridian = 0;
+				Meridian < MeridianCount;
+				Meridian++)
+			{
+				u32 A0 = (Parallel*MeridianCount + 1) + Meridian;
+				u32 A1 = (Parallel*MeridianCount + 1) + (Meridian + 1) % MeridianCount;
+				u32 B0 = ((Parallel+1)*MeridianCount + 1) + Meridian;
+				u32 B1 = ((Parallel+1)*MeridianCount + 1) + (Meridian + 1) % MeridianCount;
+				AddQuad(&GlobalDebugDrawInfo.SphereIndices, A0, A1, B1, B0);
+			}
+		}
+
+		for(u32 Meridian = 0;
+			Meridian < MeridianCount;
+			Meridian++)
+		{
+			
+			AddTriangle(&GlobalDebugDrawInfo.SphereIndices, Vertices.EntriesCount - 1, 
+								   							((Meridian + 1) % MeridianCount) + (MeridianCount*(ParallelCount - 1) + 1),
+															Meridian + (MeridianCount*(ParallelCount - 1) + 1));
+		}
+
+		glGenVertexArrays(1, &GlobalDebugDrawInfo.SphereVAO);
+		glGenBuffers(1, &GlobalDebugDrawInfo.SphereVBO);
+		glGenBuffers(1, &GlobalDebugDrawInfo.SphereEBO);
+		glBindVertexArray(GlobalDebugDrawInfo.SphereVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, GlobalDebugDrawInfo.SphereVBO);
+		glBufferData(GL_ARRAY_BUFFER, Vertices.EntriesCount*sizeof(vec3), Vertices.Entries, GL_STATIC_DRAW);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, GlobalDebugDrawInfo.SphereEBO);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, GlobalDebugDrawInfo.SphereIndices.EntriesCount*sizeof(u32), 
+					 GlobalDebugDrawInfo.SphereIndices.Entries, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
+		glBindVertexArray(0);
+
+		FreeDynamicArray(&Vertices);
+	}
+
+	// NOTE(georgy): Axes data
+	{
+		r32 AxesVertices[] = 
+		{
+			0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+			0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+
+			0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+			1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+
+			0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+			0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+		};
+
+		glGenVertexArrays(1, &GlobalDebugDrawInfo.AxesVAO);
+		glGenBuffers(1, &GlobalDebugDrawInfo.AxesVBO);
+		glBindVertexArray(GlobalDebugDrawInfo.AxesVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, GlobalDebugDrawInfo.AxesVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(AxesVertices), AxesVertices, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6*sizeof(r32), (void *)0);
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6*sizeof(r32), (void *)(3*sizeof(r32)));
+		glBindVertexArray(0);
+	}
+
+	// NOTE(georgy): Line data
+	{
+		glGenVertexArrays(1, &GlobalDebugDrawInfo.LineVAO);
+		glGenBuffers(1, &GlobalDebugDrawInfo.LineVBO);
+		glBindVertexArray(GlobalDebugDrawInfo.LineVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, GlobalDebugDrawInfo.LineVBO);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
+		glBindVertexArray(0);
+	}
+
+	GlobalDebugDrawInfo.IsInitialized = true;
+}
+
+inline void 
+DEBUGBeginRenderDebugObject(shader *Shader, GLuint *VAO, mat4 Model)
+{
+	if(!GlobalDebugDrawInfo.IsInitialized)
+	{
+		InitializeGlobalDrawInfo();
+	}
+	
+	shader Shaders3D[] = { GlobalDebugDrawInfo.Shader, GlobalDebugDrawInfo.AxesShader};
+	Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), GlobalViewProjection);
+
+	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+	UseShader(*Shader);
+	glBindVertexArray(*VAO);
+	SetMat4(*Shader, "Model", Model);
+}
+
+inline void 
+DEBUGEndRenderDebugObject(void)
+{
+	glBindVertexArray(0);
+	UseShader({0});
+
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);;
+}
+
+internal void
+DEBUGRenderCube(vec3 P, vec3 Scaling, r32 Rotation,
+				vec3 Color = vec3(1.0, 0.0, 0.0))
+{
+	mat4 Model = Translate(P) * Scale(Scaling) * Rotate(Rotation, vec3(0.0f, 1.0f, 0.0f));
+	DEBUGBeginRenderDebugObject(&GlobalDebugDrawInfo.Shader, &GlobalDebugDrawInfo.CubeVAO, Model);
+
+	SetVec3(GlobalDebugDrawInfo.Shader, "Color", Color);
+	glDrawArrays(GL_TRIANGLES, 0, 36);
+
+	DEBUGEndRenderDebugObject();
+}
+
+internal void
+DEBUGRenderSphere(vec3 P, vec3 Scaling, r32 Rotation,
+				  vec3 Color = vec3(1.0, 0.0, 0.0))
+{
+	mat4 Model = Translate(P) * Scale(Scaling) * Rotate(Rotation, vec3(0.0f, 1.0f, 0.0f));
+	DEBUGBeginRenderDebugObject(&GlobalDebugDrawInfo.Shader, &GlobalDebugDrawInfo.SphereVAO, Model);
+
+	SetVec3(GlobalDebugDrawInfo.Shader, "Color", Color);
+	glDrawElements(GL_TRIANGLES, GlobalDebugDrawInfo.SphereIndices.EntriesCount, GL_UNSIGNED_INT, 0);
+
+	DEBUGEndRenderDebugObject();
+}
+
+internal void
+DEBUGRenderAxes(mat4 Transformation)
+{
+	mat4 Model = Transformation;
+	DEBUGBeginRenderDebugObject(&GlobalDebugDrawInfo.AxesShader, &GlobalDebugDrawInfo.AxesVAO, Model);
+	glLineWidth(8.0f);
+
+	glDrawArrays(GL_LINES, 0, 6);
+
+	glLineWidth(1.0f);
+	DEBUGEndRenderDebugObject();
+}
+
+internal void
+DEBUGRenderLine(vec3 FromP, vec3 ToP)
+{
+	DEBUGBeginRenderDebugObject(&GlobalDebugDrawInfo.Shader, &GlobalDebugDrawInfo.LineVAO, Identity());
+	
+	vec3 LineVertices[] = 
+	{
+		FromP,
+		ToP,
+	};
+
+	glBindVertexArray(GlobalDebugDrawInfo.LineVAO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(LineVertices), LineVertices, GL_STATIC_DRAW);
+	glBindVertexArray(0);
+
+	glLineWidth(8.0f);
+
+	glDrawArrays(GL_LINES, 0, 2);
+
+	glLineWidth(1.0f);
+	DEBUGEndRenderDebugObject();
+}
+
+inline void
+DEBUGRenderPoint(vec3 P, vec3 Color = vec3(1.0, 0.0, 0.0))
+{
+	DEBUGRenderSphere(P, vec3(0.1f, 0.1f, 0.1f), 0.0f, Color);
+}
