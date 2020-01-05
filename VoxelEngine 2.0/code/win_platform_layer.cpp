@@ -618,6 +618,11 @@ WinBeginRecordingInput(win_state *WinState)
 					0, 0, CREATE_ALWAYS, 0, 0);
 
 	CopyMemory(WinState->RecordStateMemory, WinState->GameMemory, WinState->GameMemorySize);
+	
+	DEBUGGlobalPlaybackInfo.RecordPhaseStarted = true;
+	DEBUGGlobalPlaybackInfo.RecordPhase = true;
+	DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhaseCount = 0;
+	DEBUGGlobalPlaybackInfo.ChunksUnloadedDuringRecordPhaseCount = 0;
 }
 
 internal void
@@ -635,6 +640,8 @@ WinEndRecordingInput(win_state *WinState)
 	CloseHandle(WinState->RecordInputFile);
 	WinState->RecordInputFile = 0;
 	WinState->InputRecording = false;
+
+	DEBUGGlobalPlaybackInfo.RecordPhase = false;
 }
 
 internal void
@@ -648,7 +655,7 @@ WinBeginInputPlayback(win_state *WinState)
 					0, 0, OPEN_EXISTING, 0, 0);
 
 	CopyMemory(WinState->GameMemory, WinState->RecordStateMemory, WinState->GameMemorySize);
-	DEBUGGlobalPlaybackRefresh = true;
+	DEBUGGlobalPlaybackInfo.RefreshNow = true;
 }
 
 internal void
@@ -722,7 +729,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 			game_memory GameMemory = {};
 			GameMemory.PermanentStorageSize = Gigabytes(2);
-			GameMemory.TemporaryStorageSize = Megabytes(256);
+			GameMemory.TemporaryStorageSize = Megabytes(128);
 			GameMemory.DebugStorageSize = Megabytes(64);
 			WinState.GameMemorySize = GameMemory.PermanentStorageSize + GameMemory.TemporaryStorageSize + GameMemory.DebugStorageSize;
 			WinState.GameMemory = VirtualAlloc(0, WinState.GameMemorySize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -877,6 +884,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 									{
 										if(!WinState.InputPlayback)
 										{
+											WinCompleteAllWork(GameMemory.JobSystemQueue);
 											if(!WinState.InputRecording)
 											{
 												WinBeginRecordingInput(&WinState);

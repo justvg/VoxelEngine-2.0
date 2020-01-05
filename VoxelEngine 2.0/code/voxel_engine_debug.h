@@ -186,7 +186,25 @@ struct timed_block
     }
 };
 
-global_variable bool32 DEBUGGlobalPlaybackRefresh;
+struct record_playback_info
+{
+    bool32 RecordPhaseStarted;
+    // NOTE(georgy): These are sim bounds when we start recording phase. 
+    // They are needed to know what chunks to update when we finish recording phase
+    world_position MinChunkP;
+    world_position MaxChunkP;
+
+    bool32 RecordPhase;
+    bool32 RefreshNow;
+
+    u32 ChunksModifiedDuringRecordPhaseCount;
+    chunk *ChunksModifiedDuringRecordPhase[256];
+
+    u32 ChunksUnloadedDuringRecordPhaseCount;
+    chunk *ChunksUnloadedDuringRecordPhase[2048];
+};
+
+global_variable record_playback_info DEBUGGlobalPlaybackInfo;
 
 global_variable bool32 DEBUGGlobalShowDebugDrawings;
 global_variable bool32 DEBUGGlobalRenderShadows;

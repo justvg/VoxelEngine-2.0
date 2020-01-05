@@ -66,6 +66,14 @@ PushSize(stack_allocator *Allocator, u64 Size, u64 Alignment = 16)
 	return(Result);
 }
 
+inline void
+SubArena(stack_allocator *Result, stack_allocator *Allocator, u64 Size, u64 Alignment = 16)
+{
+	Result->Size = Size;
+	Result->Base = (u8 *)PushSize(Allocator, Size, Alignment);
+	Result->Used = 0;
+}
+
 inline temporary_memory
 BeginTemporaryMemory(stack_allocator *Allocator)
 {
@@ -165,6 +173,8 @@ struct game_state
 
 	stack_allocator WorldAllocator;
 	world World;	
+
+	stack_allocator FundamentalTypesAllocator;
 
 	u32 LastStoredCollisionRule;
 	pairwise_collision_rule CollisionRules[256];

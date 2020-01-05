@@ -107,6 +107,15 @@ BeginSimulation(game_state *GameState, world_position Origin, rect3 Bounds,
 	world_position MaxChunkP = MapIntoChunkSpace(World, &Origin, Bounds.Max);
 	MaxChunkP.ChunkY = MAX_CHUNKS_Y;
 
+#if VOXEL_ENGINE_INTERNAL
+	if(DEBUGGlobalPlaybackInfo.RecordPhaseStarted)
+	{
+		DEBUGGlobalPlaybackInfo.MinChunkP = MinChunkP;
+		DEBUGGlobalPlaybackInfo.MaxChunkP = MaxChunkP;
+		DEBUGGlobalPlaybackInfo.RecordPhaseStarted = false;
+	}
+#endif
+
 	// NOTE(georgy): We add one extra boundary in Z and X to have ambient occlusion in all visible chunks
 	for(i32 ChunkZ = MinChunkP.ChunkZ - 1;
 		ChunkZ <= MaxChunkP.ChunkZ + 1;
@@ -604,8 +613,7 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 }
 
 internal void
-CameraCollisionDetection(world *World, stack_allocator *WorldAllocator, 
-						 camera *Camera, world_position *OriginP)
+CameraCollisionDetection(world *World, camera *Camera, world_position *OriginP)
 {
 	TIME_BLOCK;
 	r32 NearDistance = Camera->NearDistance;

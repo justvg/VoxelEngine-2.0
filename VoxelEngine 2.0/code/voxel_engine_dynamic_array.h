@@ -22,6 +22,7 @@ InitializeDynamicArray(dynamic_array_vec3 *Array, u32 InitialMaxEntriesCount = I
 	Array->MaxEntriesCount = InitialMaxEntriesCount;
 	Array->EntriesCount = 0;
 	Array->Entries = (vec3 *)PlatformAllocateMemory(Array->MaxEntriesCount * sizeof(vec3));
+	Assert(Array->Entries);
 	Assert(((u64)Array->Entries & 15) == 0);
 }
 
@@ -89,6 +90,7 @@ InitializeDynamicArray(dynamic_array_u32 *Array, u32 InitialMaxEntriesCount = IN
 	Array->MaxEntriesCount = InitialMaxEntriesCount;
 	Array->EntriesCount = 0;
 	Array->Entries = (u32 *)PlatformAllocateMemory(Array->MaxEntriesCount * sizeof(u32));
+	Assert(Array->Entries);
 	Assert(((u64)Array->Entries & 15) == 0);
 }
 

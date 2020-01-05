@@ -848,6 +848,16 @@ UnloadChunk(world *World, chunk *Chunk)
 		Chunk->IsLoaded = false;
 	}
 
+#if VOXEL_ENGINE_INTERNAL
+	Assert(DEBUGGlobalPlaybackInfo.ChunksUnloadedDuringRecordPhaseCount < ArrayCount(DEBUGGlobalPlaybackInfo.ChunksUnloadedDuringRecordPhase));
+	if(DEBUGGlobalPlaybackInfo.RecordPhase)
+	{
+		DEBUGGlobalPlaybackInfo.ChunksUnloadedDuringRecordPhase[DEBUGGlobalPlaybackInfo.ChunksUnloadedDuringRecordPhaseCount++] = 
+			Chunk;
+	}
+#endif
+
+
 	// TODO(georgy): Should I free the chunk itself and than use its memory for new chunk in GetChunk? As I do e.g. with BlockInfo
 }
 
@@ -881,13 +891,12 @@ UnloadChunks(world *World, world_position *MinChunkP, world_position *MaxChunkP)
 	}
 }
 
-internal void
-UpdateChunk(world *World, chunk *Chunk)
+internal bool32
+CheckChunkEmptiness(chunk *Chunk)
 {
-	block *Blocks = Chunk->BlocksInfo->Blocks;
-	vec3 *Colors = Chunk->BlocksInfo->Colors;
+	bool32 IsNotEmpty = false;
 
-	Chunk->IsNotEmpty = false;
+	block *Blocks = Chunk->BlocksInfo->Blocks;
 	for(i32 BlockZ = 0;
 		BlockZ < CHUNK_DIM;
 		BlockZ++)
@@ -902,28 +911,26 @@ UpdateChunk(world *World, chunk *Chunk)
 			{
 				if(IsBlockActive(Blocks, BlockX, BlockY, BlockZ))
 				{
-					Chunk->IsNotEmpty = true;
+					IsNotEmpty = true;
 					break;
 				}
 			}
 		}
 	}
 
+	return(IsNotEmpty);
+}
+
+internal void
+UpdateChunk(world *World, chunk *Chunk)
+{
+	Chunk->IsNotEmpty = CheckChunkEmptiness(Chunk);
+	
 	if(Chunk->IsNotEmpty)
 	{
-#if 0
 		Chunk->VerticesP.EntriesCount = 0;
 		Chunk->VerticesNormals.EntriesCount = 0;
 		Chunk->VerticesColors.EntriesCount = 0;
-#else
-		// NOTE(georgy): This path is used for record and playback feature!
-		FreeDynamicArray(&Chunk->VerticesP);
-		FreeDynamicArray(&Chunk->VerticesNormals);
-		FreeDynamicArray(&Chunk->VerticesColors);
-		InitializeDynamicArray(&Chunk->VerticesP);
-		InitializeDynamicArray(&Chunk->VerticesNormals);
-		InitializeDynamicArray(&Chunk->VerticesColors);
-#endif
 		GenerateChunkVertices(World, Chunk);
 
 		glBindVertexArray(Chunk->VAO);
@@ -937,6 +944,22 @@ UpdateChunk(world *World, chunk *Chunk)
 	}
 
 	Chunk->IsModified = false;
+
+#if VOXEL_ENGINE_INTERNAL
+	if(DEBUGGlobalPlaybackInfo.RecordPhase)
+	{
+		if((Chunk->X >= DEBUGGlobalPlaybackInfo.MinChunkP.ChunkX) &&
+		   (Chunk->Z >= DEBUGGlobalPlaybackInfo.MinChunkP.ChunkZ) &&
+		   (Chunk->X <= DEBUGGlobalPlaybackInfo.MaxChunkP.ChunkX) &&
+		   (Chunk->Z <= DEBUGGlobalPlaybackInfo.MaxChunkP.ChunkZ))
+		{
+			Assert(DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhaseCount < 
+					ArrayCount(DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhase));
+			DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhase[DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhaseCount++] = 
+				Chunk;
+		}
+	}
+#endif
 }
 
 internal chunk *

@@ -7,7 +7,7 @@
 internal sim_entity_collision_volume *
 MakeSimpleCollision(game_state *GameState, vec3 Dim)
 {
-	sim_entity_collision_volume *Result = PushStruct(&GameState->WorldAllocator, sim_entity_collision_volume);
+	sim_entity_collision_volume *Result = PushStruct(&GameState->FundamentalTypesAllocator, sim_entity_collision_volume);
 
 	Result->Dim = Dim;
 	Result->OffsetP = vec3(0.0f, 0.5f*Dim.y(), 0.0f);
@@ -166,7 +166,7 @@ AddParticlesToEntity(game_state *GameState, stored_entity *Entity, particle_emit
 	if(!Entity->Sim.Particles)
 	{
 		// TODO(georgy): Do I want to use _world_ allocator here?
-		Entity->Sim.Particles = PushStruct(&GameState->WorldAllocator, particle_emitter);
+		Entity->Sim.Particles = PushStruct(&GameState->FundamentalTypesAllocator, particle_emitter);
 		particle_emitter *EntityParticles = Entity->Sim.Particles;
 		EntityParticles->Info = Info;
 		EntityParticles->TextureType = TextureType;
@@ -263,6 +263,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 
 		InitializeStackAllocator(&GameState->WorldAllocator, Memory->PermanentStorageSize - sizeof(game_state),
 															 (u8 *)Memory->PermanentStorage + sizeof(game_state));
+		SubArena(&GameState->FundamentalTypesAllocator, &GameState->WorldAllocator, Megabytes(64));
 
 		GameState->StoredEntityCount = 0;
 
@@ -641,28 +642,45 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 
 
 #if VOXEL_ENGINE_INTERNAL
-	if(DEBUGGlobalPlaybackRefresh)
+	if(DEBUGGlobalPlaybackInfo.RefreshNow)
 	{
-		for(u32 ChunkHashBucket = 0;
-		    (ChunkHashBucket < ArrayCount(GameState->World.ChunkHash));
-			ChunkHashBucket++)
+		for(u32 ChunkIndex = 0;
+			ChunkIndex < DEBUGGlobalPlaybackInfo.ChunksUnloadedDuringRecordPhaseCount;
+			ChunkIndex++)
 		{
-			chunk *Chunk = GameState->World.ChunkHash[ChunkHashBucket];
-			while(Chunk)
+			chunk *Chunk = DEBUGGlobalPlaybackInfo.ChunksUnloadedDuringRecordPhase[ChunkIndex];
+			if(Chunk->IsSetupBlocks)
 			{
-				if(Chunk->IsRecentlyUsed)
+				Chunk->IsNotEmpty = CheckChunkEmptiness(Chunk);
+
+				if(Chunk->IsNotEmpty)
 				{
-					if(Chunk->IsSetupBlocks && Chunk->IsFullySetup && Chunk->IsLoaded)
+					if(Chunk->IsFullySetup)
 					{
-						UpdateChunk(&GameState->World, Chunk);
+						InitializeDynamicArray(&Chunk->VerticesP);
+						InitializeDynamicArray(&Chunk->VerticesNormals);
+						InitializeDynamicArray(&Chunk->VerticesColors);
+
+						GenerateChunkVertices(&GameState->World, Chunk);
+
+						if(Chunk->IsLoaded)
+						{
+							LoadChunk(Chunk);
+						}
 					}
 				}
-
-				Chunk = Chunk->Next;
 			}
 		}
 
-		DEBUGGlobalPlaybackRefresh = false;
+		for(u32 ChunkIndex = 0;
+			ChunkIndex < DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhaseCount;
+			ChunkIndex++)
+		{
+			chunk *Chunk = DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhase[ChunkIndex];
+			UpdateChunk(&GameState->World, Chunk);
+		}
+
+		DEBUGGlobalPlaybackInfo.RefreshNow = false;
 	}
 #endif
 
@@ -675,7 +693,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 
 	Camera->RotationMatrix = RotationMatrixFromDirection(Camera->OffsetFromHero);
 #if !defined(VOXEL_ENGINE_DEBUG_BUILD)
-	CameraCollisionDetection(&GameState->World, &GameState->WorldAllocator, Camera, &GameState->Hero.Entity->P);
+	CameraCollisionDetection(&GameState->World, Camera, &GameState->Hero.Entity->P);
 #endif
 	SetupChunksBlocks(&GameState->World, &GameState->WorldAllocator, TempState);								
 	SetupChunksVertices(&GameState->World, TempState);
