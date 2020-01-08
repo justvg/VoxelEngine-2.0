@@ -115,9 +115,6 @@ DEBUGGetTextDim(debug_state *DebugState, char *String)
 	return(Result);
 }
 
-
-global_variable debug_record GlobalDebugRecords[__COUNTER__]; 
-
 inline game_assets *
 DEBUGGetGameAssets(game_memory *Memory)
 {
@@ -215,13 +212,6 @@ GetDebugThread(debug_state *DebugState, u32 ID)
 	return(Result);
 }
 
-inline debug_record *
-GetRecordFrom(open_debug_block *Block)
-{
-	debug_record *Result = Block ? Block->Record : 0;
-	return(Result);
-}
-
 internal void
 DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 {
@@ -230,7 +220,6 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 		EventIndex++)
 	{
 		debug_event *Event = GlobalDebugTable.EventsArrays[EventArrayIndex] + EventIndex;
-		debug_record *Record = GlobalDebugRecords + Event->DebugRecordIndex;
 
 		if(Event->Type == DebugEvent_SaveDebugValue)
 		{
@@ -261,7 +250,6 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 					case DebugEvent_BeginBlock:
 					{
 						open_debug_block *DebugBlock = PushStruct(&DebugState->Allocator, open_debug_block);
-						DebugBlock->Record = Record;
 						DebugBlock->Event = Event;
 
 						DebugBlock->Parent = Thread->OpenDebugBlocks;
@@ -273,17 +261,17 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 						if(Thread->OpenDebugBlocks)
 						{
 							open_debug_block *MatchingBlock = Thread->OpenDebugBlocks;
-							if((MatchingBlock->Event->DebugRecordIndex == Event->DebugRecordIndex) &&
-							   (MatchingBlock->Event->ThreadID == Event->ThreadID))
+							if(MatchingBlock->Event->ThreadID == Event->ThreadID)
 							{
-								if(GetRecordFrom(MatchingBlock->Parent) == GlobalDebugTable.ProfileBlockRecord)
+								char *MatchName = MatchingBlock->Parent ? MatchingBlock->Parent->Event->Name : 0;
+								if(MatchName == GlobalDebugTable.ProfileBlockName)
 								{
 									debug_region *Region = DebugState->CollationFrame->Regions + DebugState->CollationFrame->RegionsCount++;
-									Region->Record = Record;
+									Region->Event = MatchingBlock->Event;
 									Region->StartCyclesInFrame = (r32)(MatchingBlock->Event->Clock - DebugState->CollationFrame->BeginClock);
 									Region->EndCyclesInFrame = (r32)(Event->Clock - DebugState->CollationFrame->BeginClock);
 									Region->LaneIndex = Thread->LaneIndex;
-									Region->ColorIndex = Event->DebugRecordIndex;
+									Region->ColorIndex = (u32)MatchingBlock->Event->Name;
 								}
 
 								Thread->OpenDebugBlocks = MatchingBlock->Parent;
@@ -341,7 +329,7 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 	vec2 StartP = vec2(0.5f*-DebugState->BufferDim.x, DebugState->TextP.y - LaneHeight - BarSpacing);
 	r32 MinY = StartP.y;
 
-	debug_record *HotRecord = 0;
+	debug_event *HotBlock = 0;
 
 	u32 MaxFrameCount = DebugState->FrameCount > 0 ? DebugState->FrameCount - 1 : 0;
 	u32 FrameCount = MaxFrameCount > 8 ? 8 : MaxFrameCount;
@@ -376,16 +364,16 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 				rect2 RegionRect = RectMinMax(ScreenP, ScreenP + vec2(PxEnd - PxStart, LaneHeight));
 				if(IsInRect(RegionRect, MouseP))
 				{
-					debug_record *Record = Region->Record;
+					debug_event *Block = Region->Event;
 					char Buffer[256];
 					_snprintf_s(Buffer, sizeof(Buffer), "%s(%u): %ucy", 
-								Record->BlockName, Record->LineNumber, 
+								Block->Name, Block->LineNumber,
 								(u32)(Region->EndCyclesInFrame - Region->StartCyclesInFrame));
 
 					DEBUGTextLineAt(DebugState, Buffer, 
 									vec2(ScreenP + vec2(TableWidth - PxStart + BarSpacing, LaneHeight)));
 
-					HotRecord = Record;
+					HotBlock = Block;
 				}
 			}
 		}
@@ -413,13 +401,13 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 
 		if(WasDown(&Input->MouseLeft))
 		{
-			if(HotRecord)
+			if(HotBlock)
 			{
-				GlobalDebugTable.ProfileBlockRecord = HotRecord;
+				GlobalDebugTable.ProfileBlockName = HotBlock->Name;
 			}
 			else 
 			{
-				GlobalDebugTable.ProfileBlockRecord = 0;	
+				GlobalDebugTable.ProfileBlockName = 0;	
 			}
 
 			RestartCollation(DebugState);

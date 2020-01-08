@@ -15,13 +15,11 @@ enum debug_event_type
 };
 struct debug_event
 {
-    // TODO(georgy): Get rid of debug_record and use these fields
-    // char *FileName;
+    char *FileName;
     char *Name;
-    // u32 LineNumber;
+    u32 LineNumber;
 
     u64 Clock;
-    u16 DebugRecordIndex;
     u8 Type;
 
     union 
@@ -29,20 +27,13 @@ struct debug_event
         debug_event *Value_debug_event;
         r32 Value_r32;
         bool32 Value_bool32;
+
         u16 ThreadID;
     };
 };
 
-struct debug_record
-{
-    char *FileName;
-    char *BlockName;
-    u32 LineNumber;
-};
-
 struct open_debug_block
 {
-    debug_record *Record;
     debug_event *Event;
 
     open_debug_block *Parent;
@@ -50,7 +41,7 @@ struct open_debug_block
 
 struct debug_region
 {
-    debug_record *Record;
+    debug_event *Event;
     r32 StartCyclesInFrame;
     r32 EndCyclesInFrame;
 
@@ -89,10 +80,9 @@ struct debug_table
     u32 EventsCounts[DEBUG_EVENTS_ARRAYS_COUNT];
     debug_event EventsArrays[DEBUG_EVENTS_ARRAYS_COUNT][MAX_DEBUG_EVENT_COUNT];
 
-    debug_record *ProfileBlockRecord;
+    char *ProfileBlockName;
 };
 
-debug_record GlobalDebugRecords[]; 
 global_variable debug_table GlobalDebugTable;
 
 struct debug_state
@@ -140,7 +130,7 @@ struct debug_state
 };
 
 inline debug_event *
-RecordDebugEvent(u16 DebugRecordIndex, debug_event_type Type)
+RecordDebugEvent(debug_event_type Type, char *FileName, char *Name, u32 LineNumber)
 {
 	debug_event *Event = 0;
     if(!GlobalDebugTable.ProfilePause)
@@ -150,8 +140,10 @@ RecordDebugEvent(u16 DebugRecordIndex, debug_event_type Type)
         u32 EventIndex = ArrayIndex_EventIndex & 0xFFFFFFFF;
         Assert(EventIndex < MAX_DEBUG_EVENT_COUNT);
         Event = GlobalDebugTable.EventsArrays[ArrayIndex] + EventIndex;
+        Event->FileName = FileName;
+        Event->Name = Name;
+        Event->LineNumber = LineNumber;
         Event->Clock = __rdtsc();
-        Event->DebugRecordIndex = DebugRecordIndex;
         Event->ThreadID = GetThreadID();
         Event->Type = Type;
 	}
@@ -159,51 +151,34 @@ RecordDebugEvent(u16 DebugRecordIndex, debug_event_type Type)
 	return(Event);
 }
 
-#define TIME_BLOCK__(Number) timed_block TimedBlock_##Number(__COUNTER__, __FILE__, __FUNCTION__, __LINE__); 
+#define TIME_BLOCK__(Number) timed_block TimedBlock_##Number(__FILE__, __FUNCTION__, __LINE__); 
 #define TIME_BLOCK_(Number) TIME_BLOCK__(Number)
 #define TIME_BLOCK TIME_BLOCK_(__LINE__)
 
 #define FRAME_MARKER(MSElapsedInit) \
-   {int Counter = __COUNTER__; \
-    debug_record *Record = GlobalDebugRecords + Counter; \
-    Record->FileName = __FILE__; \
-    Record->BlockName = "Frame Marker"; \
-    Record->LineNumber = __LINE__; \
-    debug_event *Event = RecordDebugEvent(Counter, DebugEvent_FrameMarker); \
+   {debug_event *Event = RecordDebugEvent(DebugEvent_FrameMarker, __FILE__, "Frame Marker", __LINE__); \
     if(Event) Event->Value_r32 = MSElapsedInit;}
 
-#define BEGIN_BLOCK_(CounterInit, FileNameInit, BlockNameInit, LineNumberInit) \
-   {debug_record *Record = GlobalDebugRecords + CounterInit; \
-    Record->FileName = FileNameInit; \
-    Record->BlockName = BlockNameInit; \
-    Record->LineNumber = LineNumberInit; \
-    RecordDebugEvent(CounterInit, DebugEvent_BeginBlock);}
+#define BEGIN_BLOCK_(FileName, BlockName, LineNumber) \
+   {RecordDebugEvent(DebugEvent_BeginBlock, FileName, BlockName, LineNumber);}
 
-#define END_BLOCK_(CounterInit, ...) \
-   {debug_record *Record = GlobalDebugRecords + CounterInit; \
-    RecordDebugEvent(CounterInit, DebugEvent_EndBlock);}
+#define END_BLOCK_(...) \
+   {RecordDebugEvent(DebugEvent_EndBlock, __FILE__, "End Block", __LINE__);}
 
-#define BEGIN_BLOCK(Name) \
-    u32 Counter##Name = __COUNTER__; \
-    BEGIN_BLOCK_(Counter##Name, __FILE__, #Name, __LINE__)
+#define BEGIN_BLOCK(Name) BEGIN_BLOCK_(__FILE__, #Name, __LINE__)
 
-#define END_BLOCK(Name) \
-    END_BLOCK_(Counter##Name, Name)
+#define END_BLOCK(Name) END_BLOCK_(Name)
 
 struct timed_block
 {
-    u32 Counter;
-    
-    timed_block(u32 CounterInit, char *FileName, char *BlockName, u32 LineNumber)
+    timed_block(char *FileName, char *BlockName, u32 LineNumber)
     {
-        Counter = CounterInit;
-
-        BEGIN_BLOCK_(Counter, FileName, BlockName, LineNumber);
+        BEGIN_BLOCK_(FileName, BlockName, LineNumber);
     };
 
     ~timed_block()
     {
-        END_BLOCK_(Counter);
+        END_BLOCK_();
     }
 };
 
@@ -227,26 +202,28 @@ struct record_playback_info
 
 global_variable record_playback_info DEBUGGlobalPlaybackInfo;
 
-inline debug_event DEBUGInitializeValue(debug_event *SubEvent, debug_event_type Type, char *Name)
+inline debug_event DEBUGInitializeValue(debug_event *SubEvent, debug_event_type Type, 
+                                        char *FileName, char *Name, u32 LineNumber)
 {
-    debug_event *Event = RecordDebugEvent(0, DebugEvent_SaveDebugValue);
+    debug_event *Event = RecordDebugEvent(DebugEvent_SaveDebugValue, 0, "", 0);
     Event->Value_debug_event = SubEvent;
 
+    SubEvent->FileName = FileName;
     SubEvent->Name = Name;
+    SubEvent->LineNumber = LineNumber;
     SubEvent->Clock = 0;
-    SubEvent->DebugRecordIndex = 0;
     SubEvent->Type = Type;
 
 	return(*SubEvent);
 }
 
 #define DEBUG_IF(Name) \
-local_persist debug_event DebugEvent##Name = DEBUGInitializeValue(&DebugEvent##Name, (DebugEvent##Name.Value_bool32 = GlobalConstants_##Name, DebugEvent_bool32), #Name); \
+local_persist debug_event DebugEvent##Name = DEBUGInitializeValue(&DebugEvent##Name, (DebugEvent##Name.Value_bool32 = GlobalConstants_##Name, DebugEvent_bool32), __FILE__, #Name, __LINE__); \
 bool32 Name = DebugEvent##Name.Value_bool32; \
 if(Name)
 
 #define DEBUG_VARIABLE(type, Name) \
-local_persist debug_event DebugEvent##Name = DEBUGInitializeValue(&DebugEvent##Name, (DebugEvent##Name.Value_##type = GlobalConstants_##Name, DebugEvent_##type), #Name); \
+local_persist debug_event DebugEvent##Name = DEBUGInitializeValue(&DebugEvent##Name, (DebugEvent##Name.Value_##type = GlobalConstants_##Name, DebugEvent_##type), __FILE__, #Name, __LINE__); \
 type Name = DebugEvent##Name.Value_##type; 
 
 #else 
