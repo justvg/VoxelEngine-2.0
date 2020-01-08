@@ -130,9 +130,6 @@ struct game_input
 			button MoveLeft;
 			button MoveUp;
 
-			button NumOne;
-			button NumTwo;
-
 			button Pause;
 		};
 	};
@@ -143,6 +140,15 @@ WasDown(button *Button)
 {
 	bool32 Result = (Button->HalfTransitionCount > 1) ||
 					((Button->HalfTransitionCount == 1) && Button->EndedDown);
+
+	return(Result);
+}
+
+inline bool32
+WasUp(button *Button)
+{
+	bool32 Result = (Button->HalfTransitionCount > 1) ||
+					((Button->HalfTransitionCount == 1) && !Button->EndedDown);
 
 	return(Result);
 }

@@ -7,16 +7,28 @@ enum debug_event_type
     DebugEvent_FrameMarker,
     DebugEvent_BeginBlock,
     DebugEvent_EndBlock,
+
+    DebugEvent_SaveDebugValue,
+
+    DebugEvent_bool32,
+    DebugEvent_r32,
 };
 struct debug_event
 {
+    // TODO(georgy): Get rid of debug_record and use these fields
+    // char *FileName;
+    char *Name;
+    // u32 LineNumber;
+
     u64 Clock;
     u16 DebugRecordIndex;
     u8 Type;
 
     union 
     {
-        r32 MSElapsed;
+        debug_event *Value_debug_event;
+        r32 Value_r32;
+        bool32 Value_bool32;
         u16 ThreadID;
     };
 };
@@ -105,6 +117,13 @@ struct debug_state
     vec2 GlyphVertices[4];
 	GLuint GlyphVAO, GlyphVBO;
 
+    u32 ValuesCount;
+    debug_event *ValueEvents[64];
+
+    debug_event *NextHotInteraction;
+    debug_event *HotInteraction;
+    debug_event *ActiveInteraction;
+
     bool32 ProfilePause;
 
     u32 FrameCount;
@@ -116,6 +135,8 @@ struct debug_state
 
     u32 DebugRegionsCount;
     debug_region *DebugRegions;
+
+    vec2 LastMouseP;
 };
 
 inline debug_event *
@@ -149,7 +170,7 @@ RecordDebugEvent(u16 DebugRecordIndex, debug_event_type Type)
     Record->BlockName = "Frame Marker"; \
     Record->LineNumber = __LINE__; \
     debug_event *Event = RecordDebugEvent(Counter, DebugEvent_FrameMarker); \
-    if(Event) Event->MSElapsed = MSElapsedInit;}
+    if(Event) Event->Value_r32 = MSElapsedInit;}
 
 #define BEGIN_BLOCK_(CounterInit, FileNameInit, BlockNameInit, LineNumberInit) \
    {debug_record *Record = GlobalDebugRecords + CounterInit; \
@@ -206,9 +227,27 @@ struct record_playback_info
 
 global_variable record_playback_info DEBUGGlobalPlaybackInfo;
 
-global_variable bool32 DEBUGGlobalShowDebugDrawings;
-global_variable bool32 DEBUGGlobalRenderShadows;
-global_variable bool32 DEBUGGlobalShowProfiling;
+inline debug_event DEBUGInitializeValue(debug_event *SubEvent, debug_event_type Type, char *Name)
+{
+    debug_event *Event = RecordDebugEvent(0, DebugEvent_SaveDebugValue);
+    Event->Value_debug_event = SubEvent;
+
+    SubEvent->Name = Name;
+    SubEvent->Clock = 0;
+    SubEvent->DebugRecordIndex = 0;
+    SubEvent->Type = Type;
+
+	return(*SubEvent);
+}
+
+#define DEBUG_IF(Name) \
+local_persist debug_event DebugEvent##Name = DEBUGInitializeValue(&DebugEvent##Name, (DebugEvent##Name.Value_bool32 = GlobalConstants_##Name, DebugEvent_bool32), #Name); \
+bool32 Name = DebugEvent##Name.Value_bool32; \
+if(Name)
+
+#define DEBUG_VARIABLE(type, Name) \
+local_persist debug_event DebugEvent##Name = DEBUGInitializeValue(&DebugEvent##Name, (DebugEvent##Name.Value_##type = GlobalConstants_##Name, DebugEvent_##type), #Name); \
+type Name = DebugEvent##Name.Value_##type; 
 
 #else 
 
@@ -221,8 +260,11 @@ global_variable bool32 DEBUGGlobalShowProfiling;
 #define BEGIN_BLOCK(...)
 #define END_BLOCK(...)
 
-global_variable bool32 DEBUGGlobalShowDebugDrawings;
-global_variable bool32 DEBUGGlobalRenderShadows = true;
-global_variable bool32 DEBUGGlobalShowProfiling;
+#define DEBUG_IF(Name) \
+bool32 Name = GlobalConstants_##Name; \
+if(Name)
+
+#define DEBUG_VARIABLE(type, Name) \
+type Name = GlobalConstants_##Name; 
 
 #endif

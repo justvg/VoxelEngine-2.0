@@ -1,15 +1,15 @@
 #include "voxel_engine_debug.h"
 
-struct debug_render_text_line_result
+enum debug_text_op
 {
-	rect2 ScreenRegion;
+	DEBUGTextOp_Render,
+	DEBUGTextOp_GetRect,
 };
-internal debug_render_text_line_result
-DEBUGRenderTextLine(debug_state *DebugState, char *String, 
-					bool32 RenderAtP = false, vec2 P = vec2(0.0f, 0.0f))
+internal rect2
+DEBUGTextLineOperation(debug_state *DebugState, debug_text_op Op, char *String, 
+					   vec2 ScreenP)
 {
-	debug_render_text_line_result Result = {};
-	Result.ScreenRegion = RectMinMax(vec2(FLT_MAX, FLT_MAX), vec2(-FLT_MAX, -FLT_MAX));
+	rect2 Result = RectMinMax(vec2(FLT_MAX, FLT_MAX), vec2(-FLT_MAX, -FLT_MAX));
 	if(DebugState->Font)
 	{
 		loaded_font *Font = DebugState->Font;
@@ -21,7 +21,6 @@ DEBUGRenderTextLine(debug_state *DebugState, char *String,
 
 		r32 FontScale = DebugState->FontScale;
 
-		vec2 ScreenP = RenderAtP ? P : vec2(-0.5f*DebugState->BufferDim.x, DebugState->TextP.y);
 		ScreenP.y -= FontScale * Font->AscenderHeight;
 
 		r32 TextMinY = ScreenP.y;
@@ -36,44 +35,46 @@ DEBUGRenderTextLine(debug_state *DebugState, char *String,
 			{
 				loaded_texture *Glyph = GetBitmapForGlyph(Font, Character);
 
-				vec2 LeftBotCornerP = ScreenP - vec2(0.0f, Glyph->AlignPercentageY*FontScale*Glyph->Height);
-				for(u32 GlyphVertexIndex = 0;
-					GlyphVertexIndex < ArrayCount(DebugState->GlyphVertices);
-					GlyphVertexIndex++)
+				if(Op == DEBUGTextOp_GetRect)
 				{
-					vec2 P = LeftBotCornerP + FontScale*Hadamard(vec2i(Glyph->Width, Glyph->Height),
-															 DebugState->GlyphVertices[GlyphVertexIndex]);
-					if(Result.ScreenRegion.Min.x > P.x)
+					vec2 LeftBotCornerP = ScreenP - vec2(0.0f, Glyph->AlignPercentageY*FontScale*Glyph->Height);
+					for(u32 GlyphVertexIndex = 0;
+						GlyphVertexIndex < ArrayCount(DebugState->GlyphVertices);
+						GlyphVertexIndex++)
 					{
-						Result.ScreenRegion.Min.x = P.x;
-					}
-					if(Result.ScreenRegion.Min.y > P.y)
-					{
-						Result.ScreenRegion.Min.y = P.y;
-					}
-					if(Result.ScreenRegion.Max.x < P.x)
-					{
-						Result.ScreenRegion.Max.x = P.x;
-					}
-					if(Result.ScreenRegion.Max.y < P.y)
-					{
-						Result.ScreenRegion.Max.y = P.y;
+						vec2 P = LeftBotCornerP + FontScale*Hadamard(vec2i(Glyph->Width, Glyph->Height),
+																DebugState->GlyphVertices[GlyphVertexIndex]);
+						if(Result.Min.x > P.x)
+						{
+							Result.Min.x = P.x;
+						}
+						if(Result.Min.y > P.y)
+						{
+							Result.Min.y = P.y;
+						}
+						if(Result.Max.x < P.x)
+						{
+							Result.Max.x = P.x;
+						}
+						if(Result.Max.y < P.y)
+						{
+							Result.Max.y = P.y;
+						}
 					}
 				}
+				else
+				{
+					Assert(Op == DEBUGTextOp_Render);
 
-				SetVec2(DebugState->GlyphShader, "ScreenP", ScreenP);
-				SetVec3(DebugState->GlyphShader, "WidthHeightScale", vec3((r32)Glyph->Width, (r32)Glyph->Height, FontScale));
-				SetFloat(DebugState->GlyphShader, "AlignPercentageY", Glyph->AlignPercentageY);
-				glBindTexture(GL_TEXTURE_2D, Glyph->TextureID);
-				glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+					SetVec2(DebugState->GlyphShader, "ScreenP", ScreenP);
+					SetVec3(DebugState->GlyphShader, "WidthHeightScale", vec3((r32)Glyph->Width, (r32)Glyph->Height, FontScale));
+					SetFloat(DebugState->GlyphShader, "AlignPercentageY", Glyph->AlignPercentageY);
+					glBindTexture(GL_TEXTURE_2D, Glyph->TextureID);
+					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+				}
 			}
 
 			ScreenP.x += FontScale*GetHorizontalAdvanceFor(Font, Character, NextCharacter);
-		}
-
-		if(!RenderAtP)
-		{
-			DebugState->TextP = vec2(-0.5f*DebugState->BufferDim.x, Result.ScreenRegion.Min.y);
 		}
 
 		glEnable(GL_DEPTH_TEST);
@@ -83,6 +84,37 @@ DEBUGRenderTextLine(debug_state *DebugState, char *String,
 
 	return(Result);
 }
+
+inline void
+DEBUGTextLine(debug_state *DebugState, char *String)
+{
+	vec2 ScreenP = vec2(-0.5f*DebugState->BufferDim.x, DebugState->TextP.y);
+	DEBUGTextLineOperation(DebugState, DEBUGTextOp_Render, String, ScreenP); 
+}
+
+inline void
+DEBUGTextLineAt(debug_state *DebugState, char *String, vec2 ScreenP)
+{
+	DEBUGTextLineOperation(DebugState, DEBUGTextOp_Render, String, ScreenP); 
+}
+
+inline rect2
+DEBUGGetTextRect(debug_state *DebugState, char *String, vec2 ScreenP)
+{
+	rect2 Result = DEBUGTextLineOperation(DebugState, DEBUGTextOp_GetRect, String, ScreenP);
+
+	return(Result);
+}
+
+inline vec2
+DEBUGGetTextDim(debug_state *DebugState, char *String)
+{
+	rect2 TextRect = DEBUGGetTextRect(DebugState, String, vec2(0.0f, 0.0f)); 
+	vec2 Result = GetDim(TextRect);
+
+	return(Result);
+}
+
 
 global_variable debug_record GlobalDebugRecords[__COUNTER__]; 
 
@@ -200,12 +232,17 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 		debug_event *Event = GlobalDebugTable.EventsArrays[EventArrayIndex] + EventIndex;
 		debug_record *Record = GlobalDebugRecords + Event->DebugRecordIndex;
 
-		if(Event->Type == DebugEvent_FrameMarker)
+		if(Event->Type == DebugEvent_SaveDebugValue)
+		{
+			Assert(DebugState->ValuesCount < ArrayCount(DebugState->ValueEvents));
+			DebugState->ValueEvents[DebugState->ValuesCount++] = Event->Value_debug_event;
+		}
+		else if(Event->Type == DebugEvent_FrameMarker)
 		{
 			if(DebugState->CollationFrame)
 			{
 				DebugState->CollationFrame->EndClock = Event->Clock;
-				DebugState->CollationFrame->MSElapsed = Event->MSElapsed;
+				DebugState->CollationFrame->MSElapsed = Event->Value_r32;
 			}
 			DebugState->CollationFrame = DebugState->Frames + DebugState->FrameCount++;
 			DebugState->CollationFrame->Regions = PushArray(&DebugState->Allocator, MAX_REGIONS_PER_FRAME, debug_region);
@@ -302,7 +339,6 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 	r32 LaneHeight = 10.0f;
 
 	vec2 StartP = vec2(0.5f*-DebugState->BufferDim.x, DebugState->TextP.y - LaneHeight - BarSpacing);
-	// vec2 StartP = vec2(0.5f*-DebugState->BufferDim.x, 0.5f*DebugState->BufferDim.y - LaneHeight);
 	r32 MinY = StartP.y;
 
 	debug_record *HotRecord = 0;
@@ -346,8 +382,8 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 								Record->BlockName, Record->LineNumber, 
 								(u32)(Region->EndCyclesInFrame - Region->StartCyclesInFrame));
 
-					DEBUGRenderTextLine(DebugState, Buffer, 
-										true, vec2(ScreenP + vec2(TableWidth - PxStart + BarSpacing, LaneHeight)));
+					DEBUGTextLineAt(DebugState, Buffer, 
+									vec2(ScreenP + vec2(TableWidth - PxStart + BarSpacing, LaneHeight)));
 
 					HotRecord = Record;
 				}
@@ -393,7 +429,7 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 				EventArrayIndex++)
 			{
 				DEBUGCollateEvents(DebugState, 
-								((GlobalDebugTable.CurrentEventArrayIndex + 1) + EventArrayIndex) % ArrayCount(GlobalDebugTable.		EventsArrays));
+								   ((GlobalDebugTable.CurrentEventArrayIndex + 1) + EventArrayIndex) % ArrayCount(GlobalDebugTable.EventsArrays));
 			}
 		}
 	}
@@ -401,36 +437,114 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 	glBindVertexArray(0);
 }
 
-inline void
-DEBUGAddMainMenuElement(debug_state *DebugState, game_input* Input, bool32 *ElementState, char *Name)
+internal void
+DEBUGAddMainMenuElement(debug_state *DebugState, debug_event *Event, vec2 MouseP, char *Name)
 {
-	char Buffer[256];
+	char Buffer[128];
 	char *At = Buffer;
 	At += _snprintf_s(Buffer, sizeof(Buffer), "%s: ", Name);
-	_snprintf_s(At, sizeof(Buffer) - (At - Buffer), sizeof(Buffer) - (At - Buffer), 
-				"%s", *ElementState ? "true" : "false");
-
-	debug_render_text_line_result TextRegion = DEBUGRenderTextLine(DebugState, Buffer);
-	if(IsInRect(TextRegion.ScreenRegion, vec2(Input->MouseX, Input->MouseY)))
+	switch(Event->Type)
 	{
-		if(WasDown(&Input->MouseLeft))
+		case DebugEvent_r32:
 		{
-			*ElementState = !(*ElementState);
+			_snprintf_s(At, sizeof(Buffer) - (At - Buffer), sizeof(Buffer) - (At - Buffer), 
+						"%.2f", Event->Value_r32);
+		} break;
+
+		case DebugEvent_bool32:
+		{
+			_snprintf_s(At, sizeof(Buffer) - (At - Buffer), sizeof(Buffer) - (At - Buffer), 
+				"%s", Event->Value_bool32 ? "true" : "false");
+		} break;
+	}
+	
+
+	rect2 TextRegion = DEBUGGetTextRect(DebugState, Buffer, vec2(-0.5f*DebugState->BufferDim.x, DebugState->TextP.y));
+	if(IsInRect(TextRegion, MouseP))
+	{
+		DebugState->NextHotInteraction = Event;
+	}
+
+	vec3 Color = vec3(1.0f, 1.0f, 1.0f);
+	if(DebugState->HotInteraction == Event)
+	{
+		Color = vec3(1.0f, 1.0f, 0.0f);
+	}
+	UseShader(DebugState->GlyphShader);
+	SetVec3(DebugState->GlyphShader, "Color", Color);
+	DEBUGTextLine(DebugState, Buffer);
+	
+	DebugState->TextP.y = TextRegion.Min.y;
+}
+
+internal void
+DEBUGBeginInteraction(debug_state *DebugState)
+{
+	DebugState->ActiveInteraction = DebugState->HotInteraction;
+}
+
+internal void
+DEBUGEndInteraction(debug_state *DebugState)
+{
+	if(DebugState->ActiveInteraction == DebugState->NextHotInteraction)
+	{
+		switch(DebugState->ActiveInteraction->Type)
+		{
+			case DebugEvent_bool32:
+			{
+				DebugState->ActiveInteraction->Value_bool32 = !DebugState->ActiveInteraction->Value_bool32;
+			} break;
 		}
 	}
+
+	DebugState->ActiveInteraction = 0;
 }
 
 internal void
 DEBUGRenderMainMenu(debug_state *DebugState, game_input *Input)
 {
-	DEBUGAddMainMenuElement(DebugState, Input, &DEBUGGlobalShowDebugDrawings, "ShowDebugDrawings");
-	DEBUGAddMainMenuElement(DebugState, Input, &DEBUGGlobalRenderShadows, "RenderShadows");
-	DEBUGAddMainMenuElement(DebugState, Input, &DEBUGGlobalShowProfiling, "ShowProfiling");
+	vec2 MouseP = vec2(Input->MouseX, Input->MouseY);
+	DebugState->NextHotInteraction = 0;
 
-	if(DEBUGGlobalShowProfiling)
+	for(u32 ValueIndex = 0;
+		ValueIndex < DebugState->ValuesCount;
+		ValueIndex++)
+	{
+		debug_event *Event = DebugState->ValueEvents[ValueIndex];
+		DEBUGAddMainMenuElement(DebugState, Event, MouseP, Event->Name);
+	}
+
+	if(DebugState->ActiveInteraction)
+	{
+		switch(DebugState->ActiveInteraction->Type)
+		{
+			case DebugEvent_r32:
+			{
+				r32 DisplacementY = MouseP.y - DebugState->LastMouseP.y;
+				DebugState->ActiveInteraction->Value_r32 += 0.1f*DisplacementY;
+			} break;
+		}
+
+		if(!Input->MouseLeft.EndedDown)
+		{
+			DEBUGEndInteraction(DebugState);
+		}
+	}
+	else
+	{
+		DebugState->HotInteraction = DebugState->NextHotInteraction;
+		if(WasDown(&Input->MouseLeft))
+		{
+			DEBUGBeginInteraction(DebugState);
+		}
+	}
+
+	DEBUG_IF(ShowProfiling)
 	{
 		DEBUGRenderRegions(DebugState, Input);
 	}
+
+	DebugState->LastMouseP = MouseP;
 }
 
 internal void
@@ -476,7 +590,10 @@ DEBUGEndDebugFrameAndRender(game_memory *Memory, game_input *Input, r32 BufferWi
 	char Buffer[256];
 	if(DebugState->FrameCount > 1)
 	{
+		UseShader(DebugState->GlyphShader);
+		SetVec3(DebugState->GlyphShader, "Color", vec3(1.0f, 1.0f, 1.0f));
+
 		_snprintf_s(Buffer, sizeof(Buffer), "%.02fms/f", DebugState->Frames[DebugState->FrameCount - 2].MSElapsed);
-		DEBUGRenderTextLine(DebugState, Buffer);
+		DEBUGTextLine(DebugState, Buffer);
 	}
 }

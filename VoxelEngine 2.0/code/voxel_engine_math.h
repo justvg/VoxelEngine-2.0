@@ -1228,6 +1228,17 @@ RectBottomFaceCenterDim(vec2 BottomFaceCenter, vec2 Dim)
 	return(Result);		
 }
 
+inline vec2
+GetDim(rect2 A)
+{
+	vec2 Result;
+
+	Result.x = A.Max.x - A.Min.x;
+	Result.y = A.Max.y - A.Min.y;
+
+	return(Result);
+}
+
 inline rect2 
 AddRadiusTo(rect2 A, vec2 Radius)
 {

@@ -866,6 +866,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 									WinProcessKey(&GameInput.MoveUp, IsDown);
 								}
 
+#if VOXEL_ENGINE_INTERNAL
 								if (KeyCode == 'P')
 								{
 									// TODO(georgy): I don't want the pause button to be _game_ input
@@ -877,7 +878,6 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 									// 	GlobalDebugTable.ProfilePause = !GlobalDebugTable.ProfilePause || GlobalGamePause;
 									// }
 								}
-#if VOXEL_ENGINE_INTERNAL
 								if (KeyCode == 'L')
 								{
 									if(IsDown)
@@ -900,10 +900,6 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 											WinEndInputPlayback(&WinState);
 										}
 									}
-								}
-								if (KeyCode == 0x31)
-								{
-									WinProcessKey(&GameInput.NumOne, IsDown);
 								}
 								if (KeyCode == 0x32)
 								{
@@ -935,8 +931,17 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 								// GameInput.MouseX += RawInput.data.mouse.lLastX;
 								// GameInput.MouseY += RawInput.data.mouse.lLastY;
 								
-								WinProcessKey(&GameInput.MouseRight, RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN);
-								WinProcessKey(&GameInput.MouseLeft, RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN);
+								if(RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN ||
+								   RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_UP)
+								{
+									WinProcessKey(&GameInput.MouseLeft, RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN);
+								}
+									
+								if(RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN ||
+								   RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_UP)
+								{
+									WinProcessKey(&GameInput.MouseRight, RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN);
+								}
 							}
 						} break;
 						

@@ -507,14 +507,14 @@ DEBUGBeginRenderDebugObject(shader *Shader, GLuint *VAO, mat4 Model)
 		InitializeGlobalDrawInfo();
 	}
 	
-	shader Shaders3D[] = { GlobalDebugDrawInfo.Shader, GlobalDebugDrawInfo.AxesShader};
-	Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), GlobalViewProjection);
-
 	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
 	UseShader(*Shader);
 	glBindVertexArray(*VAO);
 	SetMat4(*Shader, "Model", Model);
+	SetMat4(*Shader, "ViewProjection", GlobalViewProjection);
+	// shader Shaders3D[] = { GlobalDebugDrawInfo.Shader, GlobalDebugDrawInfo.AxesShader};
+	// Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), GlobalViewProjection);
 }
 
 inline void 

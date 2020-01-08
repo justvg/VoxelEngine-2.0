@@ -111,6 +111,7 @@ ZeroSize(void *Ptr, u64 Size)
 #include "voxel_engine_asset.h"
 #include "voxel_engine_world.h"
 #include "voxel_engine_render.h"
+#include "voxel_engine_config.h"
 #include "voxel_engine_debug.h"
 
 global_variable mat4 GlobalViewProjection;

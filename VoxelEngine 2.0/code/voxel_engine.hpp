@@ -525,7 +525,14 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	Camera->Pitch = Camera->Pitch > 89.0f ? 89.0f : Camera->Pitch;
 	Camera->Pitch = Camera->Pitch < -89.0f ? -89.0f : Camera->Pitch;
 
-	if(!GameState->DEBUGCameraEnabled)
+	DEBUG_IF(DebugCamera)
+	{
+		r32 CameraTargetDirX = Sin(DEG2RAD(Camera->Head))*Cos(DEG2RAD(Camera->Pitch));
+		r32 CameraTargetDirY = Sin(DEG2RAD(Camera->Pitch));
+		r32 CameraTargetDirZ = -Cos(DEG2RAD(Camera->Head))*Cos(DEG2RAD(Camera->Pitch));
+		Camera->DEBUGFront = Normalize(vec3(CameraTargetDirX, CameraTargetDirY, CameraTargetDirZ));
+	}
+	else
 	{
 		r32 PitchRadians = DEG2RAD(Camera->Pitch);
 		r32 HeadRadians = DEG2RAD(Camera->Head);
@@ -537,18 +544,11 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 		Camera->OffsetFromHero = Camera->DistanceFromHero * Normalize(Lerp(Camera->LastOffsetFromHero, NewTargetOffsetFromHero, 8.0f*Input->dt));
 		Camera->LastOffsetFromHero = Camera->OffsetFromHero;
 	}
-	else
-	{
-		r32 CameraTargetDirX = Sin(DEG2RAD(Camera->Head))*Cos(DEG2RAD(Camera->Pitch));
-		r32 CameraTargetDirY = Sin(DEG2RAD(Camera->Pitch));
-		r32 CameraTargetDirZ = -Cos(DEG2RAD(Camera->Head))*Cos(DEG2RAD(Camera->Pitch));
-		Camera->DEBUGFront = Normalize(vec3(CameraTargetDirX, CameraTargetDirY, CameraTargetDirZ));
-	}
 
 	Camera->AspectRatio = (r32)BufferWidth/(r32)BufferHeight;
 
 	vec3 Forward;
-	if(!GameState->DEBUGCameraEnabled)
+	if(!DebugCamera)
 	{
 		Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), 0.0f, -Camera->OffsetFromHero.z()));
 	}
@@ -560,7 +560,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	r32 Theta = -RAD2DEG(ATan2(Forward.z(), Forward.x())) + 90.0f;
 	GameState->Hero.ddP = vec3(0.0f, 0.0f, 0.0f);
 
-	if(!GameState->DEBUGCameraEnabled)
+	if(!DebugCamera)
 	{
 		if(!GameProfilingPause)
 		{
@@ -635,11 +635,6 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 		}
 	}
 
-	if(WasDown(&Input->NumOne))
-	{
-		GameState->DEBUGCameraEnabled = !GameState->DEBUGCameraEnabled;
-	}
-
 
 #if VOXEL_ENGINE_INTERNAL
 	if(DEBUGGlobalPlaybackInfo.RefreshNow)
@@ -687,7 +682,9 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 
 	temporary_memory WorldConstructionAndRenderMemory = BeginTemporaryMemory(&TempState->Allocator);
 
-	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-100.0f, -20.0f, -100.0f), vec3(100.0f, 20.0f, 100.0f));
+	DEBUG_VARIABLE(r32, SimBoundsRadius);
+	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-SimBoundsRadius, -20.0f, -SimBoundsRadius), 
+												vec3(SimBoundsRadius, 20.0f, SimBoundsRadius));
 	sim_region *SimRegion = BeginSimulation(GameState, GameState->Hero.Entity->P, 
 											SimRegionUpdatableBounds, &TempState->Allocator, Input->dt);	
 
@@ -812,7 +809,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	// NOTE(georgy): Directional shadow map rendering
 	r32 CascadesDistances[CASCADES_COUNT + 1] = {Camera->NearDistance, 25.0f, 65.0f, Camera->FarDistance};
 	mat4 LightSpaceMatrices[CASCADES_COUNT];
-	if (DEBUGGlobalRenderShadows)
+	DEBUG_IF(DebugRenderShadows)
 	{
 		glViewport(0, 0, GameState->ShadowMapsWidth, GameState->ShadowMapsHeight);
 		glBindFramebuffer(GL_FRAMEBUFFER, GameState->ShadowMapFBO);
@@ -898,57 +895,59 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	mat4 View = Camera->RotationMatrix * 
 				Translate(-Camera->OffsetFromHero - Camera->TargetOffset);
 	mat4 Projection = Perspective(Camera->FoV, Camera->AspectRatio, Camera->NearDistance, Camera->FarDistance);
-	GlobalViewProjection = Projection * View;
+	mat4 ViewProjection = Projection * View;
 	shader Shaders3D[] = { GameState->WorldShader, GameState->CharacterShader,
-						   GameState->HitpointsShader, GameState->BillboardShader, GameState->BlockParticleShader,
-						   GlobalDebugDrawInfo.Shader, GlobalDebugDrawInfo.AxesShader};
-	if(!GameState->DEBUGCameraEnabled)
+						   GameState->HitpointsShader, GameState->BillboardShader, GameState->BlockParticleShader};
+	if(!DebugCamera)
 	{
-		Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), GlobalViewProjection);
+		Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), ViewProjection);
+		GlobalViewProjection = ViewProjection;
 	}
 	else
 	{
 		mat4 DEBUGCameraView = LookAt(Camera->DEBUGP, Camera->DEBUGP + Camera->DEBUGFront);
 		mat4 DEBUGCameraViewProjection = Projection * DEBUGCameraView;
 		Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), DEBUGCameraViewProjection);
+		GlobalViewProjection = DEBUGCameraViewProjection;
 	}
 	
 
 	UseShader(GameState->WorldShader);
 	// NOTE(georgy): This is for the situation when we use debug camera. Even if we use debug camera,
 	//  			 we want Output.ClipSpacePosZ to be as it is from our default camera, not debug one
-	SetMat4(GameState->WorldShader, "ViewProjectionForClipSpacePosZ", GlobalViewProjection);
+	SetMat4(GameState->WorldShader, "ViewProjectionForClipSpacePosZ", ViewProjection);
 	SetMat4Array(GameState->WorldShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
 	SetFloatArray(GameState->WorldShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
 	SetVec3(GameState->WorldShader, "DirectionalLightDir", GameState->DirectionalLightDir);
-	SetInt(GameState->WorldShader, "ShadowsEnabled", DEBUGGlobalRenderShadows);
+	SetInt(GameState->WorldShader, "ShadowsEnabled", DebugRenderShadows);
 	SetInt(GameState->WorldShader, "ShadowMaps", 0);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
 	
 	UseShader(GameState->CharacterShader);
-	SetMat4(GameState->CharacterShader, "ViewProjectionForClipSpacePosZ", GlobalViewProjection);
+	SetMat4(GameState->CharacterShader, "ViewProjectionForClipSpacePosZ", ViewProjection);
 	SetMat4Array(GameState->CharacterShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
 	SetFloatArray(GameState->CharacterShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
 	SetVec3(GameState->CharacterShader, "DirectionalLightDir", GameState->DirectionalLightDir);
-	SetInt(GameState->CharacterShader, "ShadowsEnabled", DEBUGGlobalRenderShadows);
+	SetInt(GameState->CharacterShader, "ShadowsEnabled", DebugRenderShadows);
 	SetInt(GameState->CharacterShader, "ShadowMaps", 0);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
 
 	UseShader(GameState->BlockParticleShader);
-	SetMat4(GameState->BlockParticleShader, "ViewProjectionForClipSpacePosZ", GlobalViewProjection);
+	SetMat4(GameState->BlockParticleShader, "ViewProjectionForClipSpacePosZ", ViewProjection);
 	SetMat4Array(GameState->BlockParticleShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
 	SetFloatArray(GameState->BlockParticleShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
 	SetVec3(GameState->BlockParticleShader, "DirectionalLightDir", GameState->DirectionalLightDir);
-	SetInt(GameState->BlockParticleShader, "ShadowsEnabled", DEBUGGlobalRenderShadows);
+	SetInt(GameState->BlockParticleShader, "ShadowsEnabled", DebugRenderShadows);
 	SetInt(GameState->BlockParticleShader, "ShadowMaps", 0);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
 
-	RenderChunks(&GameState->World, GameState->WorldShader, GlobalViewProjection);
+	RenderChunks(&GameState->World, GameState->WorldShader, ViewProjection);
+	DEBUG_VARIABLE(bool32, ShowDebugDrawings);
 	RenderEntities(GameState, TempState, SimRegion, GameState->WorldShader, GameState->CharacterShader,
-				   GameState->BillboardShader, Right, DEBUGGlobalShowDebugDrawings);
+				   GameState->BillboardShader, Right, ShowDebugDrawings);
 	RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, &TempState->Allocator, 
 						 GameState->BlockParticleShader, GameState->Hero.Entity->P);
 	RenderParticleEffects(GameState, TempState, SimRegion, GameState->BillboardShader, Right);
