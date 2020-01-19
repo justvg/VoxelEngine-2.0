@@ -106,15 +106,6 @@ DEBUGGetTextRect(debug_state *DebugState, char *String, vec2 ScreenP)
 	return(Result);
 }
 
-inline vec2
-DEBUGGetTextDim(debug_state *DebugState, char *String)
-{
-	rect2 TextRect = DEBUGGetTextRect(DebugState, String, vec2(0.0f, 0.0f)); 
-	vec2 Result = GetDim(TextRect);
-
-	return(Result);
-}
-
 inline game_assets *
 DEBUGGetGameAssets(game_memory *Memory)
 {
@@ -136,9 +127,9 @@ DEBUGReset(debug_state *DebugState, game_memory *Memory, game_assets *GameAssets
 	{
 		InitializeStackAllocator(&DebugState->Allocator, Memory->DebugStorageSize - sizeof(debug_state), 
 														 (u8 *)Memory->DebugStorage + sizeof(debug_state));
-		DebugState->CollateTemp = BeginTemporaryMemory(&DebugState->Allocator);
+		SubAllocator(&DebugState->FrameAllocator, &DebugState->Allocator, Megabytes(5));
 
-		DebugState->FontScale = 0.25f;
+		DebugState->FontScale = 0.2f;
 
 		CompileShader(&DebugState->GlyphShader, "data/shaders/GlyphVS.glsl", "data/shaders/GlyphFS.glsl");
 		CompileShader(&DebugState->QuadShader, "data/shaders/2DQuadVS.glsl", "data/shaders/2DQuadFS.glsl");
@@ -213,13 +204,133 @@ GetDebugThread(debug_state *DebugState, u32 ID)
 }
 
 internal void
+FreeOldestFrame(debug_state *DebugState)
+{
+	while(DebugState->OldestStoredEvent && (DebugState->OldestStoredEvent->FrameIndex <= DebugState->OldestFrame->Index))
+	{
+		debug_stored_event *FreeEvent = DebugState->OldestStoredEvent;
+		DebugState->OldestStoredEvent = DebugState->OldestStoredEvent->Next;
+		if(DebugState->MostRecentStoredEvent == FreeEvent)
+		{
+			Assert(FreeEvent->Next == 0);
+			DebugState->MostRecentStoredEvent = 0;
+		}
+
+		FreeEvent->NextFree = DebugState->FirstFreeStoredEvent;
+		DebugState->FirstFreeStoredEvent = FreeEvent;
+	}
+
+	debug_frame *FrameToFree = DebugState->OldestFrame;
+	DebugState->OldestFrame = DebugState->OldestFrame->Next;
+	if(DebugState->MostRecentFrame == FrameToFree)
+	{
+		Assert(FrameToFree->Next == 0);
+		DebugState->MostRecentFrame = 0;
+	}
+
+	FrameToFree->NextFree = DebugState->FirstFreeFrame;
+	DebugState->FirstFreeFrame = FrameToFree;
+}
+
+internal debug_frame *
+NewFrame(debug_state *DebugState, u64 BeginClock)
+{
+	if(DebugState->CollationFrame)
+	{
+		if(!DebugState->MostRecentFrame)
+		{
+			DebugState->MostRecentFrame = DebugState->OldestFrame = DebugState->CollationFrame;
+		}
+		else
+		{
+			DebugState->MostRecentFrame = DebugState->MostRecentFrame->Next = DebugState->CollationFrame;
+		}
+	}
+
+	debug_frame *Frame = 0;
+	while(!Frame)
+	{
+		Frame = DebugState->FirstFreeFrame;
+		if(Frame)
+		{
+			DebugState->FirstFreeFrame = DebugState->FirstFreeFrame->NextFree;
+		}
+		else
+		{
+			if(AllocatorHasRoomFor(&DebugState->FrameAllocator, sizeof(debug_frame) + MAX_REGIONS_PER_FRAME*sizeof(debug_region)))
+			{
+				Frame = PushStruct(&DebugState->FrameAllocator, debug_frame);
+				Frame->Regions = PushArray(&DebugState->FrameAllocator, MAX_REGIONS_PER_FRAME, debug_region);
+			}
+			else
+			{
+				FreeOldestFrame(DebugState);
+			}
+		}
+	}
+	
+	Frame->RegionsCount = 0;
+	Frame->BeginClock = BeginClock;
+	Frame->MSElapsed = 0.0f;
+	Frame->Next = 0;
+	Frame->Index = DebugState->TotalFrameCount++;
+
+	return(Frame);
+}
+
+internal debug_stored_event *
+StoreEvent(debug_state *DebugState, debug_event *Event)
+{
+	debug_stored_event *StoredEvent = 0;
+	while(!StoredEvent)
+	{
+		StoredEvent = DebugState->FirstFreeStoredEvent;
+		if(StoredEvent)
+		{
+			DebugState->FirstFreeStoredEvent = DebugState->FirstFreeStoredEvent->NextFree;
+		}
+		else
+		{
+			if(AllocatorHasRoomFor(&DebugState->FrameAllocator, sizeof(debug_stored_event)))
+			{
+				StoredEvent = PushStruct(&DebugState->FrameAllocator, debug_stored_event);
+			}
+			else
+			{
+				FreeOldestFrame(DebugState);
+			}
+		}
+	}
+
+	StoredEvent->Event = *Event;
+	StoredEvent->FrameIndex = DebugState->CollationFrame->Index;
+	StoredEvent->Next = 0;
+
+	if(!DebugState->MostRecentStoredEvent)
+	{
+		DebugState->MostRecentStoredEvent = DebugState->OldestStoredEvent = StoredEvent;
+	}
+	else
+	{
+		DebugState->MostRecentStoredEvent = DebugState->MostRecentStoredEvent->Next = StoredEvent;
+	}
+
+	return(StoredEvent);
+}
+
+internal void
 DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 {
 	for(u32 EventIndex = 0;
-		EventIndex < GlobalDebugTable.EventsCounts[EventArrayIndex];
+		EventIndex < GlobalDebugTable.EventCount;
 		EventIndex++)
 	{
 		debug_event *Event = GlobalDebugTable.EventsArrays[EventArrayIndex] + EventIndex;
+
+		if(!DebugState->CollationFrame)
+		{
+			DebugState->CollationFrame = NewFrame(DebugState, Event->Clock);
+		}
 
 		if(Event->Type == DebugEvent_SaveDebugValue)
 		{
@@ -233,24 +344,28 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 				DebugState->CollationFrame->EndClock = Event->Clock;
 				DebugState->CollationFrame->MSElapsed = Event->Value_r32;
 			}
-			DebugState->CollationFrame = DebugState->Frames + DebugState->FrameCount++;
-			DebugState->CollationFrame->Regions = PushArray(&DebugState->Allocator, MAX_REGIONS_PER_FRAME, debug_region);
-			DebugState->CollationFrame->RegionsCount = 0;
-			DebugState->CollationFrame->BeginClock = Event->Clock;
-			DebugState->CollationFrame->MSElapsed = 0.0f;
+
+			DebugState->CollationFrame = NewFrame(DebugState, Event->Clock);
 		}
 		else
 		{
 			if(DebugState->CollationFrame)
 			{
 				debug_thread *Thread = GetDebugThread(DebugState, Event->ThreadID);	
-
+																																	
 				switch(Event->Type)
 				{
 					case DebugEvent_BeginBlock:
 					{
-						open_debug_block *DebugBlock = PushStruct(&DebugState->Allocator, open_debug_block);
-						DebugBlock->Event = Event;
+						if(!DebugState->FirstFreeDebugBlock)
+						{
+							DebugState->FirstFreeDebugBlock = PushStruct(&DebugState->Allocator, open_debug_block);
+						}
+
+						open_debug_block *DebugBlock = DebugState->FirstFreeDebugBlock;
+						DebugState->FirstFreeDebugBlock = DebugState->FirstFreeDebugBlock->NextFree;
+
+						DebugBlock->Event = &StoreEvent(DebugState, Event)->Event;
 
 						DebugBlock->Parent = Thread->OpenDebugBlocks;
 						Thread->OpenDebugBlocks = DebugBlock;
@@ -264,9 +379,10 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 							if(MatchingBlock->Event->ThreadID == Event->ThreadID)
 							{
 								char *MatchName = MatchingBlock->Parent ? MatchingBlock->Parent->Event->Name : 0;
-								if(MatchName == GlobalDebugTable.ProfileBlockName)
+								// if(MatchName == GlobalDebugTable.ProfileBlockName)
 								{
 									debug_region *Region = DebugState->CollationFrame->Regions + DebugState->CollationFrame->RegionsCount++;
+									Region->ParentRegionName = MatchName;
 									Region->Event = MatchingBlock->Event;
 									Region->StartCyclesInFrame = (r32)(MatchingBlock->Event->Clock - DebugState->CollationFrame->BeginClock);
 									Region->EndCyclesInFrame = (r32)(Event->Clock - DebugState->CollationFrame->BeginClock);
@@ -275,6 +391,9 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 								}
 
 								Thread->OpenDebugBlocks = MatchingBlock->Parent;
+								
+								MatchingBlock->NextFree = DebugState->FirstFreeDebugBlock;
+								DebugState->FirstFreeDebugBlock = MatchingBlock;
 							}
 						}
 					} break;
@@ -289,6 +408,7 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 	}
 }
 
+#if 0
 inline void
 RestartCollation(debug_state *DebugState)
 {
@@ -301,6 +421,7 @@ RestartCollation(debug_state *DebugState)
 	DebugState->FrameCount = 0;
 	DebugState->CollationFrame = 0;
 }
+#endif
 
 internal void
 DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
@@ -331,49 +452,50 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 
 	debug_event *HotBlock = 0;
 
-	u32 MaxFrameCount = DebugState->FrameCount > 0 ? DebugState->FrameCount - 1 : 0;
-	u32 FrameCount = MaxFrameCount > 8 ? 8 : MaxFrameCount;
 	for(u32 FrameIndex = 0;
-		FrameIndex < FrameCount;
+		FrameIndex < 1;
 		FrameIndex++)
 	{
-		debug_frame *CollationFrame = DebugState->Frames + MaxFrameCount - (FrameIndex + 1);
+		debug_frame *Frame = DebugState->MostRecentFrame; // + MaxFrameCount - (FrameIndex + 1);
 
 		vec2 P = StartP - (r32)FrameIndex*vec2(0.0f, LaneCount*LaneHeight + BarSpacing);
-		if(CollationFrame->RegionsCount > 0)
+		if(Frame->RegionsCount > 0)
 		{
 			for(u32 RegionIndex = 0;
-				RegionIndex < CollationFrame->RegionsCount;
+				RegionIndex < Frame->RegionsCount;
 				RegionIndex++)
 			{
-				UseShader(DebugState->QuadShader);
-				glBindVertexArray(DebugState->GlyphVAO);
-				debug_region *Region = CollationFrame->Regions + RegionIndex;
-
-				r32 PxStart = (Region->StartCyclesInFrame / CyclesPerFrame) * TableWidth;
-				r32 PxEnd = (Region->EndCyclesInFrame / CyclesPerFrame) * TableWidth;
-				r32 Py = -(Region->LaneIndex*LaneHeight);
-
-				vec2 ScreenP = P + vec2(PxStart, Py);
-				MinY = ScreenP.y < MinY ? ScreenP.y : MinY;
-				SetVec2(DebugState->QuadShader, "ScreenP", ScreenP);
-				SetVec2(DebugState->QuadShader, "Scale", vec2(PxEnd - PxStart, LaneHeight));
-				SetVec3(DebugState->QuadShader, "Color", Colors[Region->ColorIndex % ArrayCount(Colors)]);
-				glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-				rect2 RegionRect = RectMinMax(ScreenP, ScreenP + vec2(PxEnd - PxStart, LaneHeight));
-				if(IsInRect(RegionRect, MouseP))
+				debug_region *Region = Frame->Regions + RegionIndex;
+				if(Region->ParentRegionName == GlobalDebugTable.ProfileBlockName)
 				{
-					debug_event *Block = Region->Event;
-					char Buffer[256];
-					_snprintf_s(Buffer, sizeof(Buffer), "%s(%u): %ucy", 
-								Block->Name, Block->LineNumber,
-								(u32)(Region->EndCyclesInFrame - Region->StartCyclesInFrame));
+					UseShader(DebugState->QuadShader);
+					glBindVertexArray(DebugState->GlyphVAO);
 
-					DEBUGTextLineAt(DebugState, Buffer, 
-									vec2(ScreenP + vec2(TableWidth - PxStart + BarSpacing, LaneHeight)));
+					r32 PxStart = (Region->StartCyclesInFrame / CyclesPerFrame) * TableWidth;
+					r32 PxEnd = (Region->EndCyclesInFrame / CyclesPerFrame) * TableWidth;
+					r32 Py = -(Region->LaneIndex*LaneHeight);
 
-					HotBlock = Block;
+					vec2 ScreenP = P + vec2(PxStart, Py);
+					MinY = ScreenP.y < MinY ? ScreenP.y : MinY;
+					SetVec2(DebugState->QuadShader, "ScreenP", ScreenP);
+					SetVec2(DebugState->QuadShader, "Scale", vec2(PxEnd - PxStart, LaneHeight));
+					SetVec3(DebugState->QuadShader, "Color", Colors[Region->ColorIndex % ArrayCount(Colors)]);
+					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+					rect2 RegionRect = RectMinMax(ScreenP, ScreenP + vec2(PxEnd - PxStart, LaneHeight));
+					if(IsInRect(RegionRect, MouseP))
+					{
+						debug_event *Block = Region->Event;
+						char Buffer[256];
+						_snprintf_s(Buffer, sizeof(Buffer), "%s(%u): %ucy", 
+									Block->Name, Block->LineNumber,
+									(u32)(Region->EndCyclesInFrame - Region->StartCyclesInFrame));
+
+						DEBUGTextLineAt(DebugState, Buffer, 
+										vec2(ScreenP + vec2(TableWidth - PxStart + BarSpacing, LaneHeight)));
+
+						HotBlock = Block;
+					}
 				}
 			}
 		}
@@ -393,10 +515,6 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 		if(WasDown(&Input->MouseRight))
 		{
 			GlobalDebugTable.ProfilePause = !GlobalDebugTable.ProfilePause || GlobalGamePause;
-			if(!GlobalDebugTable.ProfilePause)
-			{
-				RestartCollation(DebugState);
-			}
 		}
 
 		if(WasDown(&Input->MouseLeft))
@@ -408,16 +526,6 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 			else 
 			{
 				GlobalDebugTable.ProfileBlockName = 0;	
-			}
-
-			RestartCollation(DebugState);
-
-			for(u32 EventArrayIndex = 0;
-				EventArrayIndex < ArrayCount(GlobalDebugTable.EventsArrays) - 1;
-				EventArrayIndex++)
-			{
-				DEBUGCollateEvents(DebugState, 
-								   ((GlobalDebugTable.CurrentEventArrayIndex + 1) + EventArrayIndex) % ArrayCount(GlobalDebugTable.EventsArrays));
 			}
 		}
 	}
@@ -545,27 +653,17 @@ DEBUGEndDebugFrameAndRender(game_memory *Memory, game_input *Input, r32 BufferWi
 	u32 EventArrayIndex = 0;
 	if(!GlobalDebugTable.ProfilePause)
 	{
-		GlobalDebugTable.CurrentEventArrayIndex++;
-		if(GlobalDebugTable.CurrentEventArrayIndex >= ArrayCount(GlobalDebugTable.EventsArrays))
-		{
-			GlobalDebugTable.CurrentEventArrayIndex = 0;
-		}
+		GlobalDebugTable.CurrentEventArrayIndex = !GlobalDebugTable.CurrentEventArrayIndex;
 		u64 EventArrayIndex_EventIndex = AtomicExchangeU64(&GlobalDebugTable.EventArrayIndex_EventIndex,
 													 	   (u64)GlobalDebugTable.CurrentEventArrayIndex << 32);
 
 		EventArrayIndex = EventArrayIndex_EventIndex >> 32;
-		u32 EventsCount = EventArrayIndex_EventIndex & 0xFFFFFFFF;
-		GlobalDebugTable.EventsCounts[EventArrayIndex] = EventsCount;
+		GlobalDebugTable.EventCount = EventArrayIndex_EventIndex & 0xFFFFFFFF;
 	}
 	
 	if(DebugState && GameAssets)
 	{
 		DEBUGReset(DebugState, Memory, GameAssets, BufferWidth, BufferHeight);
-
-		if(DebugState->FrameCount >= ArrayCount(DebugState->Frames))
-		{
-			RestartCollation(DebugState);
-		}
 
 		if(!GlobalDebugTable.ProfilePause)
 		{
@@ -576,12 +674,21 @@ DEBUGEndDebugFrameAndRender(game_memory *Memory, game_input *Input, r32 BufferWi
 	DEBUGRenderMainMenu(DebugState, Input);
 
 	char Buffer[256];
-	if(DebugState->FrameCount > 1)
+	if(DebugState->MostRecentFrame)
 	{
 		UseShader(DebugState->GlyphShader);
 		SetVec3(DebugState->GlyphShader, "Color", vec3(1.0f, 1.0f, 1.0f));
 
-		_snprintf_s(Buffer, sizeof(Buffer), "%.02fms/f", DebugState->Frames[DebugState->FrameCount - 2].MSElapsed);
+		_snprintf_s(Buffer, sizeof(Buffer), "%.02fms/f", DebugState->MostRecentFrame->MSElapsed);
+		rect2 MSFRect = DEBUGGetTextRect(DebugState, Buffer, vec2(-0.5f*DebugState->BufferDim.x, DebugState->TextP.y));
 		DEBUGTextLine(DebugState, Buffer);
+		DebugState->TextP.y = MSFRect.Min.y;
 	}
+
+	UseShader(DebugState->GlyphShader);
+	SetVec3(DebugState->GlyphShader, "Color", vec3(1.0f, 1.0f, 1.0f));
+
+	u32 SizeRemaining = (u32)((DebugState->FrameAllocator.Size - DebugState->FrameAllocator.Used) / 1024);
+	_snprintf_s(Buffer, sizeof(Buffer), "FrameAllocator remaining: %uKb", SizeRemaining);
+	DEBUGTextLine(DebugState, Buffer);
 }

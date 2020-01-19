@@ -263,7 +263,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 
 		InitializeStackAllocator(&GameState->WorldAllocator, Memory->PermanentStorageSize - sizeof(game_state),
 															 (u8 *)Memory->PermanentStorage + sizeof(game_state));
-		SubArena(&GameState->FundamentalTypesAllocator, &GameState->WorldAllocator, Megabytes(64));
+		SubAllocator(&GameState->FundamentalTypesAllocator, &GameState->WorldAllocator, Megabytes(64));
 
 		GameState->StoredEntityCount = 0;
 

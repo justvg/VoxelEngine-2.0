@@ -32,15 +32,33 @@ struct debug_event
     };
 };
 
+struct debug_stored_event
+{
+    union
+    {
+        debug_stored_event *Next;
+        debug_stored_event *NextFree;
+    };
+
+    debug_event Event;
+    u32 FrameIndex;
+};
+
 struct open_debug_block
 {
     debug_event *Event;
 
-    open_debug_block *Parent;
+	union
+	{
+		open_debug_block* Parent;
+		open_debug_block* NextFree;
+	};
 };
 
 struct debug_region
 {
+    char *ParentRegionName;
+
     debug_event *Event;
     r32 StartCyclesInFrame;
     r32 EndCyclesInFrame;
@@ -60,16 +78,22 @@ struct debug_thread
 
 struct debug_frame
 {
+    union 
+    {
+        debug_frame *Next;
+        debug_frame *NextFree;
+    };
+
     u64 BeginClock;
     u64 EndClock;
     r32 MSElapsed;
 
     u32 RegionsCount;
     debug_region *Regions;
+
+    u32 Index;
 }; 
 
-#define DEBUG_EVENTS_ARRAYS_COUNT 10
-#define MAX_FRAME_COUNT DEBUG_EVENTS_ARRAYS_COUNT*8
 #define MAX_DEBUG_EVENT_COUNT 1024
 #define MAX_REGIONS_PER_FRAME 1024
 struct debug_table
@@ -77,8 +101,8 @@ struct debug_table
     bool32 ProfilePause;
     u32 CurrentEventArrayIndex;
     volatile u64 EventArrayIndex_EventIndex;
-    u32 EventsCounts[DEBUG_EVENTS_ARRAYS_COUNT];
-    debug_event EventsArrays[DEBUG_EVENTS_ARRAYS_COUNT][MAX_DEBUG_EVENT_COUNT];
+    u32 EventCount;
+    debug_event EventsArrays[2][MAX_DEBUG_EVENT_COUNT];
 
     char *ProfileBlockName;
 };
@@ -90,7 +114,7 @@ struct debug_state
 	bool32 IsInitialized;
 
     stack_allocator Allocator;
-    temporary_memory CollateTemp;
+    stack_allocator FrameAllocator;
 
     mat4 Orthographic;
 
@@ -110,18 +134,27 @@ struct debug_state
     u32 ValuesCount;
     debug_event *ValueEvents[64];
 
+    debug_stored_event *OldestStoredEvent;
+    debug_stored_event *MostRecentStoredEvent;
+    debug_stored_event *FirstFreeStoredEvent;
+
     debug_event *NextHotInteraction;
     debug_event *HotInteraction;
     debug_event *ActiveInteraction;
 
     bool32 ProfilePause;
 
-    u32 FrameCount;
-    debug_frame Frames[MAX_FRAME_COUNT];
+    u32 TotalFrameCount;
+    debug_frame *Frames;
+    debug_frame *OldestFrame;
+    debug_frame *MostRecentFrame;
     debug_frame *CollationFrame;
+    debug_frame *FirstFreeFrame;
 
     u32 LaneCount;
     debug_thread *FirstThread;
+
+    open_debug_block *FirstFreeDebugBlock;
 
     u32 DebugRegionsCount;
     debug_region *DebugRegions;

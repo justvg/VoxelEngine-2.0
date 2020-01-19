@@ -15,6 +15,7 @@ global_variable platform_end_font *PlatformEndFont;
 		PlatformFreeMemory(Memory); \
 		(Memory) = 0;
 
+#define DEFAULT_ALIGNMENT 16
 struct stack_allocator
 {
 	u64 Size;
@@ -51,23 +52,41 @@ GetAlignmentOffset(stack_allocator *Allocator, u64 Alignment)
 	return(AlignmentOffset);
 }
 
+inline u64
+GetEffectiveSizeFor(stack_allocator *Allocator, u64 SizeInit, u64 Alignment)
+{
+	u64 AlignmentOffset = GetAlignmentOffset(Allocator, Alignment);
+	u64 Size = SizeInit + AlignmentOffset;
+
+	return(Size);
+}
+
 #define PushStruct(Allocator, type, ...) (type *)PushSize(Allocator, sizeof(type), ## __VA_ARGS__)
 #define PushArray(Allocator, Count, type, ...) (type *)PushSize(Allocator, (Count)*sizeof(type), ## __VA_ARGS__)
 inline void *
-PushSize(stack_allocator *Allocator, u64 Size, u64 Alignment = 16)
+PushSize(stack_allocator *Allocator, u64 SizeInit, u64 Alignment = DEFAULT_ALIGNMENT)
 {
-	u64 AlignmentOffset = GetAlignmentOffset(Allocator, Alignment);
-	Size += AlignmentOffset;
+	u64 Size = GetEffectiveSizeFor(Allocator, SizeInit, Alignment);
 
    	Assert((Allocator->Used + Size) <= Allocator->Size);
+	u64 AlignmentOffset = GetAlignmentOffset(Allocator, Alignment);
 	void *Result = Allocator->Base + Allocator->Used + AlignmentOffset;
 	Allocator->Used += Size;
 
 	return(Result);
 }
 
+inline bool32
+AllocatorHasRoomFor(stack_allocator *Allocator, u64 SizeInit, u64 Alignment = DEFAULT_ALIGNMENT)
+{
+	u64 Size = GetEffectiveSizeFor(Allocator, SizeInit, Alignment);
+
+	bool32 Result = ((Allocator->Used + Size) <= Allocator->Size);
+	return(Result);
+}
+
 inline void
-SubArena(stack_allocator *Result, stack_allocator *Allocator, u64 Size, u64 Alignment = 16)
+SubAllocator(stack_allocator *Result, stack_allocator *Allocator, u64 Size, u64 Alignment = DEFAULT_ALIGNMENT)
 {
 	Result->Size = Size;
 	Result->Base = (u8 *)PushSize(Allocator, Size, Alignment);
