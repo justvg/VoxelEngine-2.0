@@ -215,6 +215,10 @@ AddHero(game_state *GameState, world_position P)
 	add_stored_entity_result Entity = AddStoredEntity(GameState, EntityType_Hero, P);
 
 	AddFlags(&Entity.StoredEntity->Sim, EntityFlag_Moveable | EntityFlag_Collides | EntityFlag_GravityAffected);
+	Entity.StoredEntity->Sim.HitPoints = 20;
+	Entity.StoredEntity->Sim.MaxHitPoints = 100;
+	Entity.StoredEntity->Sim.ManaPoints = 87;
+	Entity.StoredEntity->Sim.MaxManaPoints = 100;
 	Entity.StoredEntity->Sim.Rotation = 0.0f;
 	Entity.StoredEntity->Sim.Collision = GameState->HeroCollision;
 	Entity.StoredEntity->Sim.Fireball.StorageIndex = AddFireball(GameState);
@@ -294,6 +298,8 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 		CompileShader(&GameState->CharacterDepthShader, "data/shaders/CharacterDepthVS.glsl", "data/shaders/EmptyFS.glsl");
 		CompileShader(&GameState->WorldDepthShader, "data/shaders/WorldDepthVS.glsl", "data/shaders/EmptyFS.glsl");
 		CompileShader(&GameState->BlockParticleDepthShader, "data/shaders/BlockParticleDepthVS.glsl", "data/shaders/EmptyFS.glsl");
+		CompileShader(&GameState->UIQuadShader, "data/shaders/UI_VS.glsl", "data/shaders/UI_FS.glsl");
+		CompileShader(&GameState->UIGlyphShader, "data/shaders/GlyphVS.glsl", "data/shaders/GlyphFS.glsl");
 		CompileShader(&GameState->FramebufferScreenShader, "data/shaders/FramebufferScreenVS.glsl", "data/shaders/FramebufferScreenFS.glsl");
 
 		block_particle_generator *BlockParticleGenerator = &GameState->BlockParticleGenerator;
@@ -435,6 +441,38 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(r32), (void *)0);
 		glBindVertexArray(0);
 
+		vec2 UIQuadVertices[] =
+		{
+			vec2(-0.5f, 0.5f),
+			vec2(-0.5f, -0.5f),
+			vec2(0.5f, 0.5f),
+			vec2(0.5f, -0.5f)
+		};
+		glGenVertexArrays(1, &GameState->UIQuadVAO);
+		glGenBuffers(1, &GameState->UIQuadVBO);
+		glBindVertexArray(GameState->UIQuadVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, GameState->UIQuadVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(UIQuadVertices), UIQuadVertices, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(vec2), (void *)0);
+		glBindVertexArray(0);
+
+		vec2 UIGlyphVertices[] = 
+		{
+			vec2(0.0f, 1.0f),
+			vec2(0.0f, 0.0f),
+			vec2(1.0f, 1.0f),
+			vec2(1.0f, 0.0f)
+		};
+		glGenVertexArrays(1, &GameState->UIGlyphVAO);
+		glGenBuffers(1, &GameState->UIGlyphVBO);
+		glBindVertexArray(GameState->UIGlyphVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, GameState->UIGlyphVBO);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(UIGlyphVertices), UIGlyphVertices, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(vec2), (void *)0);
+		glBindVertexArray(0);
+
 		// NOTE(georgy): Reserve slot 0
 		AddStoredEntity(GameState, EntityType_Null, InvalidPosition());
 
@@ -478,8 +516,6 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 		TestTreeP.ChunkZ = 0;
 		TestTreeP.Offset = vec3(0.0f, 2.0f, 3.0f);
 		AddTree(GameState, TestTreeP);
-
-		GameState->DirectionalLightDir = -vec3(3.0f, 5.0f, 4.0f);
 
 		glGenFramebuffers(1, &GameState->ShadowMapFBO);
 		glBindFramebuffer(GL_FRAMEBUFFER, GameState->ShadowMapFBO);
@@ -805,7 +841,20 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	}
 	BlockParticlesUpdate(&GameState->BlockParticleGenerator, Input->dt);
 	
+
+	DEBUG_VARIABLE(bool32, ShowDebugDrawings);
+
+	r32 OneDayCycleInSeconds = 3.0f*60.0f;
+	r32 DayCycleInCircle = (GameState->t / OneDayCycleInSeconds) * 1.5f*PI;
+	GameState->DirectionalLightDir = -vec3(Cos(DayCycleInCircle), Sin(DayCycleInCircle), 0.0f);
+	GameState->t += Input->dt;
+	if(GameState->t > OneDayCycleInSeconds)
+	{
+		GameState->t = 0.0f;
+	}
+	if(ShowDebugDrawings) DEBUGRenderLine(vec3(0.0f, 0.0f, 0.0f), -GameState->DirectionalLightDir, vec3(1.0f, 1.0f, 0.0f));
 	
+
 	// NOTE(georgy): Directional shadow map rendering
 	r32 CascadesDistances[CASCADES_COUNT + 1] = {Camera->NearDistance, 25.0f, 65.0f, Camera->FarDistance};
 	mat4 LightSpaceMatrices[CASCADES_COUNT];
@@ -846,7 +895,6 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 				Cascade1[PointIndex] = Cascade1[PointIndex] + vec4(Camera->OffsetFromHero + Camera->TargetOffset, 0.0f);
 			}
 
-			// mat4 LightView = LookAt(vec3(0.0f, 0.0f, 0.0f), -vec3(0.0f, 1.0f, 0.0f), vec3(0.0f, 0.0f, -1.0f));
 			mat4 LightView = LookAt(vec3(0.0f, 0.0f, 0.0f), GameState->DirectionalLightDir);
 			for(u32 PointIndex = 0;
 				PointIndex < ArrayCount(Cascade1);
@@ -881,8 +929,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 			RenderChunks(&GameState->World, GameState->WorldDepthShader, LightSpaceMatrices[CascadeIndex]);
 
 			RenderEntities(GameState, TempState, SimRegion, GameState->WorldDepthShader, 
-						GameState->CharacterDepthShader, GameState->BillboardShader, 
-						Right);
+						   GameState->CharacterDepthShader, GameState->HitpointsShader, Right);
 			RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, &TempState->Allocator, 
 								GameState->BlockParticleDepthShader, GameState->Hero.Entity->P);
 		}
@@ -945,12 +992,115 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
 
 	RenderChunks(&GameState->World, GameState->WorldShader, ViewProjection);
-	DEBUG_VARIABLE(bool32, ShowDebugDrawings);
-	RenderEntities(GameState, TempState, SimRegion, GameState->WorldShader, GameState->CharacterShader,
-				   GameState->BillboardShader, Right, ShowDebugDrawings);
+	RenderEntities(GameState, TempState, SimRegion, 
+				   GameState->WorldShader, GameState->CharacterShader, GameState->HitpointsShader,
+				   Right, ShowDebugDrawings);
 	RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, &TempState->Allocator, 
 						 GameState->BlockParticleShader, GameState->Hero.Entity->P);
 	RenderParticleEffects(GameState, TempState, SimRegion, GameState->BillboardShader, Right);
+
+	// NOTE(georgy): Render UI
+	mat4 Orthographic = Ortho(-0.5f*BufferHeight, 0.5f*BufferHeight, 
+							  -0.5f*BufferWidth, 0.5f*BufferWidth,
+							  0.1f, 100.0f);
+	glDisable(GL_DEPTH_TEST);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	UseShader(GameState->UIQuadShader);
+	SetMat4(GameState->UIQuadShader, "Projection", Orthographic);
+	SetInt(GameState->UIQuadShader, "Texture", 0);
+	glActiveTexture(GL_TEXTURE0);
+	
+	UseShader(GameState->UIGlyphShader);
+	SetMat4(GameState->UIGlyphShader, "Projection", Orthographic);
+	SetInt(GameState->UIGlyphShader, "Texture", 0);
+	glActiveTexture(GL_TEXTURE0);
+	
+	UseShader(GameState->UIQuadShader);
+	asset_tag_vector MatchVector = {};
+	MatchVector.E[Tag_Color] = TagColor_Red;
+	texture_id HPBarTextureIndex = GetBestMatchTextureFromType(TempState->GameAssets, AssetType_UIBar, &MatchVector);
+	vec2 HPBarTextureDim = vec2(150.0f, 25.0f);
+	vec2 HPBarTextureP = vec2(-0.5f*HPBarTextureDim.x - 5.0f, (-0.5f*BufferHeight + 10.0f) + 0.5f*HPBarTextureDim.y);
+	RenderQuad(GameState->UIQuadShader, GameState->UIQuadVAO, TempState->GameAssets, HPBarTextureIndex, 
+		   	   HPBarTextureP, HPBarTextureDim, 0.5f);
+
+	vec2 HPBarMaxDim = HPBarTextureDim - vec2(10.0f, 10.0f);
+	r32 HPBarScale = ((r32)GameState->Hero.Entity->Sim.HitPoints / GameState->Hero.Entity->Sim.MaxHitPoints);
+	vec2 HPBarDim = vec2(HPBarMaxDim.x * HPBarScale, HPBarMaxDim.y);
+	r32 HPDiff = 0.5f*(HPBarMaxDim.x - HPBarDim.x);
+	vec2 HPBarPos = HPBarTextureP + vec2(-HPDiff, 1.0f);
+	RenderQuad(GameState->UIQuadShader, GameState->UIQuadVAO,  HPBarPos, 
+			   HPBarDim, vec4(1.0f, 0.0f, 0.0f, 1.0f));
+
+	MatchVector = {};
+	MatchVector.E[Tag_Color] = TagColor_Blue;
+	texture_id MPBarTextureIndex = GetBestMatchTextureFromType(TempState->GameAssets, AssetType_UIBar, &MatchVector);
+	vec2 MPBarTextureDim = vec2(150.0f, 25.0f);
+	vec2 MPBarTextureP = vec2(0.5f*MPBarTextureDim.x + 5.0f, (-0.5f*BufferHeight + 10.0f) + 0.5f*MPBarTextureDim.y);
+	RenderQuad(GameState->UIQuadShader, GameState->UIQuadVAO, TempState->GameAssets, MPBarTextureIndex, 
+		   	   MPBarTextureP, MPBarTextureDim, 0.5f);
+
+	vec2 MPBarMaxDim = MPBarTextureDim - vec2(10.0f, 10.0f);
+	r32 MPBarScale = ((r32)GameState->Hero.Entity->Sim.ManaPoints / GameState->Hero.Entity->Sim.MaxManaPoints);
+	vec2 MPBarDim = vec2(MPBarMaxDim.x * MPBarScale, MPBarMaxDim.y);
+	r32 MPDiff = 0.5f*(MPBarMaxDim.x - MPBarDim.x);
+	vec2 MPBarPos = MPBarTextureP + vec2(-MPDiff, 1.0f);
+	RenderQuad(GameState->UIQuadShader, GameState->UIQuadVAO,  MPBarPos, 
+			   MPBarDim, vec4(0.0f, 0.0f, 1.0f, 1.0f));
+
+	asset_tag_vector GameFontMatchVector = { };
+	GameFontMatchVector.E[Tag_FontType] = FontType_GameFont;
+	GameState->FontID = GetBestMatchFont(TempState->GameAssets, &GameFontMatchVector);
+	GameState->Font = GetFont(TempState->GameAssets, GameState->FontID);
+	if(GameState->Font)
+	{
+		vec2 HitPointsP = HPBarTextureP + vec2(0.0f, 1.5f);
+		rect2 SlashRect = GetTextLineRect(GameState->Font, vec2(0.0f, 0.0f), "/", 0.2f);
+		vec2 SlashDim = GetDim(SlashRect);
+		vec2 SlashScreenP = HitPointsP - 0.5f*SlashDim;
+		RenderTextLine(GameState->Font, GameState->UIGlyphShader, GameState->UIGlyphVAO, 
+					   SlashScreenP, "/", 0.2f);
+
+		char Buffer[256];
+		_snprintf_s(Buffer, sizeof(Buffer), "%i", GameState->Hero.Entity->Sim.MaxHitPoints);
+		vec2 MaxHPScreenP = SlashScreenP + vec2(SlashDim.x, 0.0f);
+		RenderTextLine(GameState->Font, GameState->UIGlyphShader, GameState->UIGlyphVAO, 
+					   MaxHPScreenP, Buffer, 0.2f);
+
+		_snprintf_s(Buffer, sizeof(Buffer), "%i", GameState->Hero.Entity->Sim.HitPoints);
+		rect2 HPRect = GetTextLineRect(GameState->Font, vec2(0.0f, 0.0f), Buffer, 0.2f);
+		vec2 HPDim = GetDim(HPRect);
+		vec2 HPScreenP = SlashScreenP - vec2(HPDim.x, 0.0f);
+		RenderTextLine(GameState->Font, GameState->UIGlyphShader, GameState->UIGlyphVAO, 
+					   HPScreenP, Buffer, 0.2f);
+
+		vec2 ManaPointsP = MPBarTextureP + vec2(0.0f, 1.5f);
+		SlashScreenP = ManaPointsP - 0.5f*SlashDim;
+		RenderTextLine(GameState->Font, GameState->UIGlyphShader, GameState->UIGlyphVAO, 
+					   SlashScreenP, "/", 0.2f);
+
+		_snprintf_s(Buffer, sizeof(Buffer), "%i", GameState->Hero.Entity->Sim.MaxManaPoints);
+		vec2 MaxMPScreenP = SlashScreenP + vec2(SlashDim.x, 0.0f);
+		RenderTextLine(GameState->Font, GameState->UIGlyphShader, GameState->UIGlyphVAO, 
+					   MaxMPScreenP, Buffer, 0.2f);
+
+		_snprintf_s(Buffer, sizeof(Buffer), "%i", GameState->Hero.Entity->Sim.ManaPoints);
+		rect2 MPRect = GetTextLineRect(GameState->Font, vec2(0.0f, 0.0f), Buffer, 0.2f);
+		vec2 MPDim = GetDim(MPRect);
+		vec2 MPScreenP = SlashScreenP - vec2(MPDim.x, 0.0f);
+		RenderTextLine(GameState->Font, GameState->UIGlyphShader, GameState->UIGlyphVAO, 
+					   MPScreenP, Buffer, 0.2f);
+	}
+	else
+	{
+		LoadFont(TempState->GameAssets, GameState->FontID);
+	}
+	
+	glDisable(GL_BLEND);
+	glEnable(GL_DEPTH_TEST);
+
 
 	EndSimulation(GameState, SimRegion, &GameState->WorldAllocator);
 	EndTemporaryMemory(WorldConstructionAndRenderMemory);

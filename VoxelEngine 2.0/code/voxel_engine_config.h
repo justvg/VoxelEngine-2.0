@@ -1,6 +1,6 @@
 #pragma once
 
-#define GlobalConstants_DebugRenderShadows true
+#define GlobalConstants_DebugRenderShadows false
 #define GlobalConstants_ShowDebugDrawings false
 #define GlobalConstants_DebugCamera false
 

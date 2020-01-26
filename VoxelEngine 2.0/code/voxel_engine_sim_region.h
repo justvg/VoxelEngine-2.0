@@ -53,8 +53,8 @@ struct sim_entity
 
 	entity_animation_state AnimationState;
 
-	i32 MaxHitPoints;
-	i32 HitPoints;
+	i32 MaxHitPoints, MaxManaPoints;
+	i32 HitPoints, ManaPoints;
 
 	r32 Rotation;
 

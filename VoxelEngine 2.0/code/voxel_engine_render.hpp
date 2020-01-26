@@ -120,6 +120,125 @@ Initialize3DTransforms(shader *Shaders, u32 ShaderCount, mat4 ViewProjection)
 }
 
 inline void
+RenderQuad(shader Shader, GLuint VAO, bool32 TexturedUI, vec2 ScreenP, vec2 Scale, r32 Alpha)
+{
+	glBindVertexArray(VAO);
+	SetInt(Shader, "TexturedUI", TexturedUI);
+	SetVec2(Shader, "ScreenP", ScreenP);
+	SetVec2(Shader, "Scale", Scale);
+	SetFloat(Shader, "Alpha", Alpha);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+}
+
+internal void
+RenderQuad(shader Shader, GLuint VAO, game_assets *Assets, texture_id ID, 
+		   vec2 ScreenP, vec2 Scale, r32 Alpha)
+{
+	loaded_texture *Texture = GetTexture(Assets, ID);
+	if(Texture)
+	{
+		glBindTexture(GL_TEXTURE_2D, Texture->TextureID);
+		RenderQuad(Shader, VAO, true, ScreenP, Scale, Alpha);
+	}
+	else
+	{
+		LoadTexture(Assets, ID);
+	}
+}
+
+internal void
+RenderQuad(shader Shader, GLuint VAO, vec2 ScreenP, vec2 Scale, vec4 Color)
+{
+	SetVec3(Shader, "Color", vec3(Color.m));
+	RenderQuad(Shader, VAO, false, ScreenP, Scale, Color.w());
+}
+
+internal rect2
+RenderTextLine(loaded_font *Font, shader Shader, GLuint VAO, vec2 ScreenP, char *String, r32 FontScale,
+			   bool32 GetRect = false)
+{
+	rect2 Result = RectMinMax(vec2(FLT_MAX, FLT_MAX), vec2(-FLT_MAX, -FLT_MAX));
+
+	if(Font)
+	{
+		UseShader(Shader);
+		glBindVertexArray(VAO);
+
+		for(char *C = String;
+			*C;
+			C++)
+		{
+			char Character = *C;
+			char NextCharacter = *(C + 1);
+
+			if(Character != ' ')
+			{
+				loaded_texture *Glyph = GetBitmapForGlyph(Font, Character);
+
+				if(GetRect)
+				{
+					vec2 GlyphVertices[] =
+					{
+						vec2(0.0f, 1.0f),
+						vec2(0.0f, 0.0f),
+						vec2(1.0f, 1.0f),
+						vec2(1.0f, 0.0f)
+					};
+
+					vec2 LeftBotCornerP = ScreenP - vec2(0.0f, Glyph->AlignPercentageY*FontScale*Glyph->Height);
+					for(u32 GlyphVertexIndex = 0;
+						GlyphVertexIndex < ArrayCount(GlyphVertices);
+						GlyphVertexIndex++)
+					{
+						vec2 P = LeftBotCornerP + FontScale*Hadamard(vec2i(Glyph->Width, Glyph->Height),
+																	 GlyphVertices[GlyphVertexIndex]);
+						if(Result.Min.x > P.x)
+						{
+							Result.Min.x = P.x;
+						}
+						if(Result.Min.y > P.y)
+						{
+							Result.Min.y = P.y;
+						}
+						if(Result.Max.x < P.x)
+						{
+							Result.Max.x = P.x;
+						}
+						if(Result.Max.y < P.y)
+						{
+							Result.Max.y = P.y;
+						}
+					}
+				}
+				else
+				{
+					SetVec2(Shader, "ScreenP", ScreenP);
+					SetVec3(Shader, "WidthHeightScale", vec3((r32)Glyph->Width, (r32)Glyph->Height, FontScale));
+					SetFloat(Shader, "AlignPercentageY", Glyph->AlignPercentageY);
+					glBindTexture(GL_TEXTURE_2D, Glyph->TextureID);
+					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+				}
+			}
+
+			ScreenP.x += FontScale*GetHorizontalAdvanceFor(Font, Character, NextCharacter);
+		}
+
+		glBindVertexArray(0);
+		UseShader({0});
+	}
+
+	return(Result);
+}
+
+inline rect2
+GetTextLineRect(loaded_font *Font, vec2 ScreenP, char *String, r32 FontScale)
+{
+	shader DummyShader = {};
+	rect2 Result = RenderTextLine(Font, DummyShader, 0, ScreenP, String, FontScale, true);
+	return(Result);
+}
+
+inline void
 DrawFromVAO(GLuint VAO, u32 VerticesCount)
 {
 	glBindVertexArray(VAO);
@@ -566,7 +685,7 @@ DEBUGRenderAxes(mat4 Transformation)
 }
 
 internal void
-DEBUGRenderLine(vec3 FromP, vec3 ToP)
+DEBUGRenderLine(vec3 FromP, vec3 ToP, vec3 Color = vec3(1.0f, 0.0f, 0.0f))
 {
 	DEBUGBeginRenderDebugObject(&GlobalDebugDrawInfo.Shader, &GlobalDebugDrawInfo.LineVAO, Identity());
 	
@@ -577,11 +696,12 @@ DEBUGRenderLine(vec3 FromP, vec3 ToP)
 	};
 
 	glBindVertexArray(GlobalDebugDrawInfo.LineVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, GlobalDebugDrawInfo.LineVBO);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(LineVertices), LineVertices, GL_STATIC_DRAW);
-	glBindVertexArray(0);
 
 	glLineWidth(8.0f);
 
+	SetVec3(GlobalDebugDrawInfo.Shader, "Color", Color);
 	glDrawArrays(GL_LINES, 0, 2);
 
 	glLineWidth(1.0f);

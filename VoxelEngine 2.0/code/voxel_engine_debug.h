@@ -80,7 +80,11 @@ struct debug_frame
 {
     union 
     {
-        debug_frame *Next;
+        struct 
+        {
+            debug_frame *Next;
+            debug_frame *Prev;
+        };
         debug_frame *NextFree;
     };
 
@@ -145,9 +149,10 @@ struct debug_state
     bool32 ProfilePause;
 
     u32 TotalFrameCount;
-    debug_frame *Frames;
-    debug_frame *OldestFrame;
-    debug_frame *MostRecentFrame;
+
+    debug_frame FramesSentinel;
+    // debug_frame *OldestFrame;
+    // debug_frame *MostRecentFrame;
     debug_frame *CollationFrame;
     debug_frame *FirstFreeFrame;
 

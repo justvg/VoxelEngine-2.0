@@ -575,6 +575,13 @@ AllocateGameAssets(temp_state *TempState, stack_allocator *Allocator, u64 Size)
 	AddAsset(GameAssets, "data/textures/cosmic.bmp", AssetDataType_Texture);
 	EndAssetType(GameAssets);
 
+	BeginAssetType(GameAssets, AssetType_UIBar);
+	AddAsset(GameAssets, "data/textures/hp_bar.bmp", AssetDataType_Texture);
+	AddTag(GameAssets, Tag_Color, TagColor_Red);
+	AddAsset(GameAssets, "data/textures/mp_bar.bmp", AssetDataType_Texture);
+	AddTag(GameAssets, Tag_Color, TagColor_Blue);
+	EndAssetType(GameAssets);
+
 	// TODO(georgy): It's better to use asset packer I think, because this path may be different on an other machine
 	// 				 so we can pre-pack all textures for font on our machine
 	// 				 Also asset packer allows us to treat character bitmap as any other bitmap (texture)

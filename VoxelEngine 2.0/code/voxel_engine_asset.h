@@ -64,6 +64,8 @@ enum asset_type_id
 	AssetType_Fire,
 	AssetType_Cosmic,
 
+	AssetType_UIBar,
+
 	// 
 	// NOTE(georgy): Fonts!
 	// 
@@ -126,6 +128,12 @@ struct asset_type
 	u32 OnePastLastAssetIndex;
 };
 
+enum tag_color
+{
+	TagColor_Red = 1,
+	TagColor_Green = 2,
+	TagColor_Blue = 3,
+};
 enum asset_font_type
 {
 	FontType_DebugFont = 1,

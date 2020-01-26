@@ -1007,8 +1007,8 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 
 internal void
 RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegion, 
-			   shader WorldShader, shader CharacterShader, shader BillboardShader, vec3 Right,
-			   bool32 DEBUGRenderBB = false)
+			   shader WorldShader, shader CharacterShader, shader HitpointsShader, 
+			   vec3 Right, bool32 DEBUGRenderBB = false)
 {
 	for(u32 EntityIndex = 0;
 		EntityIndex < SimRegion->EntityCount;
@@ -1114,12 +1114,12 @@ RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegi
 					SetMat4(WorldShader, "Model", Model);
 					DrawFromVAO(GameState->CubeVAO, 36);
 
-					UseShader(GameState->HitpointsShader);
-					SetVec3(GameState->HitpointsShader, "Color", vec3(1.0f, 0.0f, 0.0f));
-					SetVec3(GameState->HitpointsShader, "CameraRight", Right);
-					SetVec3(GameState->HitpointsShader, "BillboardSimCenterP", Entity->P + vec3(0.0f, 1.0f + 0.1f, 0.0f));
-					SetVec2(GameState->HitpointsShader, "Scale", vec2((r32)Entity->HitPoints / (r32)Entity->MaxHitPoints, 0.2f));
-					
+					UseShader(HitpointsShader);
+					SetVec3(HitpointsShader, "Color", vec3(1.0f, 0.0f, 0.0f));
+					SetVec3(HitpointsShader, "CameraRight", Right);
+					SetVec3(HitpointsShader, "BillboardSimCenterP", Entity->P + vec3(0.0f, 1.0f + 0.1f, 0.0f));
+					SetVec2(HitpointsShader, "Scale", vec2((r32)Entity->HitPoints / (r32)Entity->MaxHitPoints, 0.2f));
+
 					glBindVertexArray(GameState->QuadVAO);
 					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 					glBindVertexArray(0);

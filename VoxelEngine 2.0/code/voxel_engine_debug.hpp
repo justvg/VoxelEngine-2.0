@@ -43,7 +43,7 @@ DEBUGTextLineOperation(debug_state *DebugState, debug_text_op Op, char *String,
 						GlyphVertexIndex++)
 					{
 						vec2 P = LeftBotCornerP + FontScale*Hadamard(vec2i(Glyph->Width, Glyph->Height),
-																DebugState->GlyphVertices[GlyphVertexIndex]);
+																	 DebugState->GlyphVertices[GlyphVertexIndex]);
 						if(Result.Min.x > P.x)
 						{
 							Result.Min.x = P.x;
@@ -132,7 +132,7 @@ DEBUGReset(debug_state *DebugState, game_memory *Memory, game_assets *GameAssets
 		DebugState->FontScale = 0.2f;
 
 		CompileShader(&DebugState->GlyphShader, "data/shaders/GlyphVS.glsl", "data/shaders/GlyphFS.glsl");
-		CompileShader(&DebugState->QuadShader, "data/shaders/2DQuadVS.glsl", "data/shaders/2DQuadFS.glsl");
+		CompileShader(&DebugState->QuadShader, "data/shaders/2DQuadDebugVS.glsl", "data/shaders/2DQuadDebugFS.glsl");
 
 		DebugState->GlyphVertices[0] = { 0.0f, 1.0f };
 		DebugState->GlyphVertices[1] = { 0.0f, 0.0f };
@@ -147,6 +147,8 @@ DEBUGReset(debug_state *DebugState, game_memory *Memory, game_assets *GameAssets
 		glEnableVertexAttribArray(0);
 		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void *)0);
 		glBindVertexArray(0);
+
+		DebugState->FramesSentinel.Next = DebugState->FramesSentinel.Prev = &DebugState->FramesSentinel;
 
 		DebugState->IsInitialized = true;
 	}
@@ -206,7 +208,7 @@ GetDebugThread(debug_state *DebugState, u32 ID)
 internal void
 FreeOldestFrame(debug_state *DebugState)
 {
-	while(DebugState->OldestStoredEvent && (DebugState->OldestStoredEvent->FrameIndex <= DebugState->OldestFrame->Index))
+	while(DebugState->OldestStoredEvent && (DebugState->OldestStoredEvent->FrameIndex <= DebugState->FramesSentinel.Prev->Index))
 	{
 		debug_stored_event *FreeEvent = DebugState->OldestStoredEvent;
 		DebugState->OldestStoredEvent = DebugState->OldestStoredEvent->Next;
@@ -220,13 +222,11 @@ FreeOldestFrame(debug_state *DebugState)
 		DebugState->FirstFreeStoredEvent = FreeEvent;
 	}
 
-	debug_frame *FrameToFree = DebugState->OldestFrame;
-	DebugState->OldestFrame = DebugState->OldestFrame->Next;
-	if(DebugState->MostRecentFrame == FrameToFree)
-	{
-		Assert(FrameToFree->Next == 0);
-		DebugState->MostRecentFrame = 0;
-	}
+	debug_frame *FrameToFree = DebugState->FramesSentinel.Prev;
+	FrameToFree->Prev->Next = &DebugState->FramesSentinel;
+	DebugState->FramesSentinel.Prev = FrameToFree->Prev;
+
+	FrameToFree->Next = FrameToFree->Prev = 0;
 
 	FrameToFree->NextFree = DebugState->FirstFreeFrame;
 	DebugState->FirstFreeFrame = FrameToFree;
@@ -237,14 +237,11 @@ NewFrame(debug_state *DebugState, u64 BeginClock)
 {
 	if(DebugState->CollationFrame)
 	{
-		if(!DebugState->MostRecentFrame)
-		{
-			DebugState->MostRecentFrame = DebugState->OldestFrame = DebugState->CollationFrame;
-		}
-		else
-		{
-			DebugState->MostRecentFrame = DebugState->MostRecentFrame->Next = DebugState->CollationFrame;
-		}
+		DebugState->CollationFrame->Next = DebugState->FramesSentinel.Next;
+		DebugState->CollationFrame->Prev = &DebugState->FramesSentinel;
+
+		DebugState->FramesSentinel.Next->Prev = DebugState->CollationFrame;
+		DebugState->FramesSentinel.Next = DebugState->CollationFrame;
 	}
 
 	debug_frame *Frame = 0;
@@ -272,7 +269,7 @@ NewFrame(debug_state *DebugState, u64 BeginClock)
 	Frame->RegionsCount = 0;
 	Frame->BeginClock = BeginClock;
 	Frame->MSElapsed = 0.0f;
-	Frame->Next = 0;
+	Frame->Next = Frame->Prev = 0;
 	Frame->Index = DebugState->TotalFrameCount++;
 
 	return(Frame);
@@ -408,21 +405,6 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 	}
 }
 
-#if 0
-inline void
-RestartCollation(debug_state *DebugState)
-{
-	EndTemporaryMemory(DebugState->CollateTemp);
-	DebugState->CollateTemp = BeginTemporaryMemory(&DebugState->Allocator);
-
-	DebugState->LaneCount = 0;
-	DebugState->FirstThread = 0;
-
-	DebugState->FrameCount = 0;
-	DebugState->CollationFrame = 0;
-}
-#endif
-
 internal void
 DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 {
@@ -452,11 +434,12 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 
 	debug_event *HotBlock = 0;
 
+	debug_frame *Frame = &DebugState->FramesSentinel;
 	for(u32 FrameIndex = 0;
-		FrameIndex < 1;
+		FrameIndex < 5;
 		FrameIndex++)
 	{
-		debug_frame *Frame = DebugState->MostRecentFrame; // + MaxFrameCount - (FrameIndex + 1);
+		Frame = Frame->Next;
 
 		vec2 P = StartP - (r32)FrameIndex*vec2(0.0f, LaneCount*LaneHeight + BarSpacing);
 		if(Frame->RegionsCount > 0)
@@ -674,12 +657,13 @@ DEBUGEndDebugFrameAndRender(game_memory *Memory, game_input *Input, r32 BufferWi
 	DEBUGRenderMainMenu(DebugState, Input);
 
 	char Buffer[256];
-	if(DebugState->MostRecentFrame)
+	debug_frame *MostRecentFrame = DebugState->FramesSentinel.Next;
+	if(MostRecentFrame != &DebugState->FramesSentinel)
 	{
 		UseShader(DebugState->GlyphShader);
 		SetVec3(DebugState->GlyphShader, "Color", vec3(1.0f, 1.0f, 1.0f));
 
-		_snprintf_s(Buffer, sizeof(Buffer), "%.02fms/f", DebugState->MostRecentFrame->MSElapsed);
+		_snprintf_s(Buffer, sizeof(Buffer), "%.02fms/f", MostRecentFrame->MSElapsed);
 		rect2 MSFRect = DEBUGGetTextRect(DebugState, Buffer, vec2(-0.5f*DebugState->BufferDim.x, DebugState->TextP.y));
 		DEBUGTextLine(DebugState, Buffer);
 		DebugState->TextP.y = MSFRect.Min.y;
@@ -690,5 +674,14 @@ DEBUGEndDebugFrameAndRender(game_memory *Memory, game_input *Input, r32 BufferWi
 
 	u32 SizeRemaining = (u32)((DebugState->FrameAllocator.Size - DebugState->FrameAllocator.Used) / 1024);
 	_snprintf_s(Buffer, sizeof(Buffer), "FrameAllocator remaining: %uKb", SizeRemaining);
+	rect2 TextRect = DEBUGGetTextRect(DebugState, Buffer, vec2(-0.5f*DebugState->BufferDim.x, DebugState->TextP.y));
+	DEBUGTextLine(DebugState, Buffer);
+	DebugState->TextP.y = TextRect.Min.y;
+
+
+
+	game_state* GameState = (game_state*)Memory->PermanentStorage;
+	SizeRemaining = (u32)((GameState->WorldAllocator.Size - GameState->WorldAllocator.Used) / 1024);
+	_snprintf_s(Buffer, sizeof(Buffer), "WorldAllocator remaining: %uKb", SizeRemaining);
 	DEBUGTextLine(DebugState, Buffer);
 }

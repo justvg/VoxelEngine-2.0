@@ -4,11 +4,11 @@
 #include <gl\glew.h>
 #include <gl\wglew.h>
 
-#include "voxel_engine_platform.h"
-#include "voxel_engine.hpp"
-
 // TOOD(georgy): Get rid of this
 #include <stdio.h>
+
+#include "voxel_engine_platform.h"
+#include "voxel_engine.hpp"
 
 #include <Windows.h>
 #include <timeapi.h>
@@ -17,6 +17,7 @@ global_variable bool8 GlobalRunning;
 global_variable bool8 GlobalGamePause;
 global_variable bool8 GlobalCursorShouldBeClipped;
 global_variable LARGE_INTEGER GlobalPerformanceFrequency;
+global_variable WINDOWPLACEMENT GlobalWindowPosition = { sizeof(GlobalWindowPosition) };
 
 global_variable bool8 GlobalDEBUGCursor;
 
@@ -289,7 +290,7 @@ WinInitOpenGL(HWND Window, HINSTANCE Instance, LPCSTR WindowClassName)
 {
 	HWND FakeWindow = CreateWindowEx(0, WindowClassName,
 									 "FakeWindow",
-									 WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+									 WS_OVERLAPPEDWINDOW,
 									 CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 									 0, 0, Instance, 0);
 
@@ -359,6 +360,7 @@ WinInitOpenGL(HWND Window, HINSTANCE Instance, LPCSTR WindowClassName)
 					glEnable(GL_CULL_FACE);
 					glEnable(GL_MULTISAMPLE);
 					glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
 					// glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 				}
 				else
@@ -410,11 +412,42 @@ WinGetWindowDimension(HWND Window)
 internal void
 WinUpdateWindow(HDC DeviceContext, int WindowWidth, int WindowHeight)
 {
-	glViewport(0, 0, WindowWidth, WindowHeight);
 	glClearColor(0.0f, 0.175f, 0.375f, 1.0f);
 	
 	SwapBuffers(DeviceContext);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+}
+
+internal void 
+ToggleFullscreen(HWND Window)
+{
+    // NOTE(george): This follows Raymond Chen's prescription
+    // for fullscreen toggling, see:
+    // https://blogs.msdn.microsoft.com/oldnewthing/20100412-00/?p=14353
+
+    DWORD Style = GetWindowLong(Window, GWL_STYLE);
+    if (Style & WS_OVERLAPPEDWINDOW) 
+    {
+        MONITORINFO MonitorInfo = { sizeof(MonitorInfo) };
+        if (GetWindowPlacement(Window, &GlobalWindowPosition) &&
+            GetMonitorInfo(MonitorFromWindow(Window, MONITOR_DEFAULTTOPRIMARY), &MonitorInfo)) 
+        {
+            SetWindowLong(Window, GWL_STYLE, Style & ~WS_OVERLAPPEDWINDOW);
+            SetWindowPos(Window, HWND_TOP,
+                        MonitorInfo.rcMonitor.left, MonitorInfo.rcMonitor.top,
+                        MonitorInfo.rcMonitor.right - MonitorInfo.rcMonitor.left,
+                        MonitorInfo.rcMonitor.bottom - MonitorInfo.rcMonitor.top,
+                        SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
+    }
+    else 
+    {
+        SetWindowLong(Window, GWL_STYLE, Style | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(Window, &GlobalWindowPosition);
+        SetWindowPos(Window, NULL, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                    SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    }
 }
 
 LRESULT CALLBACK 
@@ -703,18 +736,26 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	WindowClass.style = CS_OWNDC | CS_VREDRAW | CS_HREDRAW;
 	WindowClass.lpfnWndProc = WinWindowCallback;
 	WindowClass.hInstance = Instance;
+	WindowClass.hbrBackground = CreateSolidBrush(RGB(0, (u8)(0.175f*255.0f), (u8)(0.375f*255.0f)));
 	WindowClass.lpszClassName = "VoxelEngineWindowClass";
 
-	if (RegisterClass(&WindowClass))
+	if(RegisterClass(&WindowClass))
 	{
 		HWND Window = CreateWindowEx(0, WindowClass.lpszClassName,
 									 "Voxel Engine 2.0", 
-									 WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+									 WS_OVERLAPPEDWINDOW,
 									 CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 									 0, 0, Instance, 0);
-		if (Window)
+		if(Window)
 		{
 			WinInitOpenGL(Window, Instance, WindowClass.lpszClassName);
+			ToggleFullscreen(Window);
+			ShowWindow(Window, SW_SHOW);
+			
+			window_dimension Dimension = WinGetWindowDimension(Window);
+			glViewport(0, 0, Dimension.Width, Dimension.Height);
+			glClearColor(0.0f, 0.175f, 0.375f, 1.0f);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 			int RefreshRate = 60;
 			HDC WindowDC = GetDC(Window);

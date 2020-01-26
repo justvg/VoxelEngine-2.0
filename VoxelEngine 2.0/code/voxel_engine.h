@@ -212,11 +212,15 @@ struct game_state
 	shader WorldDepthShader;
 	shader CharacterDepthShader;
 	shader BlockParticleDepthShader;
+	shader UIQuadShader;
+	shader UIGlyphShader;
 	shader FramebufferScreenShader;
 
 	animation CharacterAnimations[CharacterAnimation_Count];
 
 	hero Hero;
+
+	r32 t;
 
 #define CASCADES_COUNT 3
 	vec3 DirectionalLightDir;
@@ -230,10 +234,15 @@ struct game_state
 
 	block_particle_generator BlockParticleGenerator;
 
+	// TODO(georgy): Move this to temp state?
+	font_id FontID;
+	loaded_font *Font;
+
+	GLuint UIQuadVAO, UIQuadVBO;
+	GLuint UIGlyphVAO, UIGlyphVBO;
+
 	GLuint CubeVAO, CubeVBO;
 	GLuint QuadVAO, QuadVBO;
-
-	bool32 DEBUGCameraEnabled;
 };
 
 internal void AddCollisionRule(game_state *GameState, u32 StorageIndexA, u32 StorageIndexB, bool32 CanCollide);
