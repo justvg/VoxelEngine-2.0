@@ -85,11 +85,12 @@ DEBUGTextLineOperation(debug_state *DebugState, debug_text_op Op, char *String,
 	return(Result);
 }
 
-inline void
-DEBUGTextLine(debug_state *DebugState, char *String)
+inline rect2
+DEBUGGetTextRect(debug_state *DebugState, char *String, vec2 ScreenP)
 {
-	vec2 ScreenP = vec2(-0.5f*DebugState->BufferDim.x, DebugState->TextP.y);
-	DEBUGTextLineOperation(DebugState, DEBUGTextOp_Render, String, ScreenP); 
+	rect2 Result = DEBUGTextLineOperation(DebugState, DEBUGTextOp_GetRect, String, ScreenP);
+
+	return(Result);
 }
 
 inline void
@@ -98,12 +99,28 @@ DEBUGTextLineAt(debug_state *DebugState, char *String, vec2 ScreenP)
 	DEBUGTextLineOperation(DebugState, DEBUGTextOp_Render, String, ScreenP); 
 }
 
-inline rect2
-DEBUGGetTextRect(debug_state *DebugState, char *String, vec2 ScreenP)
+inline void 
+DEBUGTextLineToMenu(debug_state *DebugState, char *String, vec3 Color)
 {
-	rect2 Result = DEBUGTextLineOperation(DebugState, DEBUGTextOp_GetRect, String, ScreenP);
+	UseShader(DebugState->GlyphShader);
+	SetVec3(DebugState->GlyphShader, "Color", Color);
+	vec2 ScreenP = vec2(-0.5f*DebugState->BufferDim.x, DebugState->TextP.y);
+	DEBUGTextLineAt(DebugState, String, ScreenP);
+}
 
-	return(Result);
+inline void
+DEBUGTextLine(debug_state *DebugState, char *String, r32 TextLineMinY, vec3 Color = vec3(1.0f, 1.0f, 1.0f))
+{
+	DEBUGTextLineToMenu(DebugState, String, Color);
+	DebugState->TextP.y = TextLineMinY;
+}
+
+inline void
+DEBUGTextLine(debug_state *DebugState, char *String, vec3 Color = vec3(1.0f, 1.0f, 1.0f))
+{
+	DEBUGTextLineToMenu(DebugState, String, Color);
+	rect2 TextRegion = DEBUGGetTextRect(DebugState, String, vec2(-0.5f*DebugState->BufferDim.x, DebugState->TextP.y));
+	DebugState->TextP.y = TextRegion.Min.y;
 }
 
 inline game_assets *
@@ -149,6 +166,18 @@ DEBUGReset(debug_state *DebugState, game_memory *Memory, game_assets *GameAssets
 		glBindVertexArray(0);
 
 		DebugState->FramesSentinel.Next = DebugState->FramesSentinel.Prev = &DebugState->FramesSentinel;
+
+		for(u32 GroupIndex = 0;
+			GroupIndex < DebugValueEventGroup_Count;
+			GroupIndex++)
+		{
+			DebugState->Groups[GroupIndex] = {};
+			DebugState->Groups[GroupIndex].Type = DebugEvent_Group;
+			DebugState->Groups[GroupIndex].Value_bool32 = false;
+		}
+		DebugState->Groups[DebugValueEventGroup_Rendering].Name = "Rendering";
+		DebugState->Groups[DebugValueEventGroup_World].Name = "World";
+		DebugState->Groups[DebugValueEventGroup_DebugTools].Name = "DebugTools";
 
 		DebugState->IsInitialized = true;
 	}
@@ -329,10 +358,10 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 			DebugState->CollationFrame = NewFrame(DebugState, Event->Clock);
 		}
 
-		if(Event->Type == DebugEvent_SaveDebugValue)
+		if(Event->Type == DebugEvent_SaveDebugVariable)
 		{
-			Assert(DebugState->ValuesCount < ArrayCount(DebugState->ValueEvents));
-			DebugState->ValueEvents[DebugState->ValuesCount++] = Event->Value_debug_event;
+			Assert(DebugState->VariablesCount < ArrayCount(DebugState->VariablesEvents));
+			DebugState->VariablesEvents[DebugState->VariablesCount++] = Event->Value_debug_event;
 		}
 		else if(Event->Type == DebugEvent_FrameMarker)
 		{
@@ -384,7 +413,7 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 									Region->StartCyclesInFrame = (r32)(MatchingBlock->Event->Clock - DebugState->CollationFrame->BeginClock);
 									Region->EndCyclesInFrame = (r32)(Event->Clock - DebugState->CollationFrame->BeginClock);
 									Region->LaneIndex = Thread->LaneIndex;
-									Region->ColorIndex = (u32)MatchingBlock->Event->Name;
+									Region->ColorIndex = (u32)MatchingBlock->Event->Name >> 4;
 								}
 
 								Thread->OpenDebugBlocks = MatchingBlock->Parent;
@@ -397,7 +426,8 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 
 					default:
 					{
-						Assert(!"Invalid event type!");
+						Assert(DebugState->ValuesCount < ArrayCount(DebugState->ValuesEvents));
+						DebugState->ValuesEvents[DebugState->ValuesCount++] = *Event;
 					} break;
 				}
 			}
@@ -517,46 +547,6 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 }
 
 internal void
-DEBUGAddMainMenuElement(debug_state *DebugState, debug_event *Event, vec2 MouseP, char *Name)
-{
-	char Buffer[128];
-	char *At = Buffer;
-	At += _snprintf_s(Buffer, sizeof(Buffer), "%s: ", Name);
-	switch(Event->Type)
-	{
-		case DebugEvent_r32:
-		{
-			_snprintf_s(At, sizeof(Buffer) - (At - Buffer), sizeof(Buffer) - (At - Buffer), 
-						"%.2f", Event->Value_r32);
-		} break;
-
-		case DebugEvent_bool32:
-		{
-			_snprintf_s(At, sizeof(Buffer) - (At - Buffer), sizeof(Buffer) - (At - Buffer), 
-				"%s", Event->Value_bool32 ? "true" : "false");
-		} break;
-	}
-	
-
-	rect2 TextRegion = DEBUGGetTextRect(DebugState, Buffer, vec2(-0.5f*DebugState->BufferDim.x, DebugState->TextP.y));
-	if(IsInRect(TextRegion, MouseP))
-	{
-		DebugState->NextHotInteraction = Event;
-	}
-
-	vec3 Color = vec3(1.0f, 1.0f, 1.0f);
-	if(DebugState->HotInteraction == Event)
-	{
-		Color = vec3(1.0f, 1.0f, 0.0f);
-	}
-	UseShader(DebugState->GlyphShader);
-	SetVec3(DebugState->GlyphShader, "Color", Color);
-	DEBUGTextLine(DebugState, Buffer);
-	
-	DebugState->TextP.y = TextRegion.Min.y;
-}
-
-internal void
 DEBUGBeginInteraction(debug_state *DebugState)
 {
 	DebugState->ActiveInteraction = DebugState->HotInteraction;
@@ -569,6 +559,11 @@ DEBUGEndInteraction(debug_state *DebugState)
 	{
 		switch(DebugState->ActiveInteraction->Type)
 		{
+			case DebugEvent_Group:
+			{
+				DebugState->ActiveInteraction->Value_bool32 = !DebugState->ActiveInteraction->Value_bool32;
+			} break;
+
 			case DebugEvent_bool32:
 			{
 				DebugState->ActiveInteraction->Value_bool32 = !DebugState->ActiveInteraction->Value_bool32;
@@ -580,17 +575,111 @@ DEBUGEndInteraction(debug_state *DebugState)
 }
 
 internal void
+DEBUGEventToText(debug_event *Event, char *Buffer, u32 BufferSize, u32 Depth = 0)
+{
+	char *Name = Event->Name;
+
+	char *At = Buffer;
+	for(u32 DepthIndex = 0;
+		DepthIndex < Depth;
+		DepthIndex++)
+	{
+		*At++ = ' ';
+		*At++ = ' ';
+		*At++ = ' ';
+		*At++ = ' ';
+	}
+
+	if(Event->Type == DebugEvent_Group)
+	{
+		At += _snprintf_s(At, BufferSize - (At - Buffer), BufferSize - (At - Buffer), "%s%s", Event->Value_bool32 ? "-" : "+", Name);
+	}
+	else
+	{
+		At += _snprintf_s(At, BufferSize - (At - Buffer), BufferSize - (At - Buffer), "%s: ", Name);
+	}
+	switch(Event->Type)
+	{
+		case DebugEvent_bool32:
+		{
+			_snprintf_s(At, BufferSize - (At - Buffer), BufferSize - (At - Buffer), 
+				"%s", Event->Value_bool32 ? "true" : "false");
+		} break;
+
+		case DebugEvent_r32:
+		{
+			_snprintf_s(At, BufferSize - (At - Buffer), BufferSize - (At - Buffer), 
+						"%.2f", Event->Value_r32);
+		} break;
+
+		case DebugEvent_u32:
+		{
+			_snprintf_s(At, BufferSize - (At - Buffer), BufferSize - (At - Buffer), 
+						"%u", Event->Value_u32);
+		} break;	
+	}
+}
+
+internal void
+DEBUGAddMainMenuElement(debug_state *DebugState, debug_event *Event, vec2 MouseP, u32 Depth = 0)
+{
+	char Buffer[128];
+	DEBUGEventToText(Event, Buffer, sizeof(Buffer), Depth);
+
+	rect2 TextRegion = DEBUGGetTextRect(DebugState, Buffer, vec2(-0.5f*DebugState->BufferDim.x, DebugState->TextP.y));
+	if(IsInRect(TextRegion, MouseP))
+	{
+		DebugState->NextHotInteraction = Event;
+	}
+
+	vec3 Color = vec3(1.0f, 1.0f, 1.0f);
+	if(DebugState->HotInteraction == Event)
+	{
+		Color = vec3(1.0f, 1.0f, 0.0f);
+	}
+	DEBUGTextLine(DebugState, Buffer, TextRegion.Min.y, Color);
+}
+
+internal void
 DEBUGRenderMainMenu(debug_state *DebugState, game_input *Input)
 {
 	vec2 MouseP = vec2(Input->MouseX, Input->MouseY);
 	DebugState->NextHotInteraction = 0;
 
-	for(u32 ValueIndex = 0;
-		ValueIndex < DebugState->ValuesCount;
-		ValueIndex++)
+	for(u32 GroupIndex = 0;
+		GroupIndex < DebugValueEventGroup_Count;
+		GroupIndex++)
 	{
-		debug_event *Event = DebugState->ValueEvents[ValueIndex];
-		DEBUGAddMainMenuElement(DebugState, Event, MouseP, Event->Name);
+		DEBUGAddMainMenuElement(DebugState, &DebugState->Groups[GroupIndex], MouseP);
+
+		if(DebugState->Groups[GroupIndex].Value_bool32)
+		{
+			u32 Depth = 1;
+
+			for(u32 VariableIndex = 0;
+				VariableIndex < DebugState->VariablesCount;
+				VariableIndex++)
+			{
+				debug_event *Event = DebugState->VariablesEvents[VariableIndex];
+				if(Event->Group == GroupIndex)
+				{
+					DEBUGAddMainMenuElement(DebugState, Event, MouseP, Depth);
+				}
+			}
+
+			for(u32 ValueIndex = 0;
+				ValueIndex < DebugState->ValuesCount;
+				ValueIndex++)
+			{
+				debug_event *Event = DebugState->ValuesEvents + ValueIndex;
+				if(Event->Group == GroupIndex)
+				{
+					char Buffer[64];
+					DEBUGEventToText(Event, Buffer, sizeof(Buffer), Depth);
+					DEBUGTextLine(DebugState, Buffer);
+				}
+			}
+		}
 	}
 
 	if(DebugState->ActiveInteraction)
@@ -618,9 +707,12 @@ DEBUGRenderMainMenu(debug_state *DebugState, game_input *Input)
 		}
 	}
 
-	DEBUG_IF(ShowProfiling)
+	DEBUG_IF(Profiling, DebugTools)
 	{
-		DEBUGRenderRegions(DebugState, Input);
+		if(DebugState->Groups[DebugValueEventGroup_DebugTools].Value_bool32)
+		{
+			DEBUGRenderRegions(DebugState, Input);
+		}
 	}
 
 	DebugState->LastMouseP = MouseP;
@@ -643,6 +735,11 @@ DEBUGEndDebugFrameAndRender(game_memory *Memory, game_input *Input, r32 BufferWi
 		EventArrayIndex = EventArrayIndex_EventIndex >> 32;
 		GlobalDebugTable.EventCount = EventArrayIndex_EventIndex & 0xFFFFFFFF;
 	}
+
+	if(!GlobalDebugTable.ProfilePause)
+	{
+		DebugState->ValuesCount = 0;
+	}
 	
 	if(DebugState && GameAssets)
 	{
@@ -656,32 +753,18 @@ DEBUGEndDebugFrameAndRender(game_memory *Memory, game_input *Input, r32 BufferWi
 
 	DEBUGRenderMainMenu(DebugState, Input);
 
-	char Buffer[256];
 	debug_frame *MostRecentFrame = DebugState->FramesSentinel.Next;
 	if(MostRecentFrame != &DebugState->FramesSentinel)
 	{
-		UseShader(DebugState->GlyphShader);
-		SetVec3(DebugState->GlyphShader, "Color", vec3(1.0f, 1.0f, 1.0f));
-
+		char Buffer[64];
 		_snprintf_s(Buffer, sizeof(Buffer), "%.02fms/f", MostRecentFrame->MSElapsed);
-		rect2 MSFRect = DEBUGGetTextRect(DebugState, Buffer, vec2(-0.5f*DebugState->BufferDim.x, DebugState->TextP.y));
 		DEBUGTextLine(DebugState, Buffer);
-		DebugState->TextP.y = MSFRect.Min.y;
 	}
 
-	UseShader(DebugState->GlyphShader);
-	SetVec3(DebugState->GlyphShader, "Color", vec3(1.0f, 1.0f, 1.0f));
-
-	u32 SizeRemaining = (u32)((DebugState->FrameAllocator.Size - DebugState->FrameAllocator.Used) / 1024);
-	_snprintf_s(Buffer, sizeof(Buffer), "FrameAllocator remaining: %uKb", SizeRemaining);
-	rect2 TextRect = DEBUGGetTextRect(DebugState, Buffer, vec2(-0.5f*DebugState->BufferDim.x, DebugState->TextP.y));
-	DEBUGTextLine(DebugState, Buffer);
-	DebugState->TextP.y = TextRect.Min.y;
-
-
+	u32 FrameAllocatorRemaining = (u32)((DebugState->FrameAllocator.Size - DebugState->FrameAllocator.Used) / 1024);
+	DEBUG_VALUE(u32, FrameAllocatorRemainingKb, DebugTools, FrameAllocatorRemaining);
 
 	game_state* GameState = (game_state*)Memory->PermanentStorage;
-	SizeRemaining = (u32)((GameState->WorldAllocator.Size - GameState->WorldAllocator.Used) / 1024);
-	_snprintf_s(Buffer, sizeof(Buffer), "WorldAllocator remaining: %uKb", SizeRemaining);
-	DEBUGTextLine(DebugState, Buffer);
+	u32 WorldAllocatorRemaining = (u32)((GameState->WorldAllocator.Size - GameState->WorldAllocator.Used) / 1024);
+	DEBUG_VALUE(u32, WorldAllocatorRemainingKb, World, WorldAllocatorRemaining);
 }

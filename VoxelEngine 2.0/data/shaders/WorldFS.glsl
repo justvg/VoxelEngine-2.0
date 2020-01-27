@@ -17,7 +17,6 @@ uniform bool ShadowsEnabled;
 uniform sampler2DArray ShadowMaps;
 uniform float CascadesDistances[CASCADES_COUNT + 1];
 
-// const vec3 DirectionalLightDir = -vec3(0.0, 1.0, 0.0);
 uniform vec3 DirectionalLightDir = vec3(0.0);
 const vec3 DirectionalLightColor = vec3(0.666666, 0.788235, 0.79215);
 
@@ -28,7 +27,7 @@ vec3 Fog(vec3 SourceColor, float Distance, vec3 RayDir, vec3 MoonDir)
 	const float e = 2.71828182845904523536028747135266249;
 
 	float MoonAmount = max(dot(RayDir, MoonDir), 0.0);
-	vec3 FogFinalColor = mix(FogColor, DirectionalLightColor, pow(MoonAmount, 9.0));
+	vec3 FogFinalColor = mix(FogColor, DirectionalLightColor, pow(MoonAmount, 15.0));
 	float FogAmount = 1.0 - pow(e, -pow(Distance*0.0125, 2));
 	vec3 Result = mix(SourceColor, FogFinalColor, FogAmount);
 	return(Result);

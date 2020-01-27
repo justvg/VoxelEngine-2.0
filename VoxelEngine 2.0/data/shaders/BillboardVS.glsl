@@ -5,6 +5,7 @@ layout (location = 2) in vec2 OffsetInAtlas;
 layout (location = 3) in float Scale;
 
 out vec2 TexCoords;
+out vec3 FragSimP;
 
 uniform vec3 CameraRight;
 uniform vec3 CameraUp;
@@ -21,5 +22,6 @@ void main()
     // TexCoords.y = TexCoords.y + OffsetInAtlas.y;
 
     vec3 P = SimP + Scale*CameraRight*aPos.x + Scale*CameraUp*aPos.y;
+    FragSimP = P;
     gl_Position = ViewProjection * vec4(P, 1.0);
 }

@@ -275,7 +275,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 		GameState->Camera.DistanceFromHero = 9.0f;
 		GameState->Camera.RotSensetivity = 0.1f;
 		GameState->Camera.NearDistance = 0.1f;
-		GameState->Camera.FarDistance = 120.0f;
+		GameState->Camera.FarDistance = 160.0f;
 		GameState->Camera.FoV = 45.0f;
 		// TODO(georgy): Get this from hero head model or smth
 		// NOTE(georgy): This is hero head centre offset from hero feet pos. 
@@ -561,7 +561,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	Camera->Pitch = Camera->Pitch > 89.0f ? 89.0f : Camera->Pitch;
 	Camera->Pitch = Camera->Pitch < -89.0f ? -89.0f : Camera->Pitch;
 
-	DEBUG_IF(DebugCamera)
+	DEBUG_IF(DebugCamera, DebugTools)
 	{
 		r32 CameraTargetDirX = Sin(DEG2RAD(Camera->Head))*Cos(DEG2RAD(Camera->Pitch));
 		r32 CameraTargetDirY = Sin(DEG2RAD(Camera->Pitch));
@@ -718,7 +718,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 
 	temporary_memory WorldConstructionAndRenderMemory = BeginTemporaryMemory(&TempState->Allocator);
 
-	DEBUG_VARIABLE(r32, SimBoundsRadius);
+	DEBUG_VARIABLE(r32, SimBoundsRadius, World);
 	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-SimBoundsRadius, -20.0f, -SimBoundsRadius), 
 												vec3(SimBoundsRadius, 20.0f, SimBoundsRadius));
 	sim_region *SimRegion = BeginSimulation(GameState, GameState->Hero.Entity->P, 
@@ -842,7 +842,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	BlockParticlesUpdate(&GameState->BlockParticleGenerator, Input->dt);
 	
 
-	DEBUG_VARIABLE(bool32, ShowDebugDrawings);
+	DEBUG_VARIABLE(bool32, ShowDebugDrawings, Rendering);
 
 	r32 OneDayCycleInSeconds = 3.0f*60.0f;
 	r32 DayCycleInCircle = (GameState->t / OneDayCycleInSeconds) * 1.5f*PI;
@@ -858,7 +858,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	// NOTE(georgy): Directional shadow map rendering
 	r32 CascadesDistances[CASCADES_COUNT + 1] = {Camera->NearDistance, 25.0f, 65.0f, Camera->FarDistance};
 	mat4 LightSpaceMatrices[CASCADES_COUNT];
-	DEBUG_IF(DebugRenderShadows)
+	DEBUG_IF(RenderShadows, Rendering)
 	{
 		glViewport(0, 0, GameState->ShadowMapsWidth, GameState->ShadowMapsHeight);
 		glBindFramebuffer(GL_FRAMEBUFFER, GameState->ShadowMapFBO);
@@ -966,7 +966,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	SetMat4Array(GameState->WorldShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
 	SetFloatArray(GameState->WorldShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
 	SetVec3(GameState->WorldShader, "DirectionalLightDir", GameState->DirectionalLightDir);
-	SetInt(GameState->WorldShader, "ShadowsEnabled", DebugRenderShadows);
+	SetInt(GameState->WorldShader, "ShadowsEnabled", RenderShadows);
 	SetInt(GameState->WorldShader, "ShadowMaps", 0);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
@@ -976,7 +976,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	SetMat4Array(GameState->CharacterShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
 	SetFloatArray(GameState->CharacterShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
 	SetVec3(GameState->CharacterShader, "DirectionalLightDir", GameState->DirectionalLightDir);
-	SetInt(GameState->CharacterShader, "ShadowsEnabled", DebugRenderShadows);
+	SetInt(GameState->CharacterShader, "ShadowsEnabled", RenderShadows);
 	SetInt(GameState->CharacterShader, "ShadowMaps", 0);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
@@ -986,10 +986,13 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	SetMat4Array(GameState->BlockParticleShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
 	SetFloatArray(GameState->BlockParticleShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
 	SetVec3(GameState->BlockParticleShader, "DirectionalLightDir", GameState->DirectionalLightDir);
-	SetInt(GameState->BlockParticleShader, "ShadowsEnabled", DebugRenderShadows);
+	SetInt(GameState->BlockParticleShader, "ShadowsEnabled", RenderShadows);
 	SetInt(GameState->BlockParticleShader, "ShadowMaps", 0);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
+
+	UseShader(GameState->BillboardShader);
+	SetVec3(GameState->BillboardShader, "DirectionalLightDir", GameState->DirectionalLightDir);
 
 	RenderChunks(&GameState->World, GameState->WorldShader, ViewProjection);
 	RenderEntities(GameState, TempState, SimRegion, 

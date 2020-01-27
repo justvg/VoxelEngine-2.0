@@ -412,7 +412,8 @@ WinGetWindowDimension(HWND Window)
 internal void
 WinUpdateWindow(HDC DeviceContext, int WindowWidth, int WindowHeight)
 {
-	glClearColor(0.0f, 0.175f, 0.375f, 1.0f);
+	// glClearColor(0.0f, 0.175f, 0.375f, 1.0f);
+	glClearColor(0.0f, SquareRoot(0.175f), SquareRoot(0.375f), 1.0f);
 	
 	SwapBuffers(DeviceContext);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -736,6 +737,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	WindowClass.style = CS_OWNDC | CS_VREDRAW | CS_HREDRAW;
 	WindowClass.lpfnWndProc = WinWindowCallback;
 	WindowClass.hInstance = Instance;
+	WindowClass.hCursor = LoadCursor(0, IDC_ARROW);
 	WindowClass.hbrBackground = CreateSolidBrush(RGB(0, (u8)(0.175f*255.0f), (u8)(0.375f*255.0f)));
 	WindowClass.lpszClassName = "VoxelEngineWindowClass";
 
@@ -749,12 +751,12 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		if(Window)
 		{
 			WinInitOpenGL(Window, Instance, WindowClass.lpszClassName);
-			ToggleFullscreen(Window);
+			// ToggleFullscreen(Window);
 			ShowWindow(Window, SW_SHOW);
 			
 			window_dimension Dimension = WinGetWindowDimension(Window);
 			glViewport(0, 0, Dimension.Width, Dimension.Height);
-			glClearColor(0.0f, 0.175f, 0.375f, 1.0f);
+			glClearColor(0.0f, SquareRoot(0.175f), SquareRoot(0.375f), 1.0f);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 			int RefreshRate = 60;

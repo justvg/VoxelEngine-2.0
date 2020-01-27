@@ -2,16 +2,28 @@
 
 #if VOXEL_ENGINE_INTERNAL
 
+
+enum debug_value_event_group
+{
+    DebugValueEventGroup_Rendering,
+    DebugValueEventGroup_World,
+    DebugValueEventGroup_DebugTools,
+    
+    DebugValueEventGroup_Count
+};
+
 enum debug_event_type
 {
     DebugEvent_FrameMarker,
     DebugEvent_BeginBlock,
     DebugEvent_EndBlock,
 
-    DebugEvent_SaveDebugValue,
+    DebugEvent_SaveDebugVariable,
 
+    DebugEvent_Group,
     DebugEvent_bool32,
     DebugEvent_r32,
+    DebugEvent_u32,
 };
 struct debug_event
 {
@@ -20,15 +32,17 @@ struct debug_event
     u32 LineNumber;
 
     u64 Clock;
+    
+    u16 ThreadID;
     u8 Type;
+    u8 Group;
 
     union 
     {
         debug_event *Value_debug_event;
-        r32 Value_r32;
         bool32 Value_bool32;
-
-        u16 ThreadID;
+        r32 Value_r32;
+        u32 Value_u32;
     };
 };
 
@@ -135,8 +149,11 @@ struct debug_state
     vec2 GlyphVertices[4];
 	GLuint GlyphVAO, GlyphVBO;
 
+    u32 VariablesCount;
+    debug_event *VariablesEvents[64];
     u32 ValuesCount;
-    debug_event *ValueEvents[64];
+    debug_event ValuesEvents[64];
+    debug_event Groups[DebugValueEventGroup_Count];
 
     debug_stored_event *OldestStoredEvent;
     debug_stored_event *MostRecentStoredEvent;
@@ -240,10 +257,10 @@ struct record_playback_info
 
 global_variable record_playback_info DEBUGGlobalPlaybackInfo;
 
-inline debug_event DEBUGInitializeValue(debug_event *SubEvent, debug_event_type Type, 
+inline debug_event DEBUGInitializeValue(debug_event *SubEvent, debug_event_type Type, debug_value_event_group Group,
                                         char *FileName, char *Name, u32 LineNumber)
 {
-    debug_event *Event = RecordDebugEvent(DebugEvent_SaveDebugValue, 0, "", 0);
+    debug_event *Event = RecordDebugEvent(DebugEvent_SaveDebugVariable, 0, "", 0);
     Event->Value_debug_event = SubEvent;
 
     SubEvent->FileName = FileName;
@@ -251,18 +268,27 @@ inline debug_event DEBUGInitializeValue(debug_event *SubEvent, debug_event_type 
     SubEvent->LineNumber = LineNumber;
     SubEvent->Clock = 0;
     SubEvent->Type = Type;
+    SubEvent->Group = Group;
 
 	return(*SubEvent);
 }
 
-#define DEBUG_IF(Name) \
-local_persist debug_event DebugEvent##Name = DEBUGInitializeValue(&DebugEvent##Name, (DebugEvent##Name.Value_bool32 = GlobalConstants_##Name, DebugEvent_bool32), __FILE__, #Name, __LINE__); \
+#define DEBUG_IF(Name, Group) \
+local_persist debug_event DebugEvent##Name = DEBUGInitializeValue(&DebugEvent##Name, (DebugEvent##Name.Value_bool32 = GlobalConstants_##Name, DebugEvent_bool32), DebugValueEventGroup_##Group, __FILE__, #Name, __LINE__); \
 bool32 Name = DebugEvent##Name.Value_bool32; \
 if(Name)
 
-#define DEBUG_VARIABLE(type, Name) \
-local_persist debug_event DebugEvent##Name = DEBUGInitializeValue(&DebugEvent##Name, (DebugEvent##Name.Value_##type = GlobalConstants_##Name, DebugEvent_##type), __FILE__, #Name, __LINE__); \
+#define DEBUG_VARIABLE(type, Name, Group) \
+local_persist debug_event DebugEvent##Name = DEBUGInitializeValue(&DebugEvent##Name, (DebugEvent##Name.Value_##type = GlobalConstants_##Name, DebugEvent_##type), DebugValueEventGroup_##Group, __FILE__, #Name, __LINE__); \
 type Name = DebugEvent##Name.Value_##type; 
+
+#define DEBUG_VALUE(type, Name, GroupInit, Value) \
+debug_event *DebugEvent##Name = RecordDebugEvent(DebugEvent_##type, __FILE__, #Name, __LINE__); \
+if(DebugEvent##Name) \
+{ \
+    DebugEvent##Name->Group = DebugValueEventGroup_##GroupInit; \
+    DebugEvent##Name->Value_##type = Value; \
+}
 
 #else 
 
