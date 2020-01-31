@@ -168,10 +168,10 @@ BeginSimulation(game_state *GameState, world_position Origin, rect3 Bounds,
 						{
 							world_position ChunkPosition = { ChunkX, ChunkY, ChunkZ, vec3(0.0f, 0.0f, 0.0f) };
 							Chunk->Translation = Substract(World, &ChunkPosition, &Origin);
-
 							chunk *ChunkToRender = PushStruct(TempAllocator, chunk);
 							*ChunkToRender = *Chunk;
 							ChunkToRender->LengthSqTranslation = LengthSq(ChunkToRender->Translation);
+
 							ChunkToRender->Next = World->ChunksToRender;
 							World->ChunksToRender = ChunkToRender;
 						}
@@ -802,15 +802,23 @@ HandleCollision(game_state *GameState, sim_region *SimRegion, sim_entity *Entity
 												 0.5f*vec3(World->BlockDimInMeters, World->BlockDimInMeters, World->BlockDimInMeters);
 							world_position WorldBlockP = { Chunk->X, Chunk->Y, Chunk->Z, OffsetInChunk };
 							RecanonicalizeCoords(World, &WorldBlockP);
-							vec3 BlockColor;
+							vec4 BlockColor;
 							u32 Op = OperationBetweenChunks_SetActiveness |
 									 OperationBetweenChunks_GetColor;
 							OperationBetweenChunks(World, Chunk, X, Y, Z, (operation_between_chunks)Op, false, &BlockColor);
-							AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, BlockColor);
+							AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, vec3(BlockColor.m));
 						}
 					} 
 				}	
 			}
+		}
+	}
+	else if((A == EntityType_Chunk) && (B == EntityType_Hero))
+	{
+		EntityB->HitPoints++;
+		if(EntityB->HitPoints > 100)
+		{
+			EntityB->HitPoints = 0;
 		}
 	}
 	else if((A == EntityType_Fireball) && (B == 10000))

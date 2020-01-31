@@ -15,6 +15,10 @@ in vs_out
 uniform bool ShadowsEnabled;
 uniform sampler2DArray ShadowMaps;
 uniform float CascadesDistances[CASCADES_COUNT + 1];
+uniform vec2 SampleOffsets[64];
+uniform sampler2D ShadowNoiseTexture;
+
+uniform int Width, Height;
 
 uniform vec3 DirectionalLightDir = vec3(0.0);
 const vec3 DirectionalLightColor = vec3(0.666666, 0.788235, 0.79215);
@@ -42,16 +46,23 @@ float ShadowCalc(float ShadowMapIndex, vec4 FragPosLightSpace, vec3 Normal, vec3
 
 	float Result = 0.0;
 	vec2 TexelSize = 1.0 / textureSize(ShadowMaps, 0).xy;
-	for(int X = -1; X <= 1; ++X)
+
+	vec2 NoiseScale = vec2(Width, Height) / 8.0;
+	vec2 RandomVec = normalize(texture(ShadowNoiseTexture, NoiseScale*(gl_FragCoord.xy/vec2(Width, Height))).rg);
+	vec2 Perp = vec2(-RandomVec.y, RandomVec.x);
+	mat2 ChangeOffsetMatrix = mat2(RandomVec, Perp);
+
+	for(int SampleOffsetIndex = 0;
+		SampleOffsetIndex < 64;
+		SampleOffsetIndex++)
 	{
-		for(int Y = -1; Y <= 1; ++Y)
-		{
-			float Depth = texture(ShadowMaps, vec3(ProjectedCoords.xy + vec2(X, Y) * TexelSize, ShadowMapIndex)).r; 
-			Result += CurrentFragmentDepth > Depth ? 1.0 : 0.0;        
-		}    
+		vec2 SampleOffset = ChangeOffsetMatrix * SampleOffsets[SampleOffsetIndex];
+		vec2 Offset = 11.0*TexelSize*SampleOffset;
+		float Depth = texture(ShadowMaps, vec3(ProjectedCoords.xy + Offset, ShadowMapIndex)).r;
+		Result += CurrentFragmentDepth > Depth ? 1.0 : 0.0;
 	}
-	
-	Result /= 9.0;
+
+	Result /= 64.0f;
 
 	return(Result);
 }

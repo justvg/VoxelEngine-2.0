@@ -206,6 +206,7 @@ struct game_state
 
 	shader CharacterShader;
 	shader WorldShader;
+	shader WaterShader;
 	shader HitpointsShader;
 	shader BillboardShader;
 	shader BlockParticleShader;
@@ -226,6 +227,8 @@ struct game_state
 	vec3 DirectionalLightDir;
 	GLuint ShadowMapFBO, ShadowMapsArray;
 	u32 ShadowMapsWidth, ShadowMapsHeight;
+	GLuint ShadowNoiseTexture;
+	vec2 ShadowSamplesOffsets[64];
 
 	u32 StoredEntityCount;
 	stored_entity StoredEntities[10000];

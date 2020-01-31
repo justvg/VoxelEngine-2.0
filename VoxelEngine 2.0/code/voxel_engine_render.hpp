@@ -78,6 +78,12 @@ SetInt(shader Shader, char *Name, int32_t Value)
 }
 
 inline void
+SetVec2Array(shader Shader, char *Name, u32 Count, vec2 *Values)
+{
+	glUniform2fv(glGetUniformLocation(Shader.ID, Name), Count, (GLfloat *)Values);
+}
+
+inline void
 SetVec2(shader Shader, char *Name, vec2 Value)
 {
 	glUniform2f(glGetUniformLocation(Shader.ID, Name), Value.x, Value.y);
@@ -301,9 +307,6 @@ SpawnParticles(particle_emitter *Particles, camera *Camera, vec3 BaseP, r32 dt)
 			Particles->NextParticle = 0;
 		}
 
-		// Particle->P = vec3(RandomBetween(-Particles->Info.StartPRanges.x(), Particles->Info.StartPRanges.x()),
-		//                    RandomBetween(-Particles->Info.StartPRanges.y(), Particles->Info.StartPRanges.y()),
-		// 				      RandomBetween(-Particles->Info.StartPRanges.z(), Particles->Info.StartPRanges.z()));
 		Particle->P = Hadamard(vec3((((rand() % 100) - 50) / 50.0f), (((rand() % 100) - 50) / 50.0f), (((rand() % 100) - 50) / 50.0f)),
 							   Particles->Info.StartPRanges);
 		Particle->dP = Hadamard(vec3((((rand() % 100) - 50) / 50.0f), (((rand() % 100) - 50) / 50.0f), (((rand() % 100) - 50) / 50.0f)),

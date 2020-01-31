@@ -58,7 +58,7 @@ enum operation_between_chunks
 };
 internal bool32
 OperationBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z, operation_between_chunks Op, 
-					   bool32 Activeness = false, vec3 *Color = 0)
+					   bool32 Activeness = false, vec4 *Color = 0)
 {
 	bool32 Result = false;
 
@@ -110,17 +110,26 @@ OperationBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z, operatio
 		Assert(Chunk);
 	}
 
-	Assert(Chunk->IsSetupBlocks);
-	Result = IsBlockActive(Chunk->BlocksInfo->Blocks, X, Y, Z);
-	if(Op & OperationBetweenChunks_SetActiveness)
+	if(Chunk->Y > MAX_CHUNKS_Y)
 	{
-		Chunk->BlocksInfo->Blocks[Z*CHUNK_DIM*CHUNK_DIM + Y*CHUNK_DIM + X].Active = Activeness;
-		Chunk->IsModified = true;
+		Result = false;
 	}
-	if(Op & OperationBetweenChunks_GetColor)
+	else
 	{
-		Assert(Color);
-		*Color = Chunk->BlocksInfo->Colors[Z*CHUNK_DIM*CHUNK_DIM + Y*CHUNK_DIM + X];
+		Assert(Chunk->IsSetupBlocks);
+		Result = IsBlockActive(Chunk->BlocksInfo->Blocks, X, Y, Z) &&
+				 (GetBlockType(Chunk->BlocksInfo->Blocks, X, Y, Z) != BlockType_Water);
+		// Result = IsBlockActive(Chunk->BlocksInfo->Blocks, X, Y, Z);
+		if(Op & OperationBetweenChunks_SetActiveness)
+		{
+			Chunk->BlocksInfo->Blocks[Z*CHUNK_DIM*CHUNK_DIM + Y*CHUNK_DIM + X].Active = Activeness;
+			Chunk->IsModified = true;
+		}
+		if(Op & OperationBetweenChunks_GetColor)
+		{
+			Assert(Color);
+			*Color = Chunk->BlocksInfo->Colors[Z*CHUNK_DIM*CHUNK_DIM + Y*CHUNK_DIM + X];
+		}
 	}
 
 	return(Result);
@@ -139,10 +148,10 @@ SetBlockActiveBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z, boo
 	OperationBetweenChunks(World, Chunk, X, Y, Z, OperationBetweenChunks_SetActiveness, Activeness);
 }
 
-inline vec3
+inline vec4
 GetBlockColorBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z)
 {
-	vec3 Result;
+	vec4 Result;
 	OperationBetweenChunks(World, Chunk, X, Y, Z, OperationBetweenChunks_GetColor, false, &Result);
 	return(Result);
 }
@@ -212,7 +221,7 @@ internal void
 GenerateChunkVertices(world *World, chunk *Chunk)
 {
 	block *Blocks = Chunk->BlocksInfo->Blocks;
-	vec3 *Colors = Chunk->BlocksInfo->Colors;
+	vec4 *Colors = Chunk->BlocksInfo->Colors;
 
 	for(i32 BlockZ = 0;
 		BlockZ < CHUNK_DIM;
@@ -234,228 +243,254 @@ GenerateChunkVertices(world *World, chunk *Chunk)
 					r32 Z = BlockZ*BlockDimInMeters;
 
 					vec3 A, B, C, D;
-					vec3 Color = Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX];
+					vec4 Color = Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX];
 
-					if ((BlockX == 0) || !IsBlockActive(Blocks, BlockX - 1, BlockY, BlockZ))
+					block_type BlockType = (block_type)GetBlockType(Blocks, BlockX, BlockY, BlockZ);
+					bool32 IsWater = (BlockType ==  BlockType_Water);
+
+					if ((BlockX == 0) || 
+						!IsBlockActive(Blocks, BlockX - 1, BlockY, BlockZ) ||
+						((GetBlockType(Blocks, BlockX - 1, BlockY, BlockZ) == BlockType_Water) && !IsWater))
 					{
-						A = vec3(X, Y, Z);
-						bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ);
-						bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ - 1);
-						bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ - 1);
-						A.SetW(VertexAO(Side1, Side2, Corner));
-
-						B = vec3(X, Y, Z + BlockDimInMeters);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ + 1);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ + 1);
-						B.SetW(VertexAO(Side1, Side2, Corner));
-
-						C = vec3(X, Y + BlockDimInMeters, Z);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ - 1);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ - 1);
-						C.SetW(VertexAO(Side1, Side2, Corner));
-
-						D = vec3(X, Y + BlockDimInMeters, Z + BlockDimInMeters);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ + 1);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ + 1);
-						D.SetW(VertexAO(Side1, Side2, Corner));
-
-						if((C.w() + B.w()) < (A.w() + D.w()))
+						if(!IsWater)
 						{
-							AddTriangle(&Chunk->VerticesP, A, B, D);
-							AddTriangle(&Chunk->VerticesP, A, D, C);
-						}
-						else
-						{
-							AddTriangle(&Chunk->VerticesP, A, B, C);
-							AddTriangle(&Chunk->VerticesP, C, B, D);
-						}
+							A = vec3(X, Y, Z);
+							bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ);
+							bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ - 1);
+							bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ - 1);
+							A.SetW(VertexAO(Side1, Side2, Corner));
 
-						vec3 N = vec3(-1.0f, 0.0f, 0.0f);
-						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
-						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
+							B = vec3(X, Y, Z + BlockDimInMeters);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ + 1);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ + 1);
+							B.SetW(VertexAO(Side1, Side2, Corner));
+
+							C = vec3(X, Y + BlockDimInMeters, Z);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ - 1);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ - 1);
+							C.SetW(VertexAO(Side1, Side2, Corner));
+
+							D = vec3(X, Y + BlockDimInMeters, Z + BlockDimInMeters);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ + 1);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ + 1);
+							D.SetW(VertexAO(Side1, Side2, Corner));
+
+							if((C.w() + B.w()) < (A.w() + D.w()))
+							{
+								AddTriangle(&Chunk->VerticesP, A, B, D);
+								AddTriangle(&Chunk->VerticesP, A, D, C);
+							}
+							else
+							{
+								AddTriangle(&Chunk->VerticesP, A, B, C);
+								AddTriangle(&Chunk->VerticesP, C, B, D);
+							}
+
+							vec3 N = vec3(-1.0f, 0.0f, 0.0f);
+							AddQuad(&Chunk->VerticesNormals, N, N, N, N);
+							AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
+						}
 					}
 
-					if ((BlockX == CHUNK_DIM - 1) || !IsBlockActive(Blocks, BlockX + 1, BlockY, BlockZ))
+					if ((BlockX == CHUNK_DIM - 1) || 
+						!IsBlockActive(Blocks, BlockX + 1, BlockY, BlockZ) || 
+						((GetBlockType(Blocks, BlockX + 1, BlockY, BlockZ) == BlockType_Water) && !IsWater))
 					{
-						A = vec3(X + BlockDimInMeters, Y, Z);
-						bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ);
-						bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ - 1);
-						bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ - 1);
-						A.SetW(VertexAO(Side1, Side2, Corner));
-
-						B = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ - 1);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ - 1);
-						B.SetW(VertexAO(Side1, Side2, Corner));
-						
-						C = vec3(X + BlockDimInMeters, Y, Z + BlockDimInMeters);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ + 1);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ + 1);
-						C.SetW(VertexAO(Side1, Side2, Corner));
-
-						D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z + BlockDimInMeters);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ + 1);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ + 1);
-						D.SetW(VertexAO(Side1, Side2, Corner));
-
-						if((C.w() + B.w()) < (A.w() + D.w()))
+						if(!IsWater)
 						{
-							AddTriangle(&Chunk->VerticesP, A, B, D);
-							AddTriangle(&Chunk->VerticesP, A, D, C);
-						}
-						else
-						{
-							AddTriangle(&Chunk->VerticesP, A, B, C);
-							AddTriangle(&Chunk->VerticesP, C, B, D);
-						}
+							A = vec3(X + BlockDimInMeters, Y, Z);
+							bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ);
+							bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ - 1);
+							bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ - 1);
+							A.SetW(VertexAO(Side1, Side2, Corner));
 
-						vec3 N = vec3(1.0f, 0.0f, 0.0f);
-						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
-						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
+							B = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ - 1);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ - 1);
+							B.SetW(VertexAO(Side1, Side2, Corner));
+							
+							C = vec3(X + BlockDimInMeters, Y, Z + BlockDimInMeters);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ + 1);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ + 1);
+							C.SetW(VertexAO(Side1, Side2, Corner));
+
+							D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z + BlockDimInMeters);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ + 1);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ + 1);
+							D.SetW(VertexAO(Side1, Side2, Corner));
+
+							if((C.w() + B.w()) < (A.w() + D.w()))
+							{
+								AddTriangle(&Chunk->VerticesP, A, B, D);
+								AddTriangle(&Chunk->VerticesP, A, D, C);
+							}
+							else
+							{
+								AddTriangle(&Chunk->VerticesP, A, B, C);
+								AddTriangle(&Chunk->VerticesP, C, B, D);
+							}
+
+							vec3 N = vec3(1.0f, 0.0f, 0.0f);
+							AddQuad(&Chunk->VerticesNormals, N, N, N, N);
+							AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
+						}
 					}
 
-					if ((BlockZ == 0) || !IsBlockActive(Blocks, BlockX, BlockY, BlockZ - 1))
+					if ((BlockZ == 0) || 
+						!IsBlockActive(Blocks, BlockX, BlockY, BlockZ - 1) ||
+						((GetBlockType(Blocks, BlockX, BlockY, BlockZ - 1) == BlockType_Water) && !IsWater))
 					{
-						A = vec3(X, Y, Z);
-						bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ - 1);
-						bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ - 1);
-						bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ - 1);
-						r32 AAO = VertexAO(Side1, Side2, Corner);
-						A.SetW(AAO);
-
-						B = vec3(X, Y + BlockDimInMeters, Z);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY + 1, BlockZ - 1);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ - 1);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ - 1);
-						r32 BAO = VertexAO(Side1, Side2, Corner); 
-						B.SetW(BAO);
-
-						C = vec3(X + BlockDimInMeters, Y, Z);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ - 1);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ - 1);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ - 1);
-						r32 CAO = VertexAO(Side1, Side2, Corner); 
-						C.SetW(CAO);
-
-						D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY + 1, BlockZ - 1);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ - 1);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ - 1);
-						r32 DAO = VertexAO(Side1, Side2, Corner); 
-						D.SetW(DAO);
-
-						if((CAO + BAO) < (AAO + DAO))
+						if(!IsWater)
 						{
-							AddTriangle(&Chunk->VerticesP, A, B, D);
-							AddTriangle(&Chunk->VerticesP, A, D, C);
-						}
-						else
-						{
-							AddTriangle(&Chunk->VerticesP, A, B, C);
-							AddTriangle(&Chunk->VerticesP, C, B, D);
-						}
+							A = vec3(X, Y, Z);
+							bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ - 1);
+							bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ - 1);
+							bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ - 1);
+							r32 AAO = VertexAO(Side1, Side2, Corner);
+							A.SetW(AAO);
 
-						vec3 N = vec3(0.0f, 0.0f, -1.0f);
-						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
-						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
+							B = vec3(X, Y + BlockDimInMeters, Z);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY + 1, BlockZ - 1);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ - 1);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ - 1);
+							r32 BAO = VertexAO(Side1, Side2, Corner); 
+							B.SetW(BAO);
+
+							C = vec3(X + BlockDimInMeters, Y, Z);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ - 1);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ - 1);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ - 1);
+							r32 CAO = VertexAO(Side1, Side2, Corner); 
+							C.SetW(CAO);
+
+							D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY + 1, BlockZ - 1);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ - 1);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ - 1);
+							r32 DAO = VertexAO(Side1, Side2, Corner); 
+							D.SetW(DAO);
+
+							if((CAO + BAO) < (AAO + DAO))
+							{
+								AddTriangle(&Chunk->VerticesP, A, B, D);
+								AddTriangle(&Chunk->VerticesP, A, D, C);
+							}
+							else
+							{
+								AddTriangle(&Chunk->VerticesP, A, B, C);
+								AddTriangle(&Chunk->VerticesP, C, B, D);
+							}
+
+							vec3 N = vec3(0.0f, 0.0f, -1.0f);
+							AddQuad(&Chunk->VerticesNormals, N, N, N, N);
+							AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
+						}
 					}
 
-					if ((BlockZ == CHUNK_DIM - 1) || !IsBlockActive(Blocks, BlockX, BlockY, BlockZ + 1))
+					if ((BlockZ == CHUNK_DIM - 1) || 
+						!IsBlockActive(Blocks, BlockX, BlockY, BlockZ + 1) ||
+						((GetBlockType(Blocks, BlockX, BlockY, BlockZ + 1) == BlockType_Water) && !IsWater))
 					{
-						A = vec3(X, Y, Z + BlockDimInMeters);
-						bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ + 1);
-						bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ + 1);
-						bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ + 1);
-						r32 AAO = VertexAO(Side1, Side2, Corner);
-						A.SetW(AAO);
-
-						B = vec3(X + BlockDimInMeters, Y, Z + BlockDimInMeters);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ + 1);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ + 1);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ + 1);
-						r32 BAO = VertexAO(Side1, Side2, Corner); 
-						B.SetW(BAO);
-
-						C = vec3(X, Y + BlockDimInMeters, Z + BlockDimInMeters);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY + 1, BlockZ + 1);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ + 1);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ + 1);
-						r32 CAO = VertexAO(Side1, Side2, Corner); 
-						C.SetW(CAO);
-
-						D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z + BlockDimInMeters);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY + 1, BlockZ + 1);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ + 1);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ + 1);
-						r32 DAO = VertexAO(Side1, Side2, Corner); 
-						D.SetW(DAO);
-
-						if((CAO + BAO) < (AAO + DAO))
+						if(!IsWater)
 						{
-							AddTriangle(&Chunk->VerticesP, A, B, D);
-							AddTriangle(&Chunk->VerticesP, A, D, C);
-						}
-						else
-						{
-							AddTriangle(&Chunk->VerticesP, A, B, C);
-							AddTriangle(&Chunk->VerticesP, C, B, D);
-						}
+							A = vec3(X, Y, Z + BlockDimInMeters);
+							bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ + 1);
+							bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ + 1);
+							bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ + 1);
+							r32 AAO = VertexAO(Side1, Side2, Corner);
+							A.SetW(AAO);
 
-						vec3 N = vec3(0.0f, 0.0f, 1.0f);
-						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
-						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
+							B = vec3(X + BlockDimInMeters, Y, Z + BlockDimInMeters);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ + 1);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ + 1);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ + 1);
+							r32 BAO = VertexAO(Side1, Side2, Corner); 
+							B.SetW(BAO);
+
+							C = vec3(X, Y + BlockDimInMeters, Z + BlockDimInMeters);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY + 1, BlockZ + 1);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY, BlockZ + 1);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ + 1);
+							r32 CAO = VertexAO(Side1, Side2, Corner); 
+							C.SetW(CAO);
+
+							D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z + BlockDimInMeters);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY + 1, BlockZ + 1);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY, BlockZ + 1);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ + 1);
+							r32 DAO = VertexAO(Side1, Side2, Corner); 
+							D.SetW(DAO);
+
+							if((CAO + BAO) < (AAO + DAO))
+							{
+								AddTriangle(&Chunk->VerticesP, A, B, D);
+								AddTriangle(&Chunk->VerticesP, A, D, C);
+							}
+							else
+							{
+								AddTriangle(&Chunk->VerticesP, A, B, C);
+								AddTriangle(&Chunk->VerticesP, C, B, D);
+							}
+
+							vec3 N = vec3(0.0f, 0.0f, 1.0f);
+							AddQuad(&Chunk->VerticesNormals, N, N, N, N);
+							AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
+						}
 					}
 
 					if ((BlockY == 0) || (!IsBlockActive(Blocks, BlockX, BlockY - 1, BlockZ)))
 					{
-						A = vec3(X, Y, Z);
-						bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ - 1);
-						bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ);
-						bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ - 1);
-						r32 AAO = VertexAO(Side1, Side2, Corner);
-						A.SetW(AAO);
-
-						B = vec3(X + BlockDimInMeters, Y, Z);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ - 1);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ - 1);
-						r32 BAO = VertexAO(Side1, Side2, Corner); 
-						B.SetW(BAO);
-
-						C = vec3(X, Y, Z + BlockDimInMeters);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ + 1);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ + 1);
-						r32 CAO = VertexAO(Side1, Side2, Corner); 
-						C.SetW(CAO);
-
-						D = vec3(X + BlockDimInMeters, Y, Z + BlockDimInMeters);
-						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ + 1);
-						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ);
-						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ + 1);
-						r32 DAO = VertexAO(Side1, Side2, Corner); 
-						D.SetW(DAO);
-
-						if((CAO + BAO) < (AAO + DAO))
+						if(BlockType != BlockType_Water)
 						{
-							AddTriangle(&Chunk->VerticesP, A, B, D);
-							AddTriangle(&Chunk->VerticesP, A, D, C);
-						}
-						else
-						{
-							AddTriangle(&Chunk->VerticesP, A, B, C);
-							AddTriangle(&Chunk->VerticesP, C, B, D);
-						}
+							A = vec3(X, Y, Z);
+							bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ - 1);
+							bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ);
+							bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ - 1);
+							r32 AAO = VertexAO(Side1, Side2, Corner);
+							A.SetW(AAO);
 
-						vec3 N = vec3(0.0f, -1.0f, 0.0f);
-						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
-						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
+							B = vec3(X + BlockDimInMeters, Y, Z);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ - 1);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ - 1);
+							r32 BAO = VertexAO(Side1, Side2, Corner); 
+							B.SetW(BAO);
+
+							C = vec3(X, Y, Z + BlockDimInMeters);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ + 1);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY - 1, BlockZ + 1);
+							r32 CAO = VertexAO(Side1, Side2, Corner); 
+							C.SetW(CAO);
+
+							D = vec3(X + BlockDimInMeters, Y, Z + BlockDimInMeters);
+							Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX , BlockY - 1, BlockZ + 1);
+							Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ);
+							Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY - 1, BlockZ + 1);
+							r32 DAO = VertexAO(Side1, Side2, Corner); 
+							D.SetW(DAO);
+
+							if((CAO + BAO) < (AAO + DAO))
+							{
+								AddTriangle(&Chunk->VerticesP, A, B, D);
+								AddTriangle(&Chunk->VerticesP, A, D, C);
+							}
+							else
+							{
+								AddTriangle(&Chunk->VerticesP, A, B, C);
+								AddTriangle(&Chunk->VerticesP, C, B, D);
+							}
+
+							vec3 N = vec3(0.0f, -1.0f, 0.0f);
+							AddQuad(&Chunk->VerticesNormals, N, N, N, N);
+							AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
+						}
 					}
 
 					if ((BlockY == CHUNK_DIM - 1) || (!IsBlockActive(Blocks, BlockX, BlockY + 1, BlockZ)))
@@ -488,20 +523,26 @@ GenerateChunkVertices(world *World, chunk *Chunk)
 						r32 DAO = VertexAO(Side1, Side2, Corner); 
 						D.SetW(DAO);
 
+						dynamic_array_vec3 *Positions = IsWater ? &Chunk->WaterVerticesP : &Chunk->VerticesP;
+						dynamic_array_vec4 *Colors = IsWater ? &Chunk->WaterVerticesColors : &Chunk->VerticesColors;
 						if((CAO + BAO) < (AAO + DAO))
 						{
-							AddTriangle(&Chunk->VerticesP, A, B, D);
-							AddTriangle(&Chunk->VerticesP, A, D, C);
+							AddTriangle(Positions, A, B, D);
+							AddTriangle(Positions, A, D, C);
 						}
 						else
 						{
-							AddTriangle(&Chunk->VerticesP, A, B, C);
-							AddTriangle(&Chunk->VerticesP, C, B, D);
+							AddTriangle(Positions, A, B, C);
+							AddTriangle(Positions, C, B, D);
 						}
+							
+						AddQuad(Colors, Color, Color, Color, Color);
 
-						vec3 N = vec3(0.0f, 1.0f, 0.0f);
-						AddQuad(&Chunk->VerticesNormals, N, N, N, N);
-						AddQuad(&Chunk->VerticesColors, Color, Color, Color, Color);
+						if(!IsWater)
+						{
+							vec3 N = vec3(0.0f, 1.0f, 0.0f);
+							AddQuad(&Chunk->VerticesNormals, N, N, N, N);
+						}
 					}
 				}
 			}
@@ -537,7 +578,7 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 	ZeroSize(Chunk->BlocksInfo, sizeof(chunk_blocks_info));
 
 	block *Blocks = Chunk->BlocksInfo->Blocks;
-	vec3 *Colors = Chunk->BlocksInfo->Colors;
+	vec4 *Colors = Chunk->BlocksInfo->Colors;
 
 	for(u32 BlockZ = 0;
 		BlockZ < CHUNK_DIM;
@@ -547,16 +588,11 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 			BlockX < CHUNK_DIM;
 			BlockX++)
 		{
-			if(Chunk->Y < 0)
+			if(Chunk->Y == 0)
 			{
-				for(u32 BlockY = 0;
-					BlockY < CHUNK_DIM;
-					BlockY++)
-				{
-					Chunk->IsNotEmpty = true;
-					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true;
-					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = vec3(0.53f, 0.53f, 0.53f);
-				}
+				Chunk->IsNotEmpty = true;
+				Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + (CHUNK_DIM - 1)*CHUNK_DIM + BlockX].Active = true;
+				Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + (CHUNK_DIM - 1)*CHUNK_DIM + BlockX] = vec4(0.53f, 0.53f, 0.53f, 1.0f);
 			}
 			else
 			{
@@ -572,8 +608,10 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 				BiomeNoise /= 1.75f;
 
 				world_biome_type BiomeType = WorldBiome_Grassland;
-				if(NoiseValue < 0.008f)
+				if(NoiseValue < 0.018f)
+				// if(NoiseValue < 0.008f)
 				{
+					Chunk->HasWater = true;
 					BiomeType = WorldBiome_Water;
 				}
 				else if(NoiseValue < 0.011f)
@@ -602,12 +640,12 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 
 				u32 Height = (u32)roundf(CHUNK_DIM * MAX_CHUNKS_Y * NoiseValue);
 				Height++;
-				u32 HeightForThisChunk = (u32)Clamp((r32)Height - (r32)Chunk->Y*CHUNK_DIM, 0.0f, CHUNK_DIM);
+				u32 HeightForThisChunk = (u32)Clamp((r32)Height - (r32)(Chunk->Y-1)*CHUNK_DIM, 0.0f, CHUNK_DIM);
 				for(u32 BlockY = 0;
 					BlockY < HeightForThisChunk;
 					BlockY++)
 				{
-					r32 Y = (Chunk->Y * CHUNK_DIM) + (r32)BlockY + 0.5f;
+					r32 Y = ((Chunk->Y - 1) * CHUNK_DIM) + (r32)BlockY + 0.5f;
 					if((NoiseValue > 0.2f) && (NoiseValue < 0.55f))
 					{
 						r32 CaveNoise = Clamp(PerlinNoise3D(0.02f*vec3(X, 2.0f*(Y + 10.0f), Z)), 0.0f, 1.0f);
@@ -626,38 +664,40 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 
 					r32 ColorNoise = Clamp(PerlinNoise3D(0.02f*vec3(X, Y, Z)), 0.0f, 1.0f);
 					ColorNoise *= ColorNoise;
-					vec3 Color = vec3(0.0f, 0.0f, 0.0f);
+					vec4 Color = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 					switch(BiomeType)
 					{
 						case WorldBiome_Water:
 						{
-							Color = Lerp(vec3(0.0f, 0.25f, 0.8f), vec3(0.0f, 0.18f, 1.0f), ColorNoise);
+							// Color = Lerp(vec4(0.0f, 0.0f, 1.0f, 0.25f), vec4(0.0f, 0.0f, 1.0f, 0.25f), ColorNoise);
+							Color = Lerp(vec4(0.0f, 0.25f, 0.8f, 0.1f), vec4(0.0f, 0.18f, 1.0f, 0.1f), ColorNoise);
+							Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Type = BlockType_Water;
 						} break;
 
 						case WorldBiome_Beach:
 						{
-							Color = Lerp(vec3(0.9f, 0.85f, 0.7f), vec3(1.0f, 0.819f, 0.6f), ColorNoise);
+							Color = Lerp(vec4(0.9f, 0.85f, 0.7f, 1.0f), vec4(1.0f, 0.819f, 0.6f, 1.0f), ColorNoise);
 						} break;
 
 						case WorldBiome_Scorched:
 						{
-							Color = Lerp(vec3(0.55f, 0.36f, 0.172f), vec3(0.63f, 0.4f, 0.172f), ColorNoise);
+							Color = Lerp(vec4(0.55f, 0.36f, 0.172f, 1.0f), vec4(0.63f, 0.4f, 0.172f, 1.0f), ColorNoise);
 						} break;
 
 						case WorldBiome_Tundra:
 						{
-							Color = Lerp(vec3(0.78f, 0.925f, 0.54f), vec3(0.815f, 0.925f, 0.59f), ColorNoise);
+							Color = Lerp(vec4(0.78f, 0.925f, 0.54f, 1.0f), vec4(0.815f, 0.925f, 0.59f, 1.0f), ColorNoise);
 						} break;
 
 						case WorldBiome_Snow:
 						{
-							Color = Lerp(vec3(0.75f, 0.75f, 0.85f), vec3(0.67f, 0.55f, 1.0f), ColorNoise);
+							Color = Lerp(vec4(0.75f, 0.75f, 0.85f, 1.0f), vec4(0.67f, 0.55f, 1.0f, 1.0f), ColorNoise);
 							Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Type = BlockType_Snow;
 						} break;
 
 						case WorldBiome_Grassland:
 						{
-							Color = Lerp(vec3(0.0f, 0.56f, 0.16f), vec3(0.65f, 0.9f, 0.0f), ColorNoise);
+							Color = Lerp(vec4(0.0f, 0.56f, 0.16f, 1.0f), vec4(0.65f, 0.9f, 0.0f, 1.0f), ColorNoise);
 						} break;
 					}
 					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = Color;
@@ -744,9 +784,12 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkVertices)
 	InitializeDynamicArray(&Chunk->VerticesP);
 	InitializeDynamicArray(&Chunk->VerticesNormals);
 	InitializeDynamicArray(&Chunk->VerticesColors);
+	
+	InitializeDynamicArray(&Chunk->WaterVerticesP);
+	InitializeDynamicArray(&Chunk->WaterVerticesColors);
 
 	block *Blocks = Chunk->BlocksInfo->Blocks;
-	vec3 *Colors = Chunk->BlocksInfo->Colors;
+	vec4 *Colors = Chunk->BlocksInfo->Colors;
 
 	GenerateChunkVertices(World, Chunk);
 
@@ -792,9 +835,23 @@ LoadChunk(chunk *Chunk)
 	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
 	glGenBuffers(1, &Chunk->ColorsVBO);
 	glBindBuffer(GL_ARRAY_BUFFER, Chunk->ColorsVBO);
-	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesColors.EntriesCount*sizeof(vec3), Chunk->VerticesColors.Entries, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesColors.EntriesCount*sizeof(vec4), Chunk->VerticesColors.Entries, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
+	glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(vec4), (void *)0);
+	glBindVertexArray(0);
+
+	glGenVertexArrays(1, &Chunk->WaterVAO);
+	glGenBuffers(1, &Chunk->WaterPVBO);
+	glBindVertexArray(Chunk->WaterVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, Chunk->WaterPVBO);
+	glBufferData(GL_ARRAY_BUFFER, Chunk->WaterVerticesP.EntriesCount*sizeof(vec3), Chunk->WaterVerticesP.Entries, GL_STATIC_DRAW);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
+	glGenBuffers(1, &Chunk->WaterColorsVBO);
+	glBindBuffer(GL_ARRAY_BUFFER, Chunk->WaterColorsVBO);
+	glBufferData(GL_ARRAY_BUFFER, Chunk->WaterVerticesColors.EntriesCount*sizeof(vec4), Chunk->WaterVerticesColors.Entries, GL_STATIC_DRAW);
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(vec4), (void *)0);
 	glBindVertexArray(0);
 
 	CompletePreviousWritesBeforeFutureWrites;
@@ -835,6 +892,9 @@ UnloadChunk(world *World, chunk *Chunk)
 		FreeDynamicArray(&Chunk->VerticesNormals);
 		FreeDynamicArray(&Chunk->VerticesColors);
 
+		FreeDynamicArray(&Chunk->WaterVerticesP);
+		FreeDynamicArray(&Chunk->WaterVerticesColors);
+
 		Chunk->IsFullySetup = false;
 	}
 
@@ -844,6 +904,10 @@ UnloadChunk(world *World, chunk *Chunk)
 		glDeleteBuffers(1, &Chunk->NormalsVBO);
 		glDeleteBuffers(1, &Chunk->ColorsVBO);
 		glDeleteVertexArrays(1, &Chunk->VAO);
+
+		glDeleteBuffers(1, &Chunk->WaterPVBO);
+		glDeleteBuffers(1, &Chunk->WaterColorsVBO);
+		glDeleteVertexArrays(1, &Chunk->WaterVAO);
 
 		Chunk->IsLoaded = false;
 	}
@@ -1106,23 +1170,60 @@ ChunkFrustumCulling(mat4 MVP, vec3 Min, vec3 Dim)
 }
 
 internal void
-RenderChunks(world *World, shader Shader, mat4 VP)
+RenderChunks(world *World, shader Shader, shader WaterShader, mat4 VP, vec3 CameraP)
 {
+	DEBUG_VARIABLE(bool32, RenderChunksBB, Rendering);
+
 	UseShader(Shader);
 	
 	MergeSort(&World->ChunksToRender);
+	vec3 ChunkDim = vec3(World->ChunkDimInMeters, World->ChunkDimInMeters, World->ChunkDimInMeters);
 
 	for(chunk *Chunk = World->ChunksToRender;
 		Chunk;
 		Chunk = Chunk->Next)
 	{
 		mat4 Model = Translate(Chunk->Translation);
-		if(ChunkFrustumCulling(VP * Model, vec3(0.0f, 0.0f, 0.0f), vec3(World->ChunkDimInMeters, World->ChunkDimInMeters, World->ChunkDimInMeters)))
+		if(ChunkFrustumCulling(VP * Model, vec3(0.0f, 0.0f, 0.0f), ChunkDim))
 		{
 			SetMat4(Shader, "Model", Model);
 			DrawFromVAO(Chunk->VAO, Chunk->VerticesP.EntriesCount);
+
+			if(RenderChunksBB)
+			{
+				DEBUGRenderCube(Chunk->Translation + 0.5f*ChunkDim, ChunkDim, 0.0f);
+				UseShader(Shader);
+			}
 		}
 	}
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	UseShader(WaterShader);
+
+	for(chunk *Chunk = World->ChunksToRender;
+		Chunk;
+		Chunk = Chunk->Next)
+	{
+		if(Chunk->WaterVerticesP.EntriesCount)
+		{
+			mat4 Model = Translate(Chunk->Translation);
+			if(ChunkFrustumCulling(VP * Model, vec3(0.0f, 0.0f, 0.0f), ChunkDim))
+			{
+				SetMat4(WaterShader, "Model", Model);
+				DrawFromVAO(Chunk->WaterVAO, Chunk->WaterVerticesP.EntriesCount);
+
+				if(RenderChunksBB)
+				{
+					DEBUGRenderCube(Chunk->Translation + 0.5f*ChunkDim, ChunkDim, 0.0f);
+					UseShader(WaterShader);
+				}
+			}
+		}
+	}
+	
+	glDisable(GL_BLEND);
 }
 
 inline vec3

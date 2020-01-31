@@ -4,6 +4,7 @@
 #define MIN_CHUNKS_Y -1
 #define MAX_CHUNKS_Y 3
 #define IsBlockActive(Blocks, X, Y, Z) ((Blocks[(Z)*CHUNK_DIM*CHUNK_DIM + (Y)*CHUNK_DIM + (X)]).Active) 
+#define GetBlockType(Blocks, X, Y, Z) ((Blocks[(Z)*CHUNK_DIM*CHUNK_DIM + (Y)*CHUNK_DIM + (X)]).Type) 
 
 struct world_entity_block
 {
@@ -18,6 +19,7 @@ enum block_type
 	BlockType_Null,
 	
 	BlockType_Snow,
+	BlockType_Water,
 };
 struct block
 {
@@ -27,7 +29,7 @@ struct block
 struct chunk_blocks_info
 {
 	block Blocks[CHUNK_DIM*CHUNK_DIM*CHUNK_DIM];
-	vec3 Colors[CHUNK_DIM*CHUNK_DIM*CHUNK_DIM];
+	vec4 Colors[CHUNK_DIM*CHUNK_DIM*CHUNK_DIM];
 
 	chunk_blocks_info *Next;
 };
@@ -43,6 +45,7 @@ struct chunk
 	bool32 IsModified;
 
 	bool32 IsNotEmpty;
+	bool32 HasWater;
 
 	chunk_blocks_info *BlocksInfo;
 
@@ -50,9 +53,14 @@ struct chunk
 	// NOTE(georg): VerticesP vectors' w component stores AO value
 	dynamic_array_vec3 VerticesP;
 	dynamic_array_vec3 VerticesNormals;
-	dynamic_array_vec3 VerticesColors;
-
+	dynamic_array_vec4 VerticesColors;
 	GLuint VAO, PVBO, NormalsVBO, ColorsVBO;
+
+	// TODO(georgy): Do I want collapse these in one dynamic array? (AoS)
+	// NOTE(georg): VerticesP vectors' w component stores AO value
+	dynamic_array_vec3 WaterVerticesP;
+	dynamic_array_vec4 WaterVerticesColors;
+	GLuint WaterVAO, WaterPVBO, WaterColorsVBO;
 
 	vec3 Translation;
 	r32 LengthSqTranslation;

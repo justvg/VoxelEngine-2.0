@@ -7,7 +7,7 @@ in vs_out
 {	
 	vec3 FragPosSim;
 	vec3 Normal;
-	vec3 Color;
+	vec4 Color;
 	float Occlusion;
 	vec4 FragPosLightSpace[CASCADES_COUNT];
 	float ClipSpacePosZ;
@@ -16,6 +16,10 @@ in vs_out
 uniform bool ShadowsEnabled;
 uniform sampler2DArray ShadowMaps;
 uniform float CascadesDistances[CASCADES_COUNT + 1];
+uniform vec2 SampleOffsets[64];
+uniform sampler2D ShadowNoiseTexture;
+
+uniform int Width, Height;
 
 uniform vec3 DirectionalLightDir = vec3(0.0);
 const vec3 DirectionalLightColor = vec3(0.666666, 0.788235, 0.79215);
@@ -38,21 +42,29 @@ float ShadowCalc(float ShadowMapIndex, vec4 FragPosLightSpace, vec3 Normal, vec3
 	vec3 ProjectedCoords = FragPosLightSpace.xyz / FragPosLightSpace.w;
 	ProjectedCoords = ProjectedCoords * 0.5 + 0.5;
 	float DepthInShadowMap = texture(ShadowMaps, vec3(ProjectedCoords.xy, ShadowMapIndex)).r;
-	float Bias = 0.0015;
+	// float Bias = 0.0005;
+	float Bias = 0.005;
 	float CurrentFragmentDepth = ProjectedCoords.z - Bias;
 
 	float Result = 0.0;
 	vec2 TexelSize = 1.0 / textureSize(ShadowMaps, 0).xy;
-	for(int X = -1; X <= 1; ++X)
+
+	vec2 NoiseScale = vec2(Width, Height) / 8.0;
+	vec2 RandomVec = normalize(texture(ShadowNoiseTexture, NoiseScale*(gl_FragCoord.xy/vec2(Width, Height))).rg);
+	vec2 Perp = vec2(-RandomVec.y, RandomVec.x);
+	mat2 ChangeOffsetMatrix = mat2(RandomVec, Perp);
+
+	for(int SampleOffsetIndex = 0;
+		SampleOffsetIndex < 64;
+		SampleOffsetIndex++)
 	{
-		for(int Y = -1; Y <= 1; ++Y)
-		{
-			float Depth = texture(ShadowMaps, vec3(ProjectedCoords.xy + vec2(X, Y) * TexelSize, ShadowMapIndex)).r; 
-			Result += CurrentFragmentDepth > Depth ? 1.0 : 0.0;        
-		}    
+		vec2 SampleOffset = ChangeOffsetMatrix * SampleOffsets[SampleOffsetIndex];
+		vec2 Offset = 11.0*TexelSize*SampleOffset;
+		float Depth = texture(ShadowMaps, vec3(ProjectedCoords.xy + Offset, ShadowMapIndex)).r;
+		Result += CurrentFragmentDepth > Depth ? 1.0 : 0.0;
 	}
-	
-	Result /= 9.0;
+
+	Result /= 64.0;
 
 	return(Result);
 }
@@ -63,9 +75,11 @@ void main()
 	vec3 RayDir = normalize(Input.FragPosSim);
 	vec3 Normal = normalize(Input.Normal);
 	
-	vec3 Ambient = 0.3 * DirectionalLightColor * Input.Color * Input.Occlusion;
-	vec3 Diffuse = 0.5 * max(dot(LightDir, Normal), 0.0) * DirectionalLightColor * Input.Color;
+	vec3 Color = Input.Color.rgb;
 
+	vec3 Ambient = 0.3 * DirectionalLightColor * Color * Input.Occlusion;
+	vec3 Diffuse = 0.5 * max(dot(LightDir, Normal), 0.0) * DirectionalLightColor * Color;
+	
 	float ShadowFactor = 0.0;
 	if(ShadowsEnabled)
 	{
@@ -85,5 +99,6 @@ void main()
 	vec3 FinalColor = Ambient + (1.0 - ShadowFactor)*Diffuse;
 	FinalColor = Fog(FinalColor, length(Input.FragPosSim), RayDir, LightDir);
 	FinalColor = sqrt(FinalColor);
-	FragColor = vec4(FinalColor, 1.0);
+	FragColor = vec4(FinalColor, Input.Color.a);
+	// FragColor = vec4(FinalColor, 1.0);
 }

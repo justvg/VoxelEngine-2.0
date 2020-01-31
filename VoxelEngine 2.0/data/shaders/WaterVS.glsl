@@ -1,13 +1,13 @@
 #version 330 core
 layout (location = 0) in vec4 aPos;
-layout (location = 1) in vec3 aNormal;
-layout (location = 2) in vec4 aColor;
+layout (location = 1) in vec4 aColor;
 
 const int CASCADES_COUNT = 3;
 
 out vs_out
 {	
 	vec3 FragPosSim;
+    float FragZView;
 	vec3 Normal;
 	vec4 Color;
 	float Occlusion;
@@ -19,6 +19,8 @@ uniform mat4 Model = mat4(1.0);
 uniform mat4 ViewProjection = mat4(1.0);
 uniform mat4 LightSpaceMatrices[3];
 
+uniform mat4 View = mat4(1.0);
+
 // NOTE(georgy): This is for the situation when we use debug camera. Even if we use debug camera,
 //  			 we want Output.ClipSpacePosZ to be as it is from our default camera, not debug one
 uniform mat4 ViewProjectionForClipSpacePosZ = mat4(1.0);
@@ -27,7 +29,8 @@ void main()
 {
 	vec4 SimPos = Model * vec4(aPos.xyz, 1.0); 
 	Output.FragPosSim = vec3(SimPos);
-	Output.Normal = normalize(mat3(Model) * aNormal);
+    Output.FragZView = -(View * SimPos).z;
+	Output.Normal = vec3(0.0, 1.0, 0.0);
 	Output.Color = aColor;
 	Output.Occlusion = aPos.w;
 	for(int CascadeIndex = 0;
