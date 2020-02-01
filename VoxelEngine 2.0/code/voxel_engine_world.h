@@ -45,7 +45,6 @@ struct chunk
 	bool32 IsModified;
 
 	bool32 IsNotEmpty;
-	bool32 HasWater;
 
 	chunk_blocks_info *BlocksInfo;
 
@@ -61,6 +60,7 @@ struct chunk
 	dynamic_array_vec3 WaterVerticesP;
 	dynamic_array_vec4 WaterVerticesColors;
 	GLuint WaterVAO, WaterPVBO, WaterColorsVBO;
+	u32 MaxWaterLevel;
 
 	vec3 Translation;
 	r32 LengthSqTranslation;

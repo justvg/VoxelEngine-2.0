@@ -795,6 +795,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 					if(GameState->Hero.dY && IsSet(Entity, EntityFlag_OnGround))
 					{
 						Entity->dP.SetY(GameState->Hero.dY);
+						ClearFlags(Entity, EntityFlag_InWater);
 					}
 
 					Entity->Rotation = GameState->Hero.AdditionalRotation;
@@ -872,10 +873,10 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 				}
 			}
 
-			if(IsSet(Entity, EntityFlag_Moveable) && !IsSet(Entity, EntityFlag_NonSpatial))
+			if(IsSet(Entity, EntityFlag_Moveable))
 			{
 				MoveEntity(GameState, SimRegion, Entity, MoveSpec, dt, false);
-				if(IsSet(Entity, EntityFlag_GravityAffected))
+				if(IsSet(Entity, EntityFlag_GravityAffected) && !IsSet(Entity, EntityFlag_InWater))
 				{
 					MoveEntity(GameState, SimRegion, Entity, MoveSpec, dt, true);
 				}

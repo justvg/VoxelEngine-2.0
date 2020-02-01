@@ -11,8 +11,9 @@ enum entity_type
 {
 	EntityType_Null,
 
-	EntityType_Chunk, // NOTE(georgy): This is for handling collisions with chunk. 
-					  //			   Should I make chunk a real entity?
+	EntityType_Water, // NOTE(georgy): This is for handling collisions with chunk. 
+	EntityType_Chunk, //			   Should I make chunk a real entity?
+					  
 
 	EntityType_Hero,
 	EntityType_Fireball,
@@ -41,6 +42,7 @@ enum sim_entity_flags
 	EntityFlag_NonSpatial = (1 << 2),
 	EntityFlag_Collides = (1 << 3),
 	EntityFlag_GravityAffected = (1 << 4),
+	EntityFlag_InWater = (1 << 5),
 };
 
 struct sim_entity

@@ -495,28 +495,30 @@ GenerateChunkVertices(world *World, chunk *Chunk)
 
 					if ((BlockY == CHUNK_DIM - 1) || (!IsBlockActive(Blocks, BlockX, BlockY + 1, BlockZ)))
 					{
-						A = vec3(X, Y + BlockDimInMeters, Z);
+						r32 WaterOffset = IsWater ? 0.1f : 0.0f;
+
+						A = vec3(X, Y + BlockDimInMeters - WaterOffset, Z);
 						bool32 Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX, BlockY + 1, BlockZ - 1);
 						bool32 Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ);
 						bool32 Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ - 1);
 						r32 AAO = VertexAO(Side1, Side2, Corner);
 						A.SetW(AAO);
 
-						B = vec3(X, Y + BlockDimInMeters, Z + BlockDimInMeters);
+						B = vec3(X, Y + BlockDimInMeters - WaterOffset, Z + BlockDimInMeters);
 						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX, BlockY + 1, BlockZ + 1);
 						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ);
 						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX - 1, BlockY + 1, BlockZ + 1);
 						r32 BAO = VertexAO(Side1, Side2, Corner); 
 						B.SetW(BAO);
 
-						C = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z);
+						C = vec3(X + BlockDimInMeters, Y + BlockDimInMeters - WaterOffset, Z);
 						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX, BlockY + 1, BlockZ - 1);
 						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ);
 						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ - 1);
 						r32 CAO = VertexAO(Side1, Side2, Corner); 
 						C.SetW(CAO);
 
-						D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters, Z + BlockDimInMeters);
+						D = vec3(X + BlockDimInMeters, Y + BlockDimInMeters - WaterOffset, Z + BlockDimInMeters);
 						Side1 = IsBlockActiveBetweenChunks(World, Chunk, BlockX, BlockY + 1, BlockZ + 1);
 						Side2 = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ);
 						Corner = IsBlockActiveBetweenChunks(World, Chunk, BlockX + 1, BlockY + 1, BlockZ + 1);
@@ -556,6 +558,7 @@ struct setup_chunk_blocks_job
 	chunk *Chunk;
 	stack_allocator *WorldAllocator;
 };
+#if 1
 internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 {
 	TIME_BLOCK;
@@ -596,11 +599,13 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 			}
 			else
 			{
-				r32 X = (Chunk->X * CHUNK_DIM) + (r32)BlockX + 0.5f;
-				r32 Z = (Chunk->Z * CHUNK_DIM) + (r32)BlockZ + 0.5f;
-				r32 NoiseValue = Clamp(PerlinNoise2D(0.01f*vec2(X, Z)), 0.0f, 1.0f);
-				NoiseValue += 0.15f*Clamp(PerlinNoise2D(0.05f*vec2(X, Z)), 0.0f, 1.0f)*NoiseValue;
-				NoiseValue = NoiseValue*NoiseValue*NoiseValue*NoiseValue*NoiseValue;
+				r32 X = (Chunk->X * World->ChunkDimInMeters) + (r32)BlockX*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+				r32 Z = (Chunk->Z * World->ChunkDimInMeters) + (r32)BlockZ*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+				
+				r32 NoiseValue = Clamp(PerlinNoise2D(0.015f*vec2(X, Z)), 0.0f, 1.0f);
+				NoiseValue += 0.15f*Clamp(PerlinNoise2D(0.075f*vec2(X, Z)), 0.0f, 1.0f);
+				NoiseValue /= 1.15f;
+				NoiseValue = NoiseValue*NoiseValue*NoiseValue*NoiseValue;
 
 				r32 BiomeNoise = Clamp(PerlinNoise2D(0.007f*vec2(X, Z)), 0.0f, 1.0f);
 				BiomeNoise += 0.5f*Clamp(PerlinNoise2D(0.03f*vec2(X, Z)), 0.0f, 1.0f);
@@ -608,17 +613,15 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 				BiomeNoise /= 1.75f;
 
 				world_biome_type BiomeType = WorldBiome_Grassland;
-				if(NoiseValue < 0.018f)
-				// if(NoiseValue < 0.008f)
+				if(NoiseValue < 0.008f)
 				{
-					Chunk->HasWater = true;
 					BiomeType = WorldBiome_Water;
 				}
-				else if(NoiseValue < 0.011f)
+				else if(NoiseValue < 0.013f)
 				{
 					BiomeType = WorldBiome_Beach;
 				}
-				else if(NoiseValue > 0.7f)
+				else if(NoiseValue > 0.65f)
 				{
 					if(BiomeNoise < 0.3f)
 					{
@@ -645,7 +648,7 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 					BlockY < HeightForThisChunk;
 					BlockY++)
 				{
-					r32 Y = ((Chunk->Y - 1) * CHUNK_DIM) + (r32)BlockY + 0.5f;
+					r32 Y = ((Chunk->Y - 1) * World->ChunkDimInMeters) + (r32)BlockY*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
 					if((NoiseValue > 0.2f) && (NoiseValue < 0.55f))
 					{
 						r32 CaveNoise = Clamp(PerlinNoise3D(0.02f*vec3(X, 2.0f*(Y + 10.0f), Z)), 0.0f, 1.0f);
@@ -669,9 +672,13 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 					{
 						case WorldBiome_Water:
 						{
-							// Color = Lerp(vec4(0.0f, 0.0f, 1.0f, 0.25f), vec4(0.0f, 0.0f, 1.0f, 0.25f), ColorNoise);
 							Color = Lerp(vec4(0.0f, 0.25f, 0.8f, 0.1f), vec4(0.0f, 0.18f, 1.0f, 0.1f), ColorNoise);
 							Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Type = BlockType_Water;
+
+							if(Chunk->MaxWaterLevel < BlockY)
+							{
+								Chunk->MaxWaterLevel = BlockY;
+							}
 						} break;
 
 						case WorldBiome_Beach:
@@ -706,10 +713,184 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 		}
 	}
 
+	// TODO(georgy): This must be buggy, but I haven't caught any bugs in a game
+	for(u32 BlockZ = 0;
+		BlockZ < CHUNK_DIM;
+		BlockZ++)
+	{
+		for(u32 BlockY = 0;
+			BlockY < CHUNK_DIM;
+			BlockY++)
+		{
+			for(u32 BlockX = 0;
+				BlockX < CHUNK_DIM;
+				BlockX++)
+			{
+				if(GetBlockType(Blocks, BlockX, BlockY, BlockZ) == BlockType_Water)
+				{
+					u32 MaxWaterLevel = Chunk->MaxWaterLevel;
+					for(i32 ChunkZOffset = -1;
+						ChunkZOffset <= 1;
+						ChunkZOffset++)
+					{
+						for(i32 ChunkXOffset = -1;
+							ChunkXOffset <= 1;
+							ChunkXOffset++)
+						{
+							chunk *NeighboringChunk = GetChunk(World, Chunk->X + ChunkXOffset,
+																	  Chunk->Y,
+																	  Chunk->Z + ChunkZOffset);
+							if(NeighboringChunk && NeighboringChunk->IsSetupBlocks)
+							{
+								if(NeighboringChunk->MaxWaterLevel > MaxWaterLevel)
+								{
+									MaxWaterLevel = NeighboringChunk->MaxWaterLevel;
+									PlatformOutputDebugString("Neighboring chunk has higher water level!");
+								}
+							}
+						}
+					}
+
+					if((MaxWaterLevel > BlockY) && 
+					   !IsBlockActive(Blocks, BlockX, BlockY + 1, BlockZ))
+					{
+						r32 X = (Chunk->X * World->ChunkDimInMeters) + (r32)BlockX*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+						r32 Y = ((Chunk->Y - 1) * World->ChunkDimInMeters) + (r32)(BlockY+1)*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+						r32 Z = (Chunk->Z * World->ChunkDimInMeters) + (r32)BlockZ*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+						r32 ColorNoise = Clamp(PerlinNoise3D(0.02f*vec3(X, Y, Z)), 0.0f, 1.0f);
+						ColorNoise *= ColorNoise;
+						vec4 Color = Lerp(vec4(0.0f, 0.25f, 0.8f, 0.1f), vec4(0.0f, 0.18f, 1.0f, 0.1f), ColorNoise);
+						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + (BlockY+1)*CHUNK_DIM + BlockX].Active = true;
+						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + (BlockY+1)*CHUNK_DIM + BlockX].Type = BlockType_Water;
+						Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + (BlockY+1)*CHUNK_DIM + BlockX] = Color;
+					}
+				}
+			}
+		}
+	}
+
 	CompletePreviousWritesBeforeFutureWrites;
 
 	Chunk->IsSetupBlocks = true;
 }
+#else
+internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
+{
+	TIME_BLOCK;
+	setup_chunk_blocks_job *Job = (setup_chunk_blocks_job *)Data;
+	world *World = Job->World;
+	chunk *Chunk = Job->Chunk;
+	stack_allocator *WorldAllocator = Job->WorldAllocator;
+
+	Chunk->IsNotEmpty = false;
+	
+	BeginWorldLock(World);
+	if(!World->FirstFreeChunkBlocksInfo)
+	{
+		World->FirstFreeChunkBlocksInfo = PushStruct(WorldAllocator, chunk_blocks_info);
+	}
+	Chunk->BlocksInfo = World->FirstFreeChunkBlocksInfo;
+	World->FirstFreeChunkBlocksInfo = World->FirstFreeChunkBlocksInfo->Next;
+	EndWorldLock(World);
+
+	ZeroSize(Chunk->BlocksInfo, sizeof(chunk_blocks_info));
+
+	block *Blocks = Chunk->BlocksInfo->Blocks;
+	vec4 *Colors = Chunk->BlocksInfo->Colors;
+
+	if(Chunk->Y == -1)
+	{
+		Chunk->IsNotEmpty = true;
+		
+		for(u32 BlockZ = 0;
+			BlockZ < CHUNK_DIM;
+			BlockZ++)
+		{
+			for(u32 BlockX = 0;
+				BlockX < CHUNK_DIM;
+				BlockX++)
+			{
+				for(u32 BlockX = 0;
+					BlockX < CHUNK_DIM;
+					BlockX++)
+				{
+					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + (CHUNK_DIM - 1)*CHUNK_DIM + BlockX].Active = true;
+					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + (CHUNK_DIM - 1)*CHUNK_DIM + BlockX] = vec4(1.0f, 0.53f, 0.53f, 1.0f);			
+				}
+			}
+		}
+	}
+	else
+	{
+		for(u32 BlockZ = 0;
+			BlockZ < CHUNK_DIM;
+			BlockZ++)
+		{
+			for(u32 BlockY = 0;
+				BlockY < CHUNK_DIM;
+				BlockY++)
+			{
+				for(u32 BlockX = 0;
+					BlockX < CHUNK_DIM;
+					BlockX++)
+				{
+					r32 X = (Chunk->X * World->ChunkDimInMeters) + (r32)BlockX*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+					r32 Y = (Chunk->Y * World->ChunkDimInMeters) + (r32)BlockY*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+					r32 Z = (Chunk->Z * World->ChunkDimInMeters) + (r32)BlockZ*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+					
+					vec4 Color = vec4(0.53f, 0.53f, 0.53f, 1.0f);
+
+					r32 MaxY = (MAX_CHUNKS_Y + 1) * World->ChunkDimInMeters;
+					r32 fY = Y / MaxY;
+					r32 HeightFactor;
+					if(fY <= 0.05f)
+					{
+						HeightFactor = 4.0f;
+						vec4 Color = vec4(0.0f, 1.0f, 0.0f, 1.0f);
+					}
+					else if(fY <= 0.15f)
+					{
+						HeightFactor = 2.5f;
+					}
+					else if(fY <= 0.5f)
+					{
+						HeightFactor = 1.0f;
+					}
+					else if(fY < 0.8f)
+					{
+						HeightFactor = (0.8f - fY)*3.333333f;
+					}
+					else
+					{
+						HeightFactor = 0.0f;
+					}
+
+					r32 NoiseValue = Clamp(PerlinNoise3D(0.03f*vec3(X, Y, Z)), 0.0f, 1.0f);
+					NoiseValue += 0.5f*Clamp(PerlinNoise3D(0.06f*vec3(X, Y, Z)), 0.0f, 1.0f);
+					NoiseValue += 0.25f*Clamp(PerlinNoise3D(0.12f*vec3(X, Y, Z)), 0.0f, 1.0f);
+					NoiseValue /= 1.75f;
+					// NoiseValue *= HeightFactor;
+					// NoiseValue /= 4.0f;
+
+					NoiseValue = 0.5f*fY + 0.5f*(1.0f - NoiseValue);
+
+					if(NoiseValue < 0.35f)
+					{
+						Chunk->IsNotEmpty = true;
+
+						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true;
+						Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = Color;			
+					}
+				}
+			}
+		}
+	}
+
+	CompletePreviousWritesBeforeFutureWrites;
+
+	Chunk->IsSetupBlocks = true;
+}
+#endif
 
 internal void
 SetupChunksBlocks(world *World, stack_allocator *WorldAllocator, temp_state *TempState)
@@ -738,32 +919,32 @@ CanSetupAO(world *World, chunk *Chunk, stack_allocator *WorldAllocator)
 	bool32 ChunkMinY = (Chunk->Y == MIN_CHUNKS_Y);
 	bool32 ChunkMaxY = (Chunk->Y == MAX_CHUNKS_Y);
 
-	Result = GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result = GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
 	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
 	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
 	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
 	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
 	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
 	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
 	Result &= GetChunk(World, Chunk->X, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= GetChunk(World, Chunk->X, Chunk->Y - 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
 
 	return(Result);
 }

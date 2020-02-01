@@ -544,7 +544,8 @@ enum narrow_phase_collision_detection_type
 };
 internal void
 NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detection *BroadPhaseData,
-							  narrow_phase_collision_detection_type Type, ray_triangle_collision_detection_data *RayTriangleData = 0,
+							  narrow_phase_collision_detection_type Type, bool32 CollideWithWater,
+							  ray_triangle_collision_detection_data *RayTriangleData = 0,
 							  ellipsoid_triangle_collision_detection_data *EllipsoidTriangleData = 0)
 {
 	u32 CollideChunksCount = BroadPhaseData->CollideChunksCount;
@@ -555,7 +556,7 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 		ChunkIndex++)
 	{
 		chunk *Chunk = CollideChunks[ChunkIndex].Chunk;
-		vec3* Vertices = Chunk->VerticesP.Entries;
+		vec3 *Vertices = Chunk->VerticesP.Entries;
 		r32 BlockDimInMeters = World->BlockDimInMeters;
 		vec3 MinChunkP = CollideChunks[ChunkIndex].Min - vec3(BlockDimInMeters, BlockDimInMeters, BlockDimInMeters);
 		vec3 MaxChunkP = CollideChunks[ChunkIndex].Max + vec3(BlockDimInMeters, BlockDimInMeters, BlockDimInMeters);
@@ -607,6 +608,72 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 						EllipsoidTriangleData->HitEntityType = EntityType_Chunk;
 					}
 				}
+			}
+		}
+
+		if(CollideWithWater)
+		{
+			if((Chunk->WaterVerticesP.EntriesCount > 0) && (EllipsoidTriangleData))
+			{
+				r32 tSave = EllipsoidTriangleData->t;
+
+				vec3 *WaterVertices = Chunk->WaterVerticesP.Entries;
+				for(u32 TriangleIndex = 0;
+					TriangleIndex < (Chunk->WaterVerticesP.EntriesCount / 3);
+					TriangleIndex++)
+				{
+					u32 FirstVertexIndex = TriangleIndex * 3;
+					vec3 P1 = WaterVertices[FirstVertexIndex];
+					vec3 P2 = WaterVertices[FirstVertexIndex + 1];
+					vec3 P3 = WaterVertices[FirstVertexIndex + 2];
+
+					vec3 MinP = Min(Min(P1, P2), P3);
+					vec3 MaxP = Max(Max(P1, P2), P3);
+					
+					if(All(MinP < MaxChunkP) &&
+					All(MaxP > MinChunkP))
+					{
+						P1 += Chunk->Translation;
+						P2 += Chunk->Translation;
+						P3 += Chunk->Translation;
+
+						if(Type == NarrowPhaseCollisionDetection_RayTriangle)
+						{
+							Assert(RayTriangleData);
+
+							plane TrianglePlane = PlaneFromTriangle(P1, P2, P3);
+							r32 NormalDotDir = Dot(TrianglePlane.Normal, RayTriangleData->RayDirection);
+							if(NormalDotDir < -0.0001f)
+							{
+								r32 NewRayLength = -SignedDistance(TrianglePlane, RayTriangleData->RayOrigin) / NormalDotDir;
+								r32 NewT = NewRayLength / Length(RayTriangleData->RayEnd - RayTriangleData->RayOrigin);
+								if((NewT < RayTriangleData->t) && (NewT > 0.0f))
+								{
+									if(IsPointInTriangle(RayTriangleData->RayOrigin + NewRayLength*RayTriangleData->RayDirection, P1, P2, P3))
+									{
+										RayTriangleData->t = NewT;
+									}
+								}
+							}
+						}
+						else
+						{
+							P1 -= vec3(0.0f, 0.3f, 0.0f);
+							P2 -= vec3(0.0f, 0.3f, 0.0f);
+							P3 -= vec3(0.0f, 0.3f, 0.0f);	
+
+							Assert(Type == NarrowPhaseCollisionDetection_EllipsoidTriangle);
+							Assert(EllipsoidTriangleData);
+
+							if(EllipsoidTriangleCollisionDetection(P1, P2, P3, EllipsoidTriangleData))
+							{
+								EllipsoidTriangleData->HitEntityType = EntityType_Water;
+							}
+						}
+					}
+				}
+				
+				// EllipsoidTriangleData->t = tSave;
 			}
 		}
 	}
@@ -690,7 +757,7 @@ CameraCollisionDetection(world *World, camera *Camera, world_position *OriginP)
 		RayTriangleData.RayEnd = FrustumNearCorners[RayIndex];
 		RayTriangleData.RayDirection = Normalize(FrustumNearCorners[RayIndex] - RayStartCorners[RayIndex]);
 
-		NarrowPhaseCollisionDetection(World, &BroadPhaseResult, NarrowPhaseCollisionDetection_RayTriangle, &RayTriangleData);
+		NarrowPhaseCollisionDetection(World, &BroadPhaseResult, NarrowPhaseCollisionDetection_RayTriangle, false, &RayTriangleData);
 	}
 
     Camera->OffsetFromHero = Camera->OffsetFromHero * RayTriangleData.t;
@@ -830,6 +897,41 @@ HandleCollision(game_state *GameState, sim_region *SimRegion, sim_entity *Entity
 			MakeEntityNonSpatial(EntityB);
 		}
 	}
+	else if((A == EntityType_Water) && (B == EntityType_Hero))
+	{
+		Result = false;
+		if(!IsSet(EntityB, EntityFlag_InWater))
+		{
+			AddFlags(EntityB, EntityFlag_InWater);
+			EntityB->dP.SetY(0.0f);
+		}
+		else
+		{
+			// EntityB->dP.SetY(0.0f);
+		}
+
+		world_position CollisionWorldP = MapIntoChunkSpace(World, &SimRegion->Origin, EllipsoidToWorld * ESpaceCollisionP);
+		chunk *Chunk = GetChunk(World, CollisionWorldP.ChunkX, CollisionWorldP.ChunkY, CollisionWorldP.ChunkZ);
+		Assert(Chunk && Chunk->IsSetupBlocks && Chunk->IsFullySetup && Chunk->IsLoaded);
+
+		i32 X = (i32)((CollisionWorldP.Offset.x()) / World->BlockDimInMeters);
+		i32 Y = (i32)((CollisionWorldP.Offset.y()) / World->BlockDimInMeters);
+		i32 Z = (i32)((CollisionWorldP.Offset.z()) / World->BlockDimInMeters);
+		{
+			vec3 OffsetInChunk = World->BlockDimInMeters*vec3((r32)X, (r32)Y, (r32)Z) + 
+									0.5f*vec3(World->BlockDimInMeters, World->BlockDimInMeters, World->BlockDimInMeters);
+			world_position WorldBlockP = { Chunk->X, Chunk->Y, Chunk->Z, OffsetInChunk };
+			RecanonicalizeCoords(World, &WorldBlockP);
+			vec4 BlockColor;
+			u32 Op = OperationBetweenChunks_GetColor;
+			OperationBetweenChunks(World, Chunk, X, Y, Z, (operation_between_chunks)Op, false, &BlockColor);
+			AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, vec3(BlockColor.m));
+			AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, vec3(BlockColor.m));
+			AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, vec3(BlockColor.m));
+			AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, vec3(BlockColor.m));
+			AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, vec3(BlockColor.m));
+		} 
+	}
 
 	return(Result);
 }
@@ -848,6 +950,10 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 	if(Gravity)
 	{
 		MoveSpec.ddP = vec3(0.0f, -9.8f, 0.0f);
+		if(IsSet(Entity, EntityFlag_InWater))
+		{
+			MoveSpec.ddP = vec3(0.0f, 0.0f, 0.0f);
+		}
 	}
 	else
 	{
@@ -946,7 +1052,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 				EllipsoidTriangleData.HitEntityType = EntityType_Null;
 
 				NarrowPhaseCollisionDetection(SimRegion->World, &BroadPhaseResult, NarrowPhaseCollisionDetection_EllipsoidTriangle,
-											0, &EllipsoidTriangleData);
+											  !IsSet(Entity, EntityFlag_InWater), 0, &EllipsoidTriangleData);
 				
 				for(u32 CollisionEntityIndex = 0;
 					CollisionEntityIndex < CollideEntitiesCount;
@@ -981,7 +1087,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 				if(EllipsoidTriangleData.HitEntityType)
 				{
 					bool32 StopOnCollision = HandleCollision(GameState, SimRegion, Entity, HitEntity, Entity->Type, 
-															EllipsoidTriangleData.HitEntityType, EllipsoidToWorld, EllipsoidTriangleData.CollisionP);
+															 EllipsoidTriangleData.HitEntityType, EllipsoidToWorld, EllipsoidTriangleData.CollisionP);
 
 					if(StopOnCollision)
 					{
@@ -1000,6 +1106,11 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 				if((Gravity && Iteration == 0) && (!EllipsoidTriangleData.HitEntityType || !SlidingPlaneNormalIsGround))
 				{
 					ClearFlags(Entity, EntityFlag_OnGround);
+				}
+
+				if(IsSet(Entity, EntityFlag_InWater))
+				{
+					AddFlags(Entity, EntityFlag_OnGround);
 				}
 			}
 		}
