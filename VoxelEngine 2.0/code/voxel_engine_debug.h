@@ -252,7 +252,7 @@ struct record_playback_info
     chunk *ChunksModifiedDuringRecordPhase[256];
 
     u32 ChunksUnloadedDuringRecordPhaseCount;
-    chunk *ChunksUnloadedDuringRecordPhase[2048];
+    chunk *ChunksUnloadedDuringRecordPhase[4096];
 };
 
 global_variable record_playback_info DEBUGGlobalPlaybackInfo;

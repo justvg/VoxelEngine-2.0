@@ -153,7 +153,7 @@ BeginSimulation(game_state *GameState, world_position Origin, rect3 Bounds,
 							World->ChunksToSetupFully[World->ChunksToSetupFullyThisFrameCount++] = Chunk;
 						}
 
-						if(Chunk->IsSetupBlocks && Chunk->IsLoaded && Chunk->IsModified)
+						if(Chunk->IsSetupBlocks && Chunk->IsFullySetup && Chunk->IsLoaded && Chunk->IsModified)
 						{
 							UpdateChunk(World, Chunk);
 						}
@@ -631,7 +631,7 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 					vec3 MaxP = Max(Max(P1, P2), P3);
 					
 					if(All(MinP < MaxChunkP) &&
-					All(MaxP > MinChunkP))
+					   All(MaxP > MinChunkP))
 					{
 						P1 += Chunk->Translation;
 						P2 += Chunk->Translation;
@@ -933,6 +933,7 @@ HandleCollision(game_state *GameState, sim_region *SimRegion, sim_entity *Entity
 		} 
 	}
 
+	CorrectChunksWaterLevel(&GameState->World);
 	return(Result);
 }
 

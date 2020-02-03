@@ -735,6 +735,9 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 						InitializeDynamicArray(&Chunk->VerticesNormals);
 						InitializeDynamicArray(&Chunk->VerticesColors);
 
+						InitializeDynamicArray(&Chunk->WaterVerticesP);
+						InitializeDynamicArray(&Chunk->WaterVerticesColors);
+
 						GenerateChunkVertices(&GameState->World, Chunk);
 
 						if(Chunk->IsLoaded)
@@ -745,7 +748,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 				}
 			}
 		}
-
+		
 		for(u32 ChunkIndex = 0;
 			ChunkIndex < DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhaseCount;
 			ChunkIndex++)
@@ -774,6 +777,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	SetupChunksBlocks(&GameState->World, &GameState->WorldAllocator, TempState);								
 	SetupChunksVertices(&GameState->World, TempState);
 	LoadChunks(&GameState->World);
+	CorrectChunksWaterLevel(&GameState->World);
 
 	// NOTE(georgy): Entity simulations
 	for(u32 EntityIndex = 0;
@@ -790,7 +794,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 				case EntityType_Hero:
 				{
 					MoveSpec.ddP = GameState->Hero.ddP;
-					MoveSpec.Speed = 8.0f;
+					MoveSpec.Speed = 20.0f;
 					MoveSpec.Drag = 2.0f;
 					if(GameState->Hero.dY && IsSet(Entity, EntityFlag_OnGround))
 					{

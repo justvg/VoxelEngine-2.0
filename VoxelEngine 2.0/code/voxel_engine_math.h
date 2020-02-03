@@ -1486,24 +1486,24 @@ global_variable u32 PermutationTable[512] =
 
 // NOTE(georgy): These return ~[0, 1]
 internal r32 
-PerlinNoise2D(vec2 P)
+PerlinNoise2D(vec2 P, u32 KindOfSeed = 0)
 {
 	i32 I = FloorReal32ToInt32(P.x);
 	i32 J = FloorReal32ToInt32(P.y);
 
-	u32 PermutationForI = PermutationTable[I & (ArrayCount(PermutationTable) - 1)];
-	u32 PermutationForI1 = PermutationTable[(I + 1) & (ArrayCount(PermutationTable) - 1)];
+	u32 PermutationForI = PermutationTable[(I + KindOfSeed) & (ArrayCount(PermutationTable) - 1)];
+	u32 PermutationForI1 = PermutationTable[(I + 1 + KindOfSeed) & (ArrayCount(PermutationTable) - 1)];
 
-	u32 Gradient00Index = (PermutationTable[(J + PermutationForI) & (ArrayCount(PermutationTable) - 1)]) &
+	u32 Gradient00Index = (PermutationTable[(J + PermutationForI + KindOfSeed) & (ArrayCount(PermutationTable) - 1)]) &
 						   (ArrayCount(Gradients2D) - 1);
 	vec2 Gradient00 = Gradients2D[Gradient00Index];
-	u32 Gradient10Index = (PermutationTable[(J + PermutationForI1) & (ArrayCount(PermutationTable) - 1)]) &
+	u32 Gradient10Index = (PermutationTable[(J + PermutationForI1 + KindOfSeed) & (ArrayCount(PermutationTable) - 1)]) &
 						   (ArrayCount(Gradients2D) - 1);
 	vec2 Gradient10 = Gradients2D[Gradient10Index];
-	u32 Gradient01Index = (PermutationTable[(J + 1 + PermutationForI) & (ArrayCount(PermutationTable) - 1)]) &
+	u32 Gradient01Index = (PermutationTable[(J + 1 + PermutationForI + KindOfSeed) & (ArrayCount(PermutationTable) - 1)]) &
 						   (ArrayCount(Gradients2D) - 1);
 	vec2 Gradient01 = Gradients2D[Gradient01Index];
-	u32 Gradient11Index = (PermutationTable[(J + 1 + PermutationForI1) & (ArrayCount(PermutationTable) - 1)]) &
+	u32 Gradient11Index = (PermutationTable[(J + 1 + PermutationForI1 + KindOfSeed) & (ArrayCount(PermutationTable) - 1)]) &
 						   (ArrayCount(Gradients2D) - 1);
 	vec2 Gradient11 = Gradients2D[Gradient11Index];
 

@@ -117,11 +117,13 @@ OperationBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z, operatio
 	else
 	{
 		Assert(Chunk->IsSetupBlocks);
-		Result = IsBlockActive(Chunk->BlocksInfo->Blocks, X, Y, Z) &&
+		
+		Result = Chunk->IsNotEmpty && IsBlockActive(Chunk->BlocksInfo->Blocks, X, Y, Z) &&
 				 (GetBlockType(Chunk->BlocksInfo->Blocks, X, Y, Z) != BlockType_Water);
-		// Result = IsBlockActive(Chunk->BlocksInfo->Blocks, X, Y, Z);
+
 		if(Op & OperationBetweenChunks_SetActiveness)
 		{
+			// NOTE(georgy): This assumes to only set Activeness to false!
 			Chunk->BlocksInfo->Blocks[Z*CHUNK_DIM*CHUNK_DIM + Y*CHUNK_DIM + X].Active = Activeness;
 			Chunk->IsModified = true;
 		}
@@ -552,6 +554,202 @@ GenerateChunkVertices(world *World, chunk *Chunk)
 	}
 }
 
+internal bool32
+CheckChunkEmptiness(chunk *Chunk)
+{
+	bool32 IsNotEmpty = false;
+
+	if(Chunk->BlocksInfo)
+	{
+		block *Blocks = Chunk->BlocksInfo->Blocks;
+		for(i32 BlockZ = 0;
+			BlockZ < CHUNK_DIM;
+			BlockZ++)
+		{
+			for(i32 BlockY = 0;
+				BlockY < CHUNK_DIM;
+				BlockY++)
+			{
+				for(i32 BlockX = 0;
+					BlockX < CHUNK_DIM;
+					BlockX++)
+				{
+					if(IsBlockActive(Blocks, BlockX, BlockY, BlockZ))
+					{
+						IsNotEmpty = true;
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	return(IsNotEmpty);
+}
+
+inline void
+FreeChunkBlocksInfo(world *World, chunk *Chunk)
+{
+	Chunk->BlocksInfo->Next = World->FirstFreeChunkBlocksInfo;
+	World->FirstFreeChunkBlocksInfo = Chunk->BlocksInfo;
+
+	Chunk->BlocksInfo = 0;
+}
+
+internal void
+UpdateChunk(world *World, chunk *Chunk)
+{
+	Chunk->IsNotEmpty = CheckChunkEmptiness(Chunk);
+	
+	Chunk->VerticesP.EntriesCount = 0;
+	Chunk->VerticesNormals.EntriesCount = 0;
+	Chunk->VerticesColors.EntriesCount = 0;
+	Chunk->WaterVerticesP.EntriesCount = 0;
+	Chunk->WaterVerticesColors.EntriesCount = 0;
+	
+	if(Chunk->IsNotEmpty)
+	{
+		GenerateChunkVertices(World, Chunk);
+
+		glBindVertexArray(Chunk->VAO);
+		glBindBuffer(GL_ARRAY_BUFFER, Chunk->PVBO);
+		glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesP.EntriesCount*sizeof(vec3), Chunk->VerticesP.Entries, GL_STATIC_DRAW);
+		glBindBuffer(GL_ARRAY_BUFFER, Chunk->NormalsVBO);
+		glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesNormals.EntriesCount*sizeof(vec3), Chunk->VerticesNormals.Entries, GL_STATIC_DRAW);
+		glBindBuffer(GL_ARRAY_BUFFER, Chunk->ColorsVBO);
+		glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesColors.EntriesCount*sizeof(vec3), Chunk->VerticesColors.Entries, GL_STATIC_DRAW);
+		glBindVertexArray(Chunk->WaterVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, Chunk->WaterPVBO);
+		glBufferData(GL_ARRAY_BUFFER, Chunk->WaterVerticesP.EntriesCount*sizeof(vec3), Chunk->WaterVerticesP.Entries, GL_STATIC_DRAW);
+		glBindBuffer(GL_ARRAY_BUFFER, Chunk->WaterColorsVBO);
+		glBufferData(GL_ARRAY_BUFFER, Chunk->WaterVerticesColors.EntriesCount*sizeof(vec3), Chunk->WaterVerticesColors.Entries, GL_STATIC_DRAW);
+		glBindVertexArray(0);
+	}
+	else
+	{
+		FreeChunkBlocksInfo(World, Chunk);
+
+		glDeleteBuffers(1, &Chunk->PVBO);
+		glDeleteBuffers(1, &Chunk->NormalsVBO);
+		glDeleteBuffers(1, &Chunk->ColorsVBO);
+		glDeleteVertexArrays(1, &Chunk->VAO);
+
+		glDeleteBuffers(1, &Chunk->WaterPVBO);
+		glDeleteBuffers(1, &Chunk->WaterColorsVBO);
+		glDeleteVertexArrays(1, &Chunk->WaterVAO);
+	}
+
+	CompletePreviousWritesBeforeFutureWrites;
+
+	Chunk->IsModified = false;
+
+#if VOXEL_ENGINE_INTERNAL
+	if(DEBUGGlobalPlaybackInfo.RecordPhase)
+	{
+		if((Chunk->X >= DEBUGGlobalPlaybackInfo.MinChunkP.ChunkX) &&
+		   (Chunk->Z >= DEBUGGlobalPlaybackInfo.MinChunkP.ChunkZ) &&
+		   (Chunk->X <= DEBUGGlobalPlaybackInfo.MaxChunkP.ChunkX) &&
+		   (Chunk->Z <= DEBUGGlobalPlaybackInfo.MaxChunkP.ChunkZ))
+		{
+			Assert(DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhaseCount < 
+					ArrayCount(DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhase));
+			DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhase[DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhaseCount++] = 
+				Chunk;
+		}
+	}
+#endif
+}
+
+internal bool32
+CorrectChunkWaterLevel(world *World, chunk *Chunk)
+{
+	bool32 ChunkWasChanged = false;
+
+	u32 MaxWaterLevel = 0;
+	for(i32 ChunkZOffset = -1;
+		ChunkZOffset <= 1;
+		ChunkZOffset++)
+	{
+		for(i32 ChunkXOffset = -1;
+			ChunkXOffset <= 1;
+			ChunkXOffset++)
+		{
+			chunk *NeighboringChunk = GetChunk(World, Chunk->X + ChunkXOffset,
+											   Chunk->Y,
+											   Chunk->Z + ChunkZOffset);
+			if(NeighboringChunk && NeighboringChunk->IsSetupBlocks)
+			{
+				if(NeighboringChunk->MaxWaterLevel > MaxWaterLevel)
+				{
+					MaxWaterLevel = NeighboringChunk->MaxWaterLevel;
+				}
+			}
+		}
+	}
+
+	block *Blocks = Chunk->BlocksInfo->Blocks;
+	vec4 *Colors = Chunk->BlocksInfo->Colors;
+	for(u32 BlockZ = 0;
+		(BlockZ < CHUNK_DIM);
+		BlockZ++)
+	{
+		for(u32 BlockY = 0;
+			(BlockY < MaxWaterLevel);
+			BlockY++)
+		{
+			for(u32 BlockX = 0;
+				BlockX < CHUNK_DIM;
+				BlockX++)
+			{
+				if(GetBlockType(Blocks, BlockX, BlockY, BlockZ) == BlockType_Water)
+				{
+					if((MaxWaterLevel > BlockY) && 
+						!IsBlockActive(Blocks, BlockX, BlockY + 1, BlockZ))
+					{
+						r32 X = (Chunk->X * World->ChunkDimInMeters) + 
+								(r32)BlockX*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+						r32 Y = ((Chunk->Y - 1) * World->ChunkDimInMeters) + 
+								(r32)(BlockY+1)*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+						r32 Z = (Chunk->Z * World->ChunkDimInMeters) + 
+								(r32)BlockZ*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+						r32 ColorNoise = Clamp(PerlinNoise3D(0.03f*vec3(X, Y, Z)), 0.0f, 1.0f);
+						ColorNoise *= ColorNoise;
+						vec4 Color = Lerp(vec4(0.0f, 0.25f, 0.8f, 0.1f), vec4(0.0f, 0.18f, 1.0f, 0.1f), ColorNoise);
+						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + (BlockY+1)*CHUNK_DIM + BlockX].Active = true;
+						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + (BlockY+1)*CHUNK_DIM + BlockX].Type = BlockType_Water;
+						Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + (BlockY+1)*CHUNK_DIM + BlockX] = Color;
+
+						ChunkWasChanged = true;
+					}
+				}
+			}
+		}
+	}
+
+	return(ChunkWasChanged);
+}
+
+internal void
+CorrectChunksWaterLevel(world *World)
+{
+	TIME_BLOCK;
+
+	for(chunk *Chunk = World->ChunksToRender;
+		Chunk;
+		Chunk = Chunk->Next)
+	{
+		if(Chunk->WaterVerticesP.EntriesCount)
+		{
+			bool32 ChunkWasChanged = CorrectChunkWaterLevel(World, Chunk);
+
+			if(ChunkWasChanged)
+			{
+				UpdateChunk(World, Chunk);
+			}
+		}
+	}
+}
+
 struct setup_chunk_blocks_job
 {
 	world *World;
@@ -602,18 +800,59 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 				r32 X = (Chunk->X * World->ChunkDimInMeters) + (r32)BlockX*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
 				r32 Z = (Chunk->Z * World->ChunkDimInMeters) + (r32)BlockZ*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
 				
-				r32 NoiseValue = Clamp(PerlinNoise2D(0.015f*vec2(X, Z)), 0.0f, 1.0f);
-				NoiseValue += 0.15f*Clamp(PerlinNoise2D(0.075f*vec2(X, Z)), 0.0f, 1.0f);
-				NoiseValue /= 1.15f;
-				NoiseValue = NoiseValue*NoiseValue*NoiseValue*NoiseValue;
+				r32 LowlandValue = Clamp(PerlinNoise2D(0.008f*vec2(X, Z)), 0.0f, 1.0f);
+				LowlandValue += 0.5f*Clamp(PerlinNoise2D(2.0f*0.008f*vec2(X, Z)), 0.0f, 1.0f);
+				LowlandValue += 0.25f*Clamp(PerlinNoise2D(4.0f*0.008f*vec2(X, Z)), 0.0f, 1.0f);
+				LowlandValue /= 1.75f;
+				// LowlandValue *= 0.9f;
+				LowlandValue = LowlandValue*LowlandValue*LowlandValue*LowlandValue;
 
-				r32 BiomeNoise = Clamp(PerlinNoise2D(0.007f*vec2(X, Z)), 0.0f, 1.0f);
-				BiomeNoise += 0.5f*Clamp(PerlinNoise2D(0.03f*vec2(X, Z)), 0.0f, 1.0f);
-				BiomeNoise += 0.25f*Clamp(PerlinNoise2D(0.06f*vec2(X, Z)), 0.0f, 1.0f);
+				r32 MountainFactor = Clamp(PerlinNoise2D(0.01f*vec2(X, Z)), 0.0f, 1.0f);
+				MountainFactor += 0.5f*Clamp(PerlinNoise2D(2.0f*0.01f*vec2(X, Z)), 0.0f, 1.0f);
+				MountainFactor += 0.25f*Clamp(PerlinNoise2D(4.0f*0.01f*vec2(X, Z)), 0.0f, 1.0f);
+				MountainFactor += 0.125f*Clamp(PerlinNoise2D(8.0f*0.01f*vec2(X, Z)), 0.0f, 1.0f);
+				MountainFactor /= 1.875f;
+				MountainFactor = MountainFactor*MountainFactor;
+				MountainFactor *= 3.0f;
+				// LowlandValue *= 0.9f;
+				// LowlandValue = LowlandValue*LowlandValue*LowlandValue*LowlandValue;
+
+				// r32 HighlandValue = Clamp(PerlinNoise2D(0.015f*vec2(X, Z)), 0.0f, 1.0f);
+				// // HighlandValue += 0.15f*Clamp(PerlinNoise2D(2.0f*0.008f*vec2(X, Z)), 0.0f, 1.0f);
+				// // HighlandValue /= 1.15f;
+				// HighlandValue *= 1.1f;
+				// HighlandValue = HighlandValue*HighlandValue*HighlandValue*HighlandValue*HighlandValue;
+				// HighlandValue = Clamp(HighlandValue, 0.0f, 1.0f);
+
+				// r32 MountainValue = Clamp(PerlinNoise2D(0.02f*vec2(X, Z)), 0.0f, 1.0f);
+				// MountainValue += 0.5f*Clamp(PerlinNoise2D(2.0f*0.02f*vec2(X, Z)), 0.0f, 1.0f);
+				// MountainValue /= 1.5f;
+				// MountainValue = MountainValue*MountainValue*MountainValue*MountainValue;
+
+				// r32 TerrainTypeNoise = Clamp(PerlinNoise2D(0.015f*vec2(X, Z), 1234), 0.0f, 1.0f);
+				// TerrainTypeNoise += 0.5f*Clamp(PerlinNoise2D(2.0f*0.015f*vec2(X, Z), 1234), 0.0f, 1.0f);
+				// TerrainTypeNoise += 0.25f*Clamp(PerlinNoise2D(4.0f*0.015f*vec2(X, Z), 1234), 0.0f, 1.0f);
+				// TerrainTypeNoise /= 1.75f;
+
+				// r32 tType = Clamp((TerrainTypeNoise - 0.65f) / (0.75f - 0.655f), 0.0f, 1.0f);
+				// r32 tType = Clamp((TerrainTypeNoise - 0.55f) / (0.85f - 0.55f), 0.0f, 1.0f);
+				// r32 NoiseValue = Lerp(LowlandValue, MountainValue, tType);
+
+				// if(LowlandValue < 0.008f)
+				// {
+				// 	NoiseValue = LowlandValue;
+				// }
+				// NoiseValue = (TerrainTypeNoise < 0.65f) ? LowlandValue : HighlandValue;
+				r32 NoiseValue = MountainFactor*LowlandValue;
+
+
+				r32 BiomeNoise = Clamp(PerlinNoise2D(0.007f*vec2(X, Z), 1337), 0.0f, 1.0f);
+				BiomeNoise += 0.5f*Clamp(PerlinNoise2D(0.03f*vec2(X, Z), 1337), 0.0f, 1.0f);
+				BiomeNoise += 0.25f*Clamp(PerlinNoise2D(0.06f*vec2(X, Z), 1337), 0.0f, 1.0f);
 				BiomeNoise /= 1.75f;
-
+				
 				world_biome_type BiomeType = WorldBiome_Grassland;
-				if(NoiseValue < 0.008f)
+				if(NoiseValue < 0.01f)
 				{
 					BiomeType = WorldBiome_Water;
 				}
@@ -641,7 +880,7 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 					BiomeType = WorldBiome_Grassland;
 				}
 
-				u32 Height = (u32)roundf(CHUNK_DIM * MAX_CHUNKS_Y * NoiseValue);
+				u32 Height = (u32)roundf(CHUNK_DIM * (MAX_CHUNKS_Y + 1) * NoiseValue);
 				Height++;
 				u32 HeightForThisChunk = (u32)Clamp((r32)Height - (r32)(Chunk->Y-1)*CHUNK_DIM, 0.0f, CHUNK_DIM);
 				for(u32 BlockY = 0;
@@ -713,60 +952,215 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 		}
 	}
 
-	// TODO(georgy): This must be buggy, but I haven't caught any bugs in a game
-	for(u32 BlockZ = 0;
-		BlockZ < CHUNK_DIM;
-		BlockZ++)
+	CorrectChunkWaterLevel(World, Chunk);
+
+	if(!Chunk->IsNotEmpty)
 	{
-		for(u32 BlockY = 0;
-			BlockY < CHUNK_DIM;
-			BlockY++)
+		BeginWorldLock(World);
+		
+		FreeChunkBlocksInfo(World, Chunk);
+
+		EndWorldLock(World);
+	}
+
+	CompletePreviousWritesBeforeFutureWrites;
+
+	Chunk->IsSetupBlocks = true;
+}
+#else
+#if 0
+internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
+{
+	TIME_BLOCK;
+	setup_chunk_blocks_job *Job = (setup_chunk_blocks_job *)Data;
+	world *World = Job->World;
+	chunk *Chunk = Job->Chunk;
+	stack_allocator *WorldAllocator = Job->WorldAllocator;
+
+	Chunk->IsNotEmpty = false;
+	
+	BeginWorldLock(World);
+	if(!World->FirstFreeChunkBlocksInfo)
+	{
+		World->FirstFreeChunkBlocksInfo = PushStruct(WorldAllocator, chunk_blocks_info);
+	}
+	Chunk->BlocksInfo = World->FirstFreeChunkBlocksInfo;
+	World->FirstFreeChunkBlocksInfo = World->FirstFreeChunkBlocksInfo->Next;
+	EndWorldLock(World);
+
+	ZeroSize(Chunk->BlocksInfo, sizeof(chunk_blocks_info));
+
+	block *Blocks = Chunk->BlocksInfo->Blocks;
+	vec4 *Colors = Chunk->BlocksInfo->Colors;
+
+	if(Chunk->Y == -1)
+	{
+		Chunk->IsNotEmpty = true;
+		
+		for(u32 BlockZ = 0;
+			BlockZ < CHUNK_DIM;
+			BlockZ++)
 		{
 			for(u32 BlockX = 0;
 				BlockX < CHUNK_DIM;
 				BlockX++)
 			{
-				if(GetBlockType(Blocks, BlockX, BlockY, BlockZ) == BlockType_Water)
+				for(u32 BlockX = 0;
+					BlockX < CHUNK_DIM;
+					BlockX++)
 				{
-					u32 MaxWaterLevel = Chunk->MaxWaterLevel;
-					for(i32 ChunkZOffset = -1;
-						ChunkZOffset <= 1;
-						ChunkZOffset++)
+					Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + (CHUNK_DIM - 1)*CHUNK_DIM + BlockX].Active = true;
+					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + (CHUNK_DIM - 1)*CHUNK_DIM + BlockX] = vec4(1.0f, 0.53f, 0.53f, 1.0f);			
+				}
+			}
+		}
+	}
+	else
+	{
+		// NOTE(georgy): Lerp method is much faster at least in debug build
+		#define LERP_METHOD 1
+
+#if LERP_METHOD
+		r32 SampleRanges[] = { 0.25f, 4.125f, 8.0f, 11.875f, 15.75f };
+		r32 NoiseValues[5][5][5];
+		for(u32 NoiseZ = 0;
+			NoiseZ < 5;
+			NoiseZ++)
+		{
+			for(u32 NoiseY = 0;
+				NoiseY < 5;
+				NoiseY++)
+			{
+				for(u32 NoiseX = 0;
+					NoiseX < 5;
+					NoiseX++)
+				{
+					r32 X = (Chunk->X * World->ChunkDimInMeters) + SampleRanges[NoiseX];
+					r32 Y = (Chunk->Y * World->ChunkDimInMeters) + SampleRanges[NoiseY];
+					r32 Z = (Chunk->Z * World->ChunkDimInMeters) + SampleRanges[NoiseZ];
+					NoiseValues[NoiseZ][NoiseY][NoiseX] = Clamp(PerlinNoise3D(0.03f*vec3(X, Y, Z)), 0.0f, 1.0f);
+				}
+			}
+		}
+#endif
+
+		for(u32 BlockZ = 0;
+			BlockZ < CHUNK_DIM;
+			BlockZ++)
+		{
+			for(u32 BlockY = 0;
+				BlockY < CHUNK_DIM;
+				BlockY++)
+			{
+				for(u32 BlockX = 0;
+					BlockX < CHUNK_DIM;
+					BlockX++)
+				{
+					r32 MaxY = (MAX_CHUNKS_Y + 1) * World->ChunkDimInMeters;
+					vec4 Color = vec4(0.53f, 0.53f, 0.53f, 1.0f);
+
+#if LERP_METHOD
+					r32 X = (r32)BlockX*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+					r32 Y = (r32)BlockY*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+					r32 Z = (r32)BlockZ*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+
+
+					r32 fY = (Y + (Chunk->Y * World->ChunkDimInMeters)) / MaxY;
+
+					u32 NoiseX, NoiseY, NoiseZ;
+					if((X >= SampleRanges[0]) && (X < SampleRanges[1]))
 					{
-						for(i32 ChunkXOffset = -1;
-							ChunkXOffset <= 1;
-							ChunkXOffset++)
-						{
-							chunk *NeighboringChunk = GetChunk(World, Chunk->X + ChunkXOffset,
-																	  Chunk->Y,
-																	  Chunk->Z + ChunkZOffset);
-							if(NeighboringChunk && NeighboringChunk->IsSetupBlocks)
-							{
-								if(NeighboringChunk->MaxWaterLevel > MaxWaterLevel)
-								{
-									MaxWaterLevel = NeighboringChunk->MaxWaterLevel;
-									PlatformOutputDebugString("Neighboring chunk has higher water level!");
-								}
-							}
-						}
+						NoiseX = 0;
+					}
+					else if((X >= SampleRanges[1]) && (X < SampleRanges[2]))
+					{
+						NoiseX = 1;
+					}
+					else if((X >= SampleRanges[2]) && (X < SampleRanges[3]))
+					{
+						NoiseX = 2;
+					}
+					else if((X >= SampleRanges[3]) && (X <= SampleRanges[4]))
+					{
+						NoiseX = 3;
 					}
 
-					if((MaxWaterLevel > BlockY) && 
-					   !IsBlockActive(Blocks, BlockX, BlockY + 1, BlockZ))
+					if((Y >= SampleRanges[0]) && (Y < SampleRanges[1]))
 					{
-						r32 X = (Chunk->X * World->ChunkDimInMeters) + (r32)BlockX*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
-						r32 Y = ((Chunk->Y - 1) * World->ChunkDimInMeters) + (r32)(BlockY+1)*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
-						r32 Z = (Chunk->Z * World->ChunkDimInMeters) + (r32)BlockZ*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
-						r32 ColorNoise = Clamp(PerlinNoise3D(0.02f*vec3(X, Y, Z)), 0.0f, 1.0f);
-						ColorNoise *= ColorNoise;
-						vec4 Color = Lerp(vec4(0.0f, 0.25f, 0.8f, 0.1f), vec4(0.0f, 0.18f, 1.0f, 0.1f), ColorNoise);
-						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + (BlockY+1)*CHUNK_DIM + BlockX].Active = true;
-						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + (BlockY+1)*CHUNK_DIM + BlockX].Type = BlockType_Water;
-						Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + (BlockY+1)*CHUNK_DIM + BlockX] = Color;
+						NoiseY = 0;
+					}
+					else if((Y >= SampleRanges[1]) && (Y < SampleRanges[2]))
+					{
+						NoiseY = 1;
+					}
+					else if((Y >= SampleRanges[2]) && (Y < SampleRanges[3]))
+					{
+						NoiseY = 2;
+					}
+					else if((Y >= SampleRanges[3]) && (Y <= SampleRanges[4]))
+					{
+						NoiseY = 3;
+					}
+
+					if((Z >= SampleRanges[0]) && (Z < SampleRanges[1]))
+					{
+						NoiseZ = 0;
+					}
+					else if((Z >= SampleRanges[1]) && (Z < SampleRanges[2]))
+					{
+						NoiseZ = 1;
+					}
+					else if((Z >= SampleRanges[2]) && (Z < SampleRanges[3]))
+					{
+						NoiseZ = 2;
+					}
+					else if((Z >= SampleRanges[3]) && (Z <= SampleRanges[4]))
+					{
+						NoiseZ = 3;
+					}
+
+					r32 tX = (X - SampleRanges[NoiseX]) / (SampleRanges[NoiseX + 1] - SampleRanges[NoiseX]);
+					r32 tY = (Y - SampleRanges[NoiseY]) / (SampleRanges[NoiseY + 1] - SampleRanges[NoiseY]);
+					r32 tZ = (Z - SampleRanges[NoiseZ]) / (SampleRanges[NoiseZ + 1] - SampleRanges[NoiseZ]);
+
+					r32 NoiseX0 = Lerp(NoiseValues[NoiseZ][NoiseY][NoiseX], NoiseValues[NoiseZ][NoiseY][NoiseX + 1], tX);
+					r32 NoiseX1 = Lerp(NoiseValues[NoiseZ + 1][NoiseY][NoiseX], NoiseValues[NoiseZ + 1][NoiseY][NoiseX + 1], tX);
+					r32 NoiseX2 = Lerp(NoiseValues[NoiseZ][NoiseY + 1][NoiseX], NoiseValues[NoiseZ][NoiseY + 1][NoiseX + 1], tX);
+					r32 NoiseX3 = Lerp(NoiseValues[NoiseZ+ 1][NoiseY + 1][NoiseX], NoiseValues[NoiseZ + 1][NoiseY + 1][NoiseX + 1], tX);
+
+					r32 NoiseY0 = Lerp(NoiseX0, NoiseX2, tY);
+					r32 NoiseY1 = Lerp(NoiseX1, NoiseX3, tY);
+
+					r32 NoiseValue = Lerp(NoiseY0, NoiseY1, tZ);
+#else
+					r32 X = (Chunk->X * World->ChunkDimInMeters) + (r32)BlockX*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+					r32 Y = (Chunk->Y * World->ChunkDimInMeters) + (r32)BlockY*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+					r32 Z = (Chunk->Z * World->ChunkDimInMeters) + (r32)BlockZ*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
+
+					r32 fY = Y / MaxY;
+					r32 NoiseValue = Clamp(PerlinNoise3D(0.03f*vec3(X, Y, Z)), 0.0f, 1.0f);
+#endif
+					NoiseValue = 0.5f*fY + 0.5f*NoiseValue;
+
+					if(NoiseValue < 0.35f)
+					{
+						Chunk->IsNotEmpty = true;
+
+						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true;
+						Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = Color;			
 					}
 				}
 			}
 		}
+	}
+
+	if(!Chunk->IsNotEmpty)
+	{
+		BeginWorldLock(World);
+		
+		FreeChunkBlocksInfo(World, Chunk);
+
+		EndWorldLock(World);
 	}
 
 	CompletePreviousWritesBeforeFutureWrites;
@@ -834,47 +1228,67 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 					BlockX < CHUNK_DIM;
 					BlockX++)
 				{
+					r32 MaxY = (MAX_CHUNKS_Y + 1) * World->ChunkDimInMeters;
+					vec4 Color = vec4(0.53f, 0.53f, 0.53f, 1.0f);
+
 					r32 X = (Chunk->X * World->ChunkDimInMeters) + (r32)BlockX*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
 					r32 Y = (Chunk->Y * World->ChunkDimInMeters) + (r32)BlockY*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
 					r32 Z = (Chunk->Z * World->ChunkDimInMeters) + (r32)BlockZ*World->BlockDimInMeters + 0.5f*World->BlockDimInMeters;
-					
-					vec4 Color = vec4(0.53f, 0.53f, 0.53f, 1.0f);
 
-					r32 MaxY = (MAX_CHUNKS_Y + 1) * World->ChunkDimInMeters;
 					r32 fY = Y / MaxY;
-					r32 HeightFactor;
-					if(fY <= 0.05f)
-					{
-						HeightFactor = 4.0f;
-						vec4 Color = vec4(0.0f, 1.0f, 0.0f, 1.0f);
-					}
-					else if(fY <= 0.15f)
-					{
-						HeightFactor = 2.5f;
-					}
-					else if(fY <= 0.5f)
-					{
-						HeightFactor = 1.0f;
-					}
-					else if(fY < 0.8f)
-					{
-						HeightFactor = (0.8f - fY)*3.333333f;
-					}
-					else
-					{
-						HeightFactor = 0.0f;
-					}
+					// r32 NoiseValue = Clamp(PerlinNoise3D(0.03f*vec3(X, Y, Z)), 0.0f, 1.0f);
+					// NoiseValue = 0.5f*Clamp(PerlinNoise3D(2.0f*0.03f*vec3(X, Y, Z)), 0.0f, 1.0f);
+					// r32 NoiseValue = Clamp(PerlinNoise2D(0.015f*vec2(X, Z)), 0.0f, 1.0f);
+					// NoiseValue = 0.5f*Clamp(PerlinNoise2D(2.0f*0.015f*vec2(X, Z)), 0.0f, 1.0f);
+					// NoiseValue /= 1.35f;
+					// NoiseValue /= 1.96875f;
+					// NoiseValue = 0.35f*NoiseValue - 0.175f;
+					// NoiseValue = 0.5f*fY + 0.5f*NoiseValue;
 
-					r32 NoiseValue = Clamp(PerlinNoise3D(0.03f*vec3(X, Y, Z)), 0.0f, 1.0f);
-					NoiseValue += 0.5f*Clamp(PerlinNoise3D(0.06f*vec3(X, Y, Z)), 0.0f, 1.0f);
-					NoiseValue += 0.25f*Clamp(PerlinNoise3D(0.12f*vec3(X, Y, Z)), 0.0f, 1.0f);
-					NoiseValue /= 1.75f;
-					// NoiseValue *= HeightFactor;
-					// NoiseValue /= 4.0f;
+					r32 LowlandNoise = Clamp(PerlinNoise2D(0.008f*vec2(X, Z)), 0.0f, 1.0f);
+					LowlandNoise += 0.5f*Clamp(PerlinNoise2D(2.0f*0.008f*vec2(X, Z)), 0.0f, 1.0f);
+					LowlandNoise /= 1.15f;
+					LowlandNoise = 0.35f*LowlandNoise - 0.175f;
+					r32 LowlandValue = fY + LowlandNoise;
 
-					NoiseValue = 0.5f*fY + 0.5f*(1.0f - NoiseValue);
+					r32 HighlandNoise = Clamp(PerlinNoise2D(0.025f*vec2(X, Z)), 0.0f, 1.0f);
+					HighlandNoise += 0.5f*Clamp(PerlinNoise2D(2.0f*0.025f*vec2(X, Z)), 0.0f, 1.0f);
+					HighlandNoise /= 1.4f;
+					HighlandNoise = 0.35f*HighlandNoise - 0.175f;
+					r32 HighlandValue = fY + HighlandNoise;
 
-					if(NoiseValue < 0.35f)
+					r32 MountainNoise = Clamp(PerlinNoise2D(0.0125f*vec2(X, Z)), 0.0f, 1.0f);
+					MountainNoise += 0.5f*Clamp(PerlinNoise2D(2.0f*0.025f*vec2(X, Z)), 0.0f, 1.0f);
+					MountainNoise += 0.25f*Clamp(PerlinNoise2D(4.0f*0.025f*vec2(X, Z)), 0.0f, 1.0f);
+					MountainNoise += 0.125f*Clamp(PerlinNoise2D(6.0f*0.025f*vec2(X, Z)), 0.0f, 1.0f);
+					MountainNoise /= 1.7f;
+					MountainNoise = 0.35f*MountainNoise - 0.175f;
+					MountainNoise *= 2.0f;
+					MountainNoise = Clamp(MountainNoise, -0.35f, 0.175f);
+					r32 MountainValue = fY + MountainNoise;
+
+					r32 TerrainTypeNoise = Clamp(PerlinNoise2D(0.00625f*vec2(X, Z)), 0.0f, 1.0f);
+					TerrainTypeNoise += 0.5f*Clamp(PerlinNoise2D(2.0f*0.00625f*vec2(X, Z)), 0.0f, 1.0f);
+					TerrainTypeNoise += 0.25f*Clamp(PerlinNoise2D(4.0f*0.00625f*vec2(X, Z)), 0.0f, 1.0f);
+					TerrainTypeNoise /= 1.65f;
+
+					// r32 tType = (TerrainTypeNoise - 0.55f) / (0.59f - 0.51f);
+					// r32 tType = (TerrainTypeNoise - 0.55f) / (0.625f - 0.475f);
+					// r32 SelectValue = Lerp(LowlandValue, MountainValue, tType);
+
+					// tType = (TerrainTypeNoise - 0.25f) / (0.325f - 0.175f);;
+					// SelectValue = Lerp(HighlandValue, SelectValue, tType);
+
+					r32 tType = (TerrainTypeNoise - 0.575f) / (0.625f - 0.575f);
+					tType = Clamp(tType, 0.0f, 1.0f);
+					r32 SelectValue = Lerp(LowlandValue, HighlandValue, tType);
+
+					tType = (TerrainTypeNoise - 0.675f) / (0.825f - 0.675f);
+					tType = Clamp(tType, 0.0f, 1.0f);
+					SelectValue = Lerp(SelectValue, MountainValue, tType);
+					
+					// r32 SelectValue = (TerrainTypeNoise < 0.5f) ? HighlandValue : LowlandValue;
+					if(SelectValue < 0.35f)
 					{
 						Chunk->IsNotEmpty = true;
 
@@ -886,10 +1300,20 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 		}
 	}
 
+	if(!Chunk->IsNotEmpty)
+	{
+		BeginWorldLock(World);
+
+		FreeChunkBlocksInfo(World, Chunk);
+
+		EndWorldLock(World);
+	}
+
 	CompletePreviousWritesBeforeFutureWrites;
 
 	Chunk->IsSetupBlocks = true;
 }
+#endif
 #endif
 
 internal void
@@ -969,10 +1393,10 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkVertices)
 	InitializeDynamicArray(&Chunk->WaterVerticesP);
 	InitializeDynamicArray(&Chunk->WaterVerticesColors);
 
-	block *Blocks = Chunk->BlocksInfo->Blocks;
-	vec4 *Colors = Chunk->BlocksInfo->Colors;
-
-	GenerateChunkVertices(World, Chunk);
+	if(Chunk->IsNotEmpty)
+	{
+		GenerateChunkVertices(World, Chunk);
+	}
 
 	CompletePreviousWritesBeforeFutureWrites;
 
@@ -1002,38 +1426,41 @@ SetupChunksVertices(world *World, temp_state *TempState)
 internal void
 LoadChunk(chunk *Chunk)
 {
-	glGenVertexArrays(1, &Chunk->VAO);
-	glGenBuffers(1, &Chunk->PVBO);
-	glBindVertexArray(Chunk->VAO);
-	glBindBuffer(GL_ARRAY_BUFFER, Chunk->PVBO);
-	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesP.EntriesCount*sizeof(vec3), Chunk->VerticesP.Entries, GL_STATIC_DRAW);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
-	glGenBuffers(1, &Chunk->NormalsVBO);
-	glBindBuffer(GL_ARRAY_BUFFER, Chunk->NormalsVBO);
-	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesNormals.EntriesCount*sizeof(vec3), Chunk->VerticesNormals.Entries, GL_STATIC_DRAW);
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
-	glGenBuffers(1, &Chunk->ColorsVBO);
-	glBindBuffer(GL_ARRAY_BUFFER, Chunk->ColorsVBO);
-	glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesColors.EntriesCount*sizeof(vec4), Chunk->VerticesColors.Entries, GL_STATIC_DRAW);
-	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(vec4), (void *)0);
-	glBindVertexArray(0);
+	if(Chunk->IsNotEmpty)
+	{
+		glGenVertexArrays(1, &Chunk->VAO);
+		glGenBuffers(1, &Chunk->PVBO);
+		glBindVertexArray(Chunk->VAO);
+		glBindBuffer(GL_ARRAY_BUFFER, Chunk->PVBO);
+		glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesP.EntriesCount*sizeof(vec3), Chunk->VerticesP.Entries, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
+		glGenBuffers(1, &Chunk->NormalsVBO);
+		glBindBuffer(GL_ARRAY_BUFFER, Chunk->NormalsVBO);
+		glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesNormals.EntriesCount*sizeof(vec3), Chunk->VerticesNormals.Entries, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
+		glGenBuffers(1, &Chunk->ColorsVBO);
+		glBindBuffer(GL_ARRAY_BUFFER, Chunk->ColorsVBO);
+		glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesColors.EntriesCount*sizeof(vec4), Chunk->VerticesColors.Entries, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(2);
+		glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(vec4), (void *)0);
+		glBindVertexArray(0);
 
-	glGenVertexArrays(1, &Chunk->WaterVAO);
-	glGenBuffers(1, &Chunk->WaterPVBO);
-	glBindVertexArray(Chunk->WaterVAO);
-	glBindBuffer(GL_ARRAY_BUFFER, Chunk->WaterPVBO);
-	glBufferData(GL_ARRAY_BUFFER, Chunk->WaterVerticesP.EntriesCount*sizeof(vec3), Chunk->WaterVerticesP.Entries, GL_STATIC_DRAW);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
-	glGenBuffers(1, &Chunk->WaterColorsVBO);
-	glBindBuffer(GL_ARRAY_BUFFER, Chunk->WaterColorsVBO);
-	glBufferData(GL_ARRAY_BUFFER, Chunk->WaterVerticesColors.EntriesCount*sizeof(vec4), Chunk->WaterVerticesColors.Entries, GL_STATIC_DRAW);
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(vec4), (void *)0);
-	glBindVertexArray(0);
+		glGenVertexArrays(1, &Chunk->WaterVAO);
+		glGenBuffers(1, &Chunk->WaterPVBO);
+		glBindVertexArray(Chunk->WaterVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, Chunk->WaterPVBO);
+		glBufferData(GL_ARRAY_BUFFER, Chunk->WaterVerticesP.EntriesCount*sizeof(vec3), Chunk->WaterVerticesP.Entries, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
+		glGenBuffers(1, &Chunk->WaterColorsVBO);
+		glBindBuffer(GL_ARRAY_BUFFER, Chunk->WaterColorsVBO);
+		glBufferData(GL_ARRAY_BUFFER, Chunk->WaterVerticesColors.EntriesCount*sizeof(vec4), Chunk->WaterVerticesColors.Entries, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(vec4), (void *)0);
+		glBindVertexArray(0);
+	}
 
 	CompletePreviousWritesBeforeFutureWrites;
 
@@ -1061,8 +1488,10 @@ UnloadChunk(world *World, chunk *Chunk)
 
 	if(Chunk->IsSetupBlocks)
 	{
-		Chunk->BlocksInfo->Next = World->FirstFreeChunkBlocksInfo;
-		World->FirstFreeChunkBlocksInfo = Chunk->BlocksInfo;
+		if(Chunk->BlocksInfo)
+		{
+			FreeChunkBlocksInfo(World, Chunk);
+		}
 
 		Chunk->IsSetupBlocks = false;
 	}
@@ -1081,22 +1510,26 @@ UnloadChunk(world *World, chunk *Chunk)
 
 	if(Chunk->IsLoaded)
 	{
-		glDeleteBuffers(1, &Chunk->PVBO);
-		glDeleteBuffers(1, &Chunk->NormalsVBO);
-		glDeleteBuffers(1, &Chunk->ColorsVBO);
-		glDeleteVertexArrays(1, &Chunk->VAO);
+		if(Chunk->IsNotEmpty)
+		{
+			glDeleteBuffers(1, &Chunk->PVBO);
+			glDeleteBuffers(1, &Chunk->NormalsVBO);
+			glDeleteBuffers(1, &Chunk->ColorsVBO);
+			glDeleteVertexArrays(1, &Chunk->VAO);
 
-		glDeleteBuffers(1, &Chunk->WaterPVBO);
-		glDeleteBuffers(1, &Chunk->WaterColorsVBO);
-		glDeleteVertexArrays(1, &Chunk->WaterVAO);
+			glDeleteBuffers(1, &Chunk->WaterPVBO);
+			glDeleteBuffers(1, &Chunk->WaterColorsVBO);
+			glDeleteVertexArrays(1, &Chunk->WaterVAO);
+		}
 
 		Chunk->IsLoaded = false;
 	}
 
 #if VOXEL_ENGINE_INTERNAL
-	Assert(DEBUGGlobalPlaybackInfo.ChunksUnloadedDuringRecordPhaseCount < ArrayCount(DEBUGGlobalPlaybackInfo.ChunksUnloadedDuringRecordPhase));
 	if(DEBUGGlobalPlaybackInfo.RecordPhase)
 	{
+		Assert(DEBUGGlobalPlaybackInfo.ChunksUnloadedDuringRecordPhaseCount < 
+			   ArrayCount(DEBUGGlobalPlaybackInfo.ChunksUnloadedDuringRecordPhase));
 		DEBUGGlobalPlaybackInfo.ChunksUnloadedDuringRecordPhase[DEBUGGlobalPlaybackInfo.ChunksUnloadedDuringRecordPhaseCount++] = 
 			Chunk;
 	}
@@ -1134,77 +1567,6 @@ UnloadChunks(world *World, world_position *MinChunkP, world_position *MaxChunkP)
 			Chunk = Chunk->Next;
 		}
 	}
-}
-
-internal bool32
-CheckChunkEmptiness(chunk *Chunk)
-{
-	bool32 IsNotEmpty = false;
-
-	block *Blocks = Chunk->BlocksInfo->Blocks;
-	for(i32 BlockZ = 0;
-		BlockZ < CHUNK_DIM;
-		BlockZ++)
-	{
-		for(i32 BlockY = 0;
-			BlockY < CHUNK_DIM;
-			BlockY++)
-		{
-			for(i32 BlockX = 0;
-				BlockX < CHUNK_DIM;
-				BlockX++)
-			{
-				if(IsBlockActive(Blocks, BlockX, BlockY, BlockZ))
-				{
-					IsNotEmpty = true;
-					break;
-				}
-			}
-		}
-	}
-
-	return(IsNotEmpty);
-}
-
-internal void
-UpdateChunk(world *World, chunk *Chunk)
-{
-	Chunk->IsNotEmpty = CheckChunkEmptiness(Chunk);
-	
-	if(Chunk->IsNotEmpty)
-	{
-		Chunk->VerticesP.EntriesCount = 0;
-		Chunk->VerticesNormals.EntriesCount = 0;
-		Chunk->VerticesColors.EntriesCount = 0;
-		GenerateChunkVertices(World, Chunk);
-
-		glBindVertexArray(Chunk->VAO);
-		glBindBuffer(GL_ARRAY_BUFFER, Chunk->PVBO);
-		glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesP.EntriesCount*sizeof(vec3), Chunk->VerticesP.Entries, GL_STATIC_DRAW);
-		glBindBuffer(GL_ARRAY_BUFFER, Chunk->NormalsVBO);
-		glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesNormals.EntriesCount*sizeof(vec3), Chunk->VerticesNormals.Entries, GL_STATIC_DRAW);
-		glBindBuffer(GL_ARRAY_BUFFER, Chunk->ColorsVBO);
-		glBufferData(GL_ARRAY_BUFFER, Chunk->VerticesColors.EntriesCount*sizeof(vec3), Chunk->VerticesColors.Entries, GL_STATIC_DRAW);
-		glBindVertexArray(0);
-	}
-
-	Chunk->IsModified = false;
-
-#if VOXEL_ENGINE_INTERNAL
-	if(DEBUGGlobalPlaybackInfo.RecordPhase)
-	{
-		if((Chunk->X >= DEBUGGlobalPlaybackInfo.MinChunkP.ChunkX) &&
-		   (Chunk->Z >= DEBUGGlobalPlaybackInfo.MinChunkP.ChunkZ) &&
-		   (Chunk->X <= DEBUGGlobalPlaybackInfo.MaxChunkP.ChunkX) &&
-		   (Chunk->Z <= DEBUGGlobalPlaybackInfo.MaxChunkP.ChunkZ))
-		{
-			Assert(DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhaseCount < 
-					ArrayCount(DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhase));
-			DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhase[DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhaseCount++] = 
-				Chunk;
-		}
-	}
-#endif
 }
 
 internal chunk *
