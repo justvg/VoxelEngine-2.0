@@ -17,6 +17,11 @@ in vs_out
 uniform bool ShadowsEnabled;
 uniform sampler2DArray ShadowMaps;
 uniform float CascadesDistances[CASCADES_COUNT + 1];
+uniform vec2 SampleOffsets[64];
+uniform sampler2D ShadowNoiseTexture;
+uniform float Bias;
+
+uniform int Width, Height;
 
 uniform vec3 DirectionalLightDir = vec3(0.0);
 const vec3 DirectionalLightColor = vec3(0.666666, 0.788235, 0.79215);
@@ -34,26 +39,35 @@ vec3 Fog(vec3 SourceColor, float Distance, vec3 RayDir, vec3 MoonDir)
 	return(Result);
 }
 
-float ShadowCalc(float ShadowMapIndex, vec4 FragPosLightSpace, vec3 Normal, vec3 LightDir)
+float ShadowCalc(float ShadowMapIndex, vec4 FragPosLightSpace, float TexelCount, vec3 Normal, vec3 LightDir)
 {
 	vec3 ProjectedCoords = FragPosLightSpace.xyz / FragPosLightSpace.w;
 	ProjectedCoords = ProjectedCoords * 0.5 + 0.5;
-	float DepthInShadowMap = texture(ShadowMaps, vec3(ProjectedCoords.xy, ShadowMapIndex)).r;
-	float Bias = 0.0015;
-	float CurrentFragmentDepth = ProjectedCoords.z - Bias;
+	float BiasScaled = 	mix(Bias, 2.0*Bias, (1.0 - max(dot(Normal, LightDir), 0.0)));
+	float CurrentFragmentDepth = ProjectedCoords.z - BiasScaled;
 
 	float Result = 0.0;
 	vec2 TexelSize = 1.0 / textureSize(ShadowMaps, 0).xy;
-	for(int X = -1; X <= 1; ++X)
+
+	vec2 NoiseScale = vec2(Width, Height) / 8.0;
+	vec2 RandomVec = normalize(texture(ShadowNoiseTexture, NoiseScale*(gl_FragCoord.xy/vec2(Width, Height))).rg);
+	vec2 Perp = vec2(-RandomVec.y, RandomVec.x);
+	mat2 ChangeOffsetMatrix = mat2(RandomVec, Perp);
+
+	for(int SampleOffsetIndex = 0;
+		SampleOffsetIndex < 16;
+		SampleOffsetIndex++)
 	{
-		for(int Y = -1; Y <= 1; ++Y)
-		{
-			float Depth = texture(ShadowMaps, vec3(ProjectedCoords.xy + vec2(X, Y) * TexelSize, ShadowMapIndex)).r; 
-			Result += CurrentFragmentDepth > Depth ? 1.0 : 0.0;        
-		}    
+		vec2 SampleOffset = ChangeOffsetMatrix * SampleOffsets[SampleOffsetIndex];
+		vec2 Offset = TexelCount*TexelSize*SampleOffset;
+		float Depth = texture(ShadowMaps, vec3(ProjectedCoords.xy + Offset, ShadowMapIndex)).r;
+		Result += CurrentFragmentDepth > Depth ? 1.0 : 0.0;
 	}
-	
-	Result /= 9.0;
+
+	Result /= 16.0;
+
+	// float Depth = texture(ShadowMaps, vec3(ProjectedCoords.xy, ShadowMapIndex)).r;
+	// Result += CurrentFragmentDepth > Depth ? 1.0 : 0.0;
 
 	return(Result);
 }
@@ -74,15 +88,52 @@ void main()
 	{
 		if(Input.ClipSpacePosZ <= CascadesDistances[1])
 		{
-			ShadowFactor = ShadowCalc(0.0, Input.FragPosLightSpace[0], Normal, LightDir);
+			if((CascadesDistances[1] - Input.ClipSpacePosZ) <= 1.0)
+			{
+				float t = (2.0 - ((CascadesDistances[1] - Input.ClipSpacePosZ) + 1.0)) / 2.0;
+				float ShadowFactor1 = ShadowCalc(0.0, Input.FragPosLightSpace[0], 5.0, Normal, LightDir);
+				float ShadowFactor2 = ShadowCalc(1.0, Input.FragPosLightSpace[1], 2.5, Normal, LightDir);
+				ShadowFactor = mix(ShadowFactor1, ShadowFactor2, t);
+			}
+			else
+			{
+				ShadowFactor = ShadowCalc(0.0, Input.FragPosLightSpace[0], 5.0, Normal, LightDir);
+			}
 		}
 		else if(Input.ClipSpacePosZ <= CascadesDistances[2])
 		{
-			ShadowFactor = ShadowCalc(1.0, Input.FragPosLightSpace[1], Normal, LightDir);
+			if((Input.ClipSpacePosZ - CascadesDistances[1]) <= 1.0)
+			{
+				float t = (2.0 - ((Input.ClipSpacePosZ - CascadesDistances[1]) + 1.0)) / 2.0;
+				float ShadowFactor1 = ShadowCalc(0.0, Input.FragPosLightSpace[0], 5.0, Normal, LightDir);
+				float ShadowFactor2 = ShadowCalc(1.0, Input.FragPosLightSpace[1], 2.5, Normal, LightDir);
+				ShadowFactor = mix(ShadowFactor2, ShadowFactor1, t);
+			}
+			else if((CascadesDistances[2] - Input.ClipSpacePosZ) <= 1.0)
+			{
+				float t = (2.0 - ((CascadesDistances[2] - Input.ClipSpacePosZ) + 1.0)) / 2.0;
+				float ShadowFactor1 = ShadowCalc(1.0, Input.FragPosLightSpace[1], 2.5, Normal, LightDir);
+				float ShadowFactor2 = ShadowCalc(2.0, Input.FragPosLightSpace[2], 1.5, Normal, LightDir);
+				ShadowFactor = mix(ShadowFactor1, ShadowFactor2, t);
+			}
+			else
+			{
+				ShadowFactor = ShadowCalc(1.0, Input.FragPosLightSpace[1], 2.5, Normal, LightDir);
+			}
 		}
 		else
 		{
-			ShadowFactor = ShadowCalc(2.0, Input.FragPosLightSpace[2], Normal, LightDir);
+			if((Input.ClipSpacePosZ - CascadesDistances[2]) <= 1.0)
+			{
+				float t = (2.0 - ((Input.ClipSpacePosZ - CascadesDistances[2]) + 1.0)) / 2.0;
+				float ShadowFactor1 = ShadowCalc(1.0, Input.FragPosLightSpace[1], 2.5, Normal, LightDir);
+				float ShadowFactor2 = ShadowCalc(2.0, Input.FragPosLightSpace[2], 1.5, Normal, LightDir);
+				ShadowFactor = mix(ShadowFactor2, ShadowFactor1, t);
+			}
+			else
+			{
+				ShadowFactor = ShadowCalc(2.0, Input.FragPosLightSpace[2], 1.5, Normal, LightDir);
+			}
 		}
 	}
 	vec3 FinalColor = Ambient + (1.0 - ShadowFactor)*Diffuse;

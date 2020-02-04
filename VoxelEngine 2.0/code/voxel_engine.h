@@ -228,7 +228,7 @@ struct game_state
 	GLuint ShadowMapFBO, ShadowMapsArray;
 	u32 ShadowMapsWidth, ShadowMapsHeight;
 	GLuint ShadowNoiseTexture;
-	vec2 ShadowSamplesOffsets[64];
+	vec2 ShadowSamplesOffsets[16];
 
 	u32 StoredEntityCount;
 	stored_entity StoredEntities[10000];

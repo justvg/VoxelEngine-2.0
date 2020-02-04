@@ -272,7 +272,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 		GameState->StoredEntityCount = 0;
 
 		GameState->Camera = {};
-		GameState->Camera.DistanceFromHero = 9.0f;
+		GameState->Camera.DistanceFromHero = 5.0f;
 		GameState->Camera.RotSensetivity = 0.1f;
 		GameState->Camera.NearDistance = 0.1f;
 		GameState->Camera.FarDistance = 160.0f;
@@ -521,14 +521,14 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 
 		glGenFramebuffers(1, &GameState->ShadowMapFBO);
 		glBindFramebuffer(GL_FRAMEBUFFER, GameState->ShadowMapFBO);
-		GameState->ShadowMapsWidth = GameState->ShadowMapsHeight = 2000;
+		GameState->ShadowMapsWidth = GameState->ShadowMapsHeight = 2048;
 
 		glGenTextures(1, &GameState->ShadowMapsArray);
 		glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
 		glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT, GameState->ShadowMapsWidth, GameState->ShadowMapsHeight, 
 					 CASCADES_COUNT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
-		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
 		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
@@ -539,25 +539,25 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 
 		srand(1234);
 		for(u32 Y = 0;
-			Y < 8;
+			Y < 4;
 			Y++)
 		{
-			r32 StrataY1 = (Y/ 8.0f);
-			r32 StrataY2 = ((Y + 1) / 8.0f);
+			r32 StrataY1 = (Y/ 4.0f);
+			r32 StrataY2 = ((Y + 1) / 4.0f);
 
 			for(u32 X = 0;
-				X < 8;
+				X < 4;
 				X++)
 			{
-				r32 StrataX1 = (X / 8.0f);
-				r32 StrataX2 = ((X + 1) / 8.0f);
+				r32 StrataX1 = (X / 4.0f);
+				r32 StrataX2 = ((X + 1) / 4.0f);
 
 				r32 U = ((rand() % 100) / 99.0f)*(StrataX2 - StrataX1) + StrataX1;
 				r32 V = ((rand() % 100) / 99.0f)*(StrataY2 - StrataY1) + StrataY1;
 
 				vec2 DiskP = vec2(SquareRoot(V)*Cos(2.0f*PI*U), SquareRoot(V)*Sin(2.0f*PI*U));
 
-				GameState->ShadowSamplesOffsets[Y*8 + X] = DiskP;
+				GameState->ShadowSamplesOffsets[Y*4 + X] = DiskP;
 			}
 		}
 
@@ -748,7 +748,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 				}
 			}
 		}
-		
+
 		for(u32 ChunkIndex = 0;
 			ChunkIndex < DEBUGGlobalPlaybackInfo.ChunksModifiedDuringRecordPhaseCount;
 			ChunkIndex++)
@@ -895,21 +895,23 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	r32 OneDayCycleInSeconds = 1.0f*60.0f;
 	r32 DayCycleInCircle = (GameState->t / OneDayCycleInSeconds) * 1.5f*PI;
 	// GameState->DirectionalLightDir = -vec3(Cos(DayCycleInCircle), Sin(DayCycleInCircle), 0.0f);
-	GameState->DirectionalLightDir = Normalize(vec3(-0.123566f, -0.9712314f, 0.0f));
+	// GameState->DirectionalLightDir = Normalize(vec3(-0.123566f, -0.9712314f, 0.0f));
+	GameState->DirectionalLightDir = Normalize(vec3(-0.5f, -0.3f, 0.0f));
 	GameState->t += Input->dt;
 	if(GameState->t > OneDayCycleInSeconds)
 	{
 		GameState->t = 0.0f;
-	}
+	} 
 	if(ShowDebugDrawings) DEBUGRenderLine(vec3(0.0f, 0.0f, 0.0f), -GameState->DirectionalLightDir, vec3(1.0f, 1.0f, 0.0f));
-	
+
 
 	// NOTE(georgy): Directional shadow map rendering
-	r32 CascadesDistances[CASCADES_COUNT + 1] = {Camera->NearDistance, 25.0f, 65.0f, Camera->FarDistance};
+	r32 CascadesDistances[CASCADES_COUNT + 1] = {Camera->NearDistance, 25.0f, 50.0f, 75.0f};
 	mat4 LightSpaceMatrices[CASCADES_COUNT];
 	DEBUG_IF(RenderShadows, Rendering)
 	{
-		// glCullFace(GL_FRONT);
+		BEGIN_BLOCK(ShadowStuff);
+
 		glViewport(0, 0, GameState->ShadowMapsWidth, GameState->ShadowMapsHeight);
 		glBindFramebuffer(GL_FRAMEBUFFER, GameState->ShadowMapFBO);
 		for(u32 CascadeIndex = 0;
@@ -919,8 +921,8 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 			glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GameState->ShadowMapsArray, 0, CascadeIndex);
 			glClear(GL_DEPTH_BUFFER_BIT);
 
-			vec3 CameraRight = vec3(Camera->RotationMatrix.FirstColumn.x(), Camera->RotationMatrix.SecondColumn.x(), Camera->RotationMatrix.ThirdColumn.x());;
-			vec3 CameraUp = vec3(Camera->RotationMatrix.FirstColumn.y(), Camera->RotationMatrix.SecondColumn.y(), Camera->RotationMatrix.ThirdColumn.y());;
+			vec3 CameraRight = vec3(Camera->RotationMatrix.FirstColumn.x(), Camera->RotationMatrix.SecondColumn.x(), Camera->RotationMatrix.ThirdColumn.x());
+			vec3 CameraUp = vec3(Camera->RotationMatrix.FirstColumn.y(), Camera->RotationMatrix.SecondColumn.y(), Camera->RotationMatrix.ThirdColumn.y());
 			vec3 CameraOut = -vec3(Camera->RotationMatrix.FirstColumn.z(), Camera->RotationMatrix.SecondColumn.z(), Camera->RotationMatrix.ThirdColumn.z());
 
 			r32 NearPlaneHalfHeight = Tan(0.5f*DEG2RAD(Camera->FoV))*CascadesDistances[CascadeIndex];
@@ -944,31 +946,90 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 			{
 				Cascade[PointIndex] = Cascade[PointIndex] + vec4(Camera->OffsetFromHero + Camera->TargetOffset, 0.0f);
 			}
-
-			mat4 LightView = LookAt(vec3(0.0f, 0.0f, 0.0f), GameState->DirectionalLightDir);
+			
+			vec3 SphereP;
+			r32 Radius;
+			r32 MinX = FLT_MAX, MinY = FLT_MAX, MinZ = FLT_MAX, MaxX = -FLT_MAX, MaxY = -FLT_MAX, MaxZ = -FLT_MAX;
+			u32 MinXIndex, MinYIndex, MinZIndex, MaxXIndex, MaxYIndex, MaxZIndex;
 			for(u32 PointIndex = 0;
 				PointIndex < ArrayCount(Cascade);
 				PointIndex++)
 			{
-				Cascade[PointIndex] = LightView * Cascade[PointIndex];
+				if(MinX > Cascade[PointIndex].x()) { MinX = Cascade[PointIndex].x(); MinXIndex = PointIndex; }
+				if(MinY > Cascade[PointIndex].y()) { MinY = Cascade[PointIndex].y(); MinYIndex = PointIndex; }
+				if(MinZ > Cascade[PointIndex].z()) { MinZ = Cascade[PointIndex].z(); MinZIndex = PointIndex; }
+				if(MaxX < Cascade[PointIndex].x()) { MaxX = Cascade[PointIndex].x(); MaxXIndex = PointIndex; }
+				if(MaxY < Cascade[PointIndex].y()) { MaxY = Cascade[PointIndex].y(); MaxYIndex = PointIndex; }
+				if(MaxZ < Cascade[PointIndex].z()) { MaxZ = Cascade[PointIndex].z(); MaxZIndex = PointIndex; }
+			}
+			r32 XDiff = MaxX - MinX;
+			r32 YDiff = MaxY - MinY;
+			r32 ZDiff = MaxZ - MinZ;
+			if(XDiff > YDiff)
+			{
+				if(XDiff > ZDiff)
+				{
+					SphereP = Lerp(vec3(Cascade[MinXIndex].m), vec3(Cascade[MaxXIndex].m), 0.5f);
+					Radius = MaxX - SphereP.x();
+				}
+				else
+				{
+					SphereP = Lerp(vec3(Cascade[MinZIndex].m), vec3(Cascade[MaxZIndex].m), 0.5f);
+					Radius = MaxZ - SphereP.z();
+				}
+			}
+			else
+			{
+				if(YDiff > ZDiff)
+				{
+					SphereP = Lerp(vec3(Cascade[MinYIndex].m), vec3(Cascade[MaxYIndex].m), 0.5f);
+					Radius = MaxY - SphereP.y();
+				}
+				else
+				{
+					SphereP = Lerp(vec3(Cascade[MinZIndex].m), vec3(Cascade[MaxZIndex].m), 0.5f);
+					Radius = MaxZ - SphereP.z();
+				}
 			}
 			
-			rect3 CascadeAABB;
-			CascadeAABB.Min = vec3(FLT_MAX, FLT_MAX, FLT_MAX);
-			CascadeAABB.Max = vec3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
 			for(u32 PointIndex = 0;
 				PointIndex < ArrayCount(Cascade);
 				PointIndex++)
 			{
-				CascadeAABB.Min = Min(CascadeAABB.Min, vec3(Cascade[PointIndex].m));
-				CascadeAABB.Max = Max(CascadeAABB.Max, vec3(Cascade[PointIndex].m));
+				vec3 FromCenter = vec3(Cascade[PointIndex].m) - SphereP;
+				r32 DistanceToPoint = Length(FromCenter);
+				if(DistanceToPoint > Radius)
+				{
+					SphereP += (0.5f*(DistanceToPoint - Radius))*Normalize(FromCenter);
+					Radius = 0.5f*(DistanceToPoint + Radius);
+				}
 			}
-			CascadeAABB = AddRadiusTo(CascadeAABB, vec3(1.5f, 1.5f, 1.5f));
-			mat4 LightProjection = Ortho(CascadeAABB.Min.y(), CascadeAABB.Max.y(), 
-										 CascadeAABB.Min.x(), CascadeAABB.Max.x(),
-										 -CascadeAABB.Max.z() - 70.0f, -CascadeAABB.Min.z());
+
+			Radius = roundf(Radius);
+			
+			r32 ExtraBackup = 60.0f;
+			r32 NearClip = 1.0f;
+			r32 FarClip = ExtraBackup + 2.0f*Radius;
+			r32 BackupDistance = ExtraBackup + NearClip + Radius;
+			vec3 LightP = SphereP - GameState->DirectionalLightDir*BackupDistance;
+			
+			mat4 LightView = LookAt(LightP, SphereP);
+			mat4 LightProjection = Ortho(-Radius, Radius, -Radius, Radius,
+										 NearClip, FarClip);
 
 			LightSpaceMatrices[CascadeIndex] = LightProjection * LightView;
+
+			world_position HeroWorldP = GameState->Hero.Entity->P;
+			chunk *HeroChunk = GetChunk(&GameState->World, HeroWorldP.ChunkX, HeroWorldP.ChunkY, HeroWorldP.ChunkZ);
+			vec4 HeroChunkP = vec4(HeroChunk->Translation, 1.0f);
+			vec3 ShadowOrigin = vec3((LightSpaceMatrices[CascadeIndex] * HeroChunkP).m);
+			ShadowOrigin *= 0.5f*GameState->ShadowMapsWidth;
+			vec2 RoundedOrigin = vec2(roundf(ShadowOrigin.x()), roundf(ShadowOrigin.y()));
+			vec2 Rounding = RoundedOrigin - vec2(ShadowOrigin.x(), ShadowOrigin.y());
+			Rounding *= 2.0f / GameState->ShadowMapsWidth;
+			mat4 RoundMatrix = Translate(vec3(Rounding.x, Rounding.y, 0.0f));
+			LightSpaceMatrices[CascadeIndex] = RoundMatrix*LightSpaceMatrices[CascadeIndex];
+
 			UseShader(GameState->WorldDepthShader);
 			SetMat4(GameState->WorldDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
 			UseShader(GameState->CharacterDepthShader);
@@ -984,7 +1045,8 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 								GameState->BlockParticleDepthShader, GameState->Hero.Entity->P);
 		}
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		// glCullFace(GL_BACK);
+
+		END_BLOCK(ShadowStuff);
 	}
 
 	// NOTE(georgy): World and entities rendering
@@ -1010,6 +1072,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	}
 	
 
+	DEBUG_VARIABLE(r32, Bias, Rendering);
 	UseShader(GameState->WorldShader);
 	// NOTE(georgy): This is for the situation when we use debug camera. Even if we use debug camera,
 	//  			 we want Output.ClipSpacePosZ to be as it is from our default camera, not debug one
@@ -1020,6 +1083,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	SetVec3(GameState->WorldShader, "DirectionalLightDir", GameState->DirectionalLightDir);
 	SetInt(GameState->WorldShader, "ShadowsEnabled", RenderShadows);
 	SetInt(GameState->WorldShader, "ShadowMaps", 0);
+	SetFloat(GameState->WorldShader, "Bias", Bias);
 	SetInt(GameState->WorldShader, "ShadowNoiseTexture", 1);
 	SetInt(GameState->WorldShader, "Width", BufferWidth);
 	SetInt(GameState->WorldShader, "Height", BufferHeight);
@@ -1038,8 +1102,14 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	SetVec3(GameState->WaterShader, "DirectionalLightDir", GameState->DirectionalLightDir);
 	SetInt(GameState->WaterShader, "ShadowsEnabled", RenderShadows);
 	SetInt(GameState->WaterShader, "ShadowMaps", 0);
+	SetFloat(GameState->WaterShader, "Bias", Bias);
+	SetInt(GameState->WaterShader, "ShadowNoiseTexture", 1);
+	SetInt(GameState->WaterShader, "Width", BufferWidth);
+	SetInt(GameState->WaterShader, "Height", BufferHeight);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, GameState->ShadowNoiseTexture);
 
 	UseShader(GameState->CharacterShader);
 	SetMat4(GameState->CharacterShader, "ViewProjectionForClipSpacePosZ", ViewProjection);
@@ -1049,6 +1119,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	SetVec3(GameState->CharacterShader, "DirectionalLightDir", GameState->DirectionalLightDir);
 	SetInt(GameState->CharacterShader, "ShadowsEnabled", RenderShadows);
 	SetInt(GameState->CharacterShader, "ShadowMaps", 0);
+	SetFloat(GameState->CharacterShader, "Bias", Bias);
 	SetInt(GameState->CharacterShader, "ShadowNoiseTexture", 1);
 	SetInt(GameState->CharacterShader, "Width", BufferWidth);
 	SetInt(GameState->CharacterShader, "Height", BufferHeight);
@@ -1065,6 +1136,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	SetVec3(GameState->BlockParticleShader, "DirectionalLightDir", GameState->DirectionalLightDir);
 	SetInt(GameState->BlockParticleShader, "ShadowsEnabled", RenderShadows);
 	SetInt(GameState->BlockParticleShader, "ShadowMaps", 0);
+	SetFloat(GameState->BlockParticleShader, "Bias", Bias);
 	SetInt(GameState->BlockParticleShader, "ShadowNoiseTexture", 1);
 	SetInt(GameState->BlockParticleShader, "Width", BufferWidth);
 	SetInt(GameState->BlockParticleShader, "Height", BufferHeight);

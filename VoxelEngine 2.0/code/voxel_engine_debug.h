@@ -24,9 +24,13 @@ enum debug_event_type
     DebugEvent_bool32,
     DebugEvent_r32,
     DebugEvent_u32,
+    DebugEvent_vec3,
 };
 struct debug_event
 {
+    // STUPID C++ WANTS ME TO DO IT FOR NO REASON IF I INTRODUCE vec3 IN HERE 
+    debug_event() {}
+
     char *FileName;
     char *Name;
     u32 LineNumber;
@@ -43,6 +47,7 @@ struct debug_event
         bool32 Value_bool32;
         r32 Value_r32;
         u32 Value_u32;
+        vec3 Value_vec3;
     };
 };
 

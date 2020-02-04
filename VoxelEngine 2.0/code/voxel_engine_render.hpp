@@ -662,7 +662,7 @@ DEBUGRenderCube(vec3 P, vec3 Scaling, r32 Rotation,
 }
 
 internal void
-DEBUGRenderSphere(vec3 P, vec3 Scaling, r32 Rotation,
+DEBUGRenderSphere(vec3 P, vec3 Scaling, r32 Rotation = 0.0f,
 				  vec3 Color = vec3(1.0, 0.0, 0.0))
 {
 	mat4 Model = Translate(P) * Scale(Scaling) * Rotate(Rotation, vec3(0.0f, 1.0f, 0.0f));

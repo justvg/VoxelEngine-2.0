@@ -610,7 +610,7 @@ DEBUGEventToText(debug_event *Event, char *Buffer, u32 BufferSize, u32 Depth = 0
 		case DebugEvent_r32:
 		{
 			_snprintf_s(At, BufferSize - (At - Buffer), BufferSize - (At - Buffer), 
-						"%.2f", Event->Value_r32);
+						"%.6f", Event->Value_r32);
 		} break;
 
 		case DebugEvent_u32:
@@ -618,6 +618,12 @@ DEBUGEventToText(debug_event *Event, char *Buffer, u32 BufferSize, u32 Depth = 0
 			_snprintf_s(At, BufferSize - (At - Buffer), BufferSize - (At - Buffer), 
 						"%u", Event->Value_u32);
 		} break;	
+
+		case DebugEvent_vec3:
+		{
+			_snprintf_s(At, BufferSize - (At - Buffer), BufferSize - (At - Buffer), 
+						"vec3(%.2f, %.2f, %.2f)", Event->Value_vec3.x(), Event->Value_vec3.y(), Event->Value_vec3.z());
+		} break;
 	}
 }
 
@@ -690,7 +696,7 @@ DEBUGRenderMainMenu(debug_state *DebugState, game_input *Input)
 			case DebugEvent_r32:
 			{
 				r32 DisplacementY = MouseP.y - DebugState->LastMouseP.y;
-				DebugState->ActiveInteraction->Value_r32 += 0.1f*DisplacementY;
+				DebugState->ActiveInteraction->Value_r32 += 0.00001f*DisplacementY;
 			} break;
 		}
 

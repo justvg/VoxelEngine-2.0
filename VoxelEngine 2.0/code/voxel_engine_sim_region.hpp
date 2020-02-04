@@ -933,7 +933,6 @@ HandleCollision(game_state *GameState, sim_region *SimRegion, sim_entity *Entity
 		} 
 	}
 
-	CorrectChunksWaterLevel(&GameState->World);
 	return(Result);
 }
 

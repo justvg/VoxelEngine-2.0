@@ -1154,7 +1154,6 @@ ConstructBoxDim(vec3 Dim)
 	return(Result);
 }
 
-
 internal box __vectorcall
 ConstructBox(box *Box, mat3 Transformation, vec3 Translation = vec3(0.0f, 0.0f, 0.0f))
 {
