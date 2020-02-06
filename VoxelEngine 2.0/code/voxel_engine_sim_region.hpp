@@ -535,6 +535,8 @@ struct ray_triangle_collision_detection_data
 	vec3 RayEnd;
 	vec3 RayDirection;
 	r32 t;
+
+	bool32 Water;
 };
 
 enum narrow_phase_collision_detection_type
@@ -594,6 +596,7 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 							if(IsPointInTriangle(RayTriangleData->RayOrigin + NewRayLength*RayTriangleData->RayDirection, P1, P2, P3))
 							{
 								RayTriangleData->t = NewT;
+								RayTriangleData->Water = false;
 							}
 						}
 					}
@@ -613,10 +616,8 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 
 		if(CollideWithWater)
 		{
-			if((Chunk->WaterVerticesP.EntriesCount > 0) && (EllipsoidTriangleData))
+			if((Chunk->WaterVerticesP.EntriesCount > 0))
 			{
-				r32 tSave = EllipsoidTriangleData->t;
-
 				vec3 *WaterVertices = Chunk->WaterVerticesP.Entries;
 				for(u32 TriangleIndex = 0;
 					TriangleIndex < (Chunk->WaterVerticesP.EntriesCount / 3);
@@ -637,6 +638,10 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 						P2 += Chunk->Translation;
 						P3 += Chunk->Translation;
 
+						P1 -= vec3(0.0f, 0.3f, 0.0f);
+						P2 -= vec3(0.0f, 0.3f, 0.0f);
+						P3 -= vec3(0.0f, 0.3f, 0.0f);
+
 						if(Type == NarrowPhaseCollisionDetection_RayTriangle)
 						{
 							Assert(RayTriangleData);
@@ -652,16 +657,13 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 									if(IsPointInTriangle(RayTriangleData->RayOrigin + NewRayLength*RayTriangleData->RayDirection, P1, P2, P3))
 									{
 										RayTriangleData->t = NewT;
+										RayTriangleData->Water = true;
 									}
 								}
 							}
 						}
 						else
 						{
-							P1 -= vec3(0.0f, 0.3f, 0.0f);
-							P2 -= vec3(0.0f, 0.3f, 0.0f);
-							P3 -= vec3(0.0f, 0.3f, 0.0f);	
-
 							Assert(Type == NarrowPhaseCollisionDetection_EllipsoidTriangle);
 							Assert(EllipsoidTriangleData);
 
@@ -672,8 +674,6 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 						}
 					}
 				}
-				
-				// EllipsoidTriangleData->t = tSave;
 			}
 		}
 	}
@@ -899,15 +899,11 @@ HandleCollision(game_state *GameState, sim_region *SimRegion, sim_entity *Entity
 	}
 	else if((A == EntityType_Water) && (B == EntityType_Hero))
 	{
-		Result = false;
+		// Result = false;
 		if(!IsSet(EntityB, EntityFlag_InWater))
 		{
 			AddFlags(EntityB, EntityFlag_InWater);
 			EntityB->dP.SetY(0.0f);
-		}
-		else
-		{
-			// EntityB->dP.SetY(0.0f);
 		}
 
 		world_position CollisionWorldP = MapIntoChunkSpace(World, &SimRegion->Origin, EllipsoidToWorld * ESpaceCollisionP);
@@ -947,13 +943,9 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 	ellipsoid_triangle_collision_detection_data EllipsoidTriangleData;
 	EllipsoidTriangleData.WorldToEllipsoid = WorldToEllipsoid;
 
-	if(Gravity)
+	if(Gravity && Entity->CanBeGravityAffected && IsSet(Entity, EntityFlag_GravityAffected))
 	{
 		MoveSpec.ddP = vec3(0.0f, -9.8f, 0.0f);
-		if(IsSet(Entity, EntityFlag_InWater))
-		{
-			MoveSpec.ddP = vec3(0.0f, 0.0f, 0.0f);
-		}
 	}
 	else
 	{
@@ -1027,6 +1019,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 		DistanceRemaining = 10000.0f;
 	}
 
+	bool32 MoveOnBlock = false;
 	for(u32 Iteration = 0;
 		Iteration < 4;
 		Iteration++)
@@ -1080,10 +1073,10 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 					}
 				}
 
+				DistanceRemaining -= EllipsoidTriangleData.t * EntityDeltaLengthWorld;
+				//EllipsoidTriangleData.t -= 0.001f;
 				ESpaceP += EllipsoidTriangleData.t*ESpaceEntityDelta;
-				DistanceRemaining -= EllipsoidTriangleData.t*EntityDeltaLengthWorld;
 				ESpaceEntityDelta = ESpaceDesiredP - ESpaceP;
-				bool32 SlidingPlaneNormalIsGround = false;
 				if(EllipsoidTriangleData.HitEntityType)
 				{
 					bool32 StopOnCollision = HandleCollision(GameState, SimRegion, Entity, HitEntity, Entity->Type, 
@@ -1092,31 +1085,69 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 					if(StopOnCollision)
 					{
 						vec3 SlidingPlaneNormal = Normalize((ESpaceP - EllipsoidTriangleData.CollisionP));
-						if(Gravity && (SlidingPlaneNormal.y() >= 0.95f))
+
+						if((SlidingPlaneNormal.y() > -0.1f) && (SlidingPlaneNormal.y() < 0.1f) &&
+						    IsSet(Entity, EntityFlag_OnGround) && (Entity->dP.y() < 0.01f))
 						{
-							SlidingPlaneNormalIsGround = true;
-							AddFlags(Entity, EntityFlag_OnGround);
+							ray_triangle_collision_detection_data RayTriangleData;
+							RayTriangleData.RayOrigin = EllipsoidToWorld * ESpaceP - CollisionVolumeDisplacement + vec3(0.0f, Entity->Collision->Dim.y(), 0.0f);
+							vec3 SlidingPlaneNormalWorld = EllipsoidToWorld * SlidingPlaneNormal;
+							vec3 MovementDir = -Normalize(vec3(SlidingPlaneNormalWorld.x(), 0.0f, SlidingPlaneNormalWorld.z()));
+							RayTriangleData.RayEnd = RayTriangleData.RayOrigin + SimRegion->World->BlockDimInMeters*MovementDir;
+							RayTriangleData.RayDirection = Normalize(RayTriangleData.RayEnd - RayTriangleData.RayOrigin);
+							RayTriangleData.t = 1.0f;
+
+							NarrowPhaseCollisionDetection(SimRegion->World, &BroadPhaseResult, NarrowPhaseCollisionDetection_RayTriangle,
+														  false, &RayTriangleData);
+							if(RayTriangleData.t == 1.0f)
+							{
+								MoveOnBlock = true;					
+							}
 						}
+
 						ESpaceEntityDelta = ESpaceEntityDelta - 1.1f*Dot(SlidingPlaneNormal, ESpaceEntityDelta)*SlidingPlaneNormal;
 						Entity->dP = Entity->dP - (1.1f*Dot(EllipsoidToWorld * SlidingPlaneNormal, Entity->dP)) *
 														(EllipsoidToWorld * SlidingPlaneNormal);
 					}
 				}
-				
-				if((Gravity && Iteration == 0) && (!EllipsoidTriangleData.HitEntityType || !SlidingPlaneNormalIsGround))
-				{
-					ClearFlags(Entity, EntityFlag_OnGround);
-				}
 
-				if(IsSet(Entity, EntityFlag_InWater))
+				if(!Gravity && Entity->CanBeGravityAffected)
 				{
-					AddFlags(Entity, EntityFlag_OnGround);
+					ray_triangle_collision_detection_data RayTriangleData = {};
+					RayTriangleData.RayOrigin = EllipsoidToWorld * ESpaceP - CollisionVolumeDisplacement + vec3(0.0f, 0.001f, 0.0f);
+					RayTriangleData.RayEnd = RayTriangleData.RayOrigin - vec3(0.0f, 0.1f, 0.0f);
+					RayTriangleData.RayDirection = Normalize(RayTriangleData.RayEnd - RayTriangleData.RayOrigin);
+					RayTriangleData.t = 1.0f;
+
+					NarrowPhaseCollisionDetection(SimRegion->World, &BroadPhaseResult, NarrowPhaseCollisionDetection_RayTriangle,
+												  true, &RayTriangleData);
+											
+					if(RayTriangleData.t < 1.0f)
+					{
+						AddFlags(Entity, EntityFlag_OnGround);
+						if(!RayTriangleData.Water)
+						{
+							ClearFlags(Entity, EntityFlag_InWater);
+						}
+					}
+					else
+					{
+						ClearFlags(Entity, EntityFlag_OnGround | EntityFlag_InWater);
+						AddFlags(Entity, EntityFlag_GravityAffected);
+					}
 				}
 			}
 		}
 	}
 
-	Entity->P = EllipsoidToWorld * ESpaceP - CollisionVolumeDisplacement;
+	vec3 dPNormalized = vec3(0.0f, 0.0f, 0.0f);
+	if(MoveOnBlock)
+	{
+		dPNormalized = Normalize(Entity->dP);
+		dPNormalized.SetY(0.0f);
+	}
+	Entity->P = EllipsoidToWorld * ESpaceP - CollisionVolumeDisplacement + 
+				(r32)MoveOnBlock*(vec3(0.0f, 1.1f*SimRegion->World->BlockDimInMeters, 0.0f) + 0.3f*dPNormalized);
 
 	if(Entity->DistanceLimit != 0.0f)
 	{

@@ -153,7 +153,6 @@ struct camera
 	vec3 TargetOffset;
 	vec3 LastOffsetFromHero;
 
-
 	vec3 DEBUGP;
 	vec3 DEBUGFront;
 };
@@ -220,6 +219,7 @@ struct game_state
 	animation CharacterAnimations[CharacterAnimation_Count];
 
 	hero Hero;
+	world_position LastHeroWorldP;
 
 	r32 t;
 

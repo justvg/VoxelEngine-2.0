@@ -214,6 +214,7 @@ AddHero(game_state *GameState, world_position P)
 {
 	add_stored_entity_result Entity = AddStoredEntity(GameState, EntityType_Hero, P);
 
+	Entity.StoredEntity->Sim.CanBeGravityAffected = true;
 	AddFlags(&Entity.StoredEntity->Sim, EntityFlag_Moveable | EntityFlag_Collides | EntityFlag_GravityAffected);
 	Entity.StoredEntity->Sim.HitPoints = 20;
 	Entity.StoredEntity->Sim.MaxHitPoints = 100;
@@ -272,7 +273,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 		GameState->StoredEntityCount = 0;
 
 		GameState->Camera = {};
-		GameState->Camera.DistanceFromHero = 5.0f;
+		GameState->Camera.DistanceFromHero = 9.0f;
 		GameState->Camera.RotSensetivity = 0.1f;
 		GameState->Camera.NearDistance = 0.1f;
 		GameState->Camera.FarDistance = 160.0f;
@@ -502,6 +503,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 		HeroP.ChunkZ = 0;
 		HeroP.Offset = vec3(0.3f, 5.0f, 3.0f);
 		GameState->Hero.Entity = AddHero(GameState, HeroP);
+		GameState->LastHeroWorldP = HeroP;
 		particle_emitter_info ParticleEmitterInfo = {};
 		ParticleEmitterInfo.MaxLifeTime = 2.0f;
 		ParticleEmitterInfo.RowsInTextureAtlas = 8;
@@ -620,7 +622,8 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 		r32 YOffsetFromHero = Camera->DistanceFromHero * Sin(-PitchRadians);
 		r32 ZOffsetFromHero = HorizontalDistanceFromHero * Cos(HeadRadians);
 		vec3 NewTargetOffsetFromHero = vec3(XOffsetFromHero, YOffsetFromHero, ZOffsetFromHero);
-		Camera->OffsetFromHero = Camera->DistanceFromHero * Normalize(Lerp(Camera->LastOffsetFromHero, NewTargetOffsetFromHero, 8.0f*Input->dt));
+		// Camera->LastOffsetFromHero -= vec3(0.0f, Camera->LastHeroMovement.y(), 0.0f);
+		Camera->OffsetFromHero = Camera->DistanceFromHero * Normalize(Lerp(Camera->LastOffsetFromHero, NewTargetOffsetFromHero, 6.0f*Input->dt));
 		Camera->LastOffsetFromHero = Camera->OffsetFromHero;
 	}
 
@@ -767,8 +770,13 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	DEBUG_VARIABLE(r32, SimBoundsRadius, World);
 	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-SimBoundsRadius, -20.0f, -SimBoundsRadius), 
 												vec3(SimBoundsRadius, 20.0f, SimBoundsRadius));
-	sim_region *SimRegion = BeginSimulation(GameState, GameState->Hero.Entity->P, 
-											SimRegionUpdatableBounds, &TempState->Allocator, Input->dt);	
+
+	vec3 HeroPosDifferenceBetweenFrames = Substract(&GameState->World, &GameState->Hero.Entity->P, &GameState->LastHeroWorldP);
+	HeroPosDifferenceBetweenFrames = Lerp(vec3(0.0f, 0.0f, 0.0f), HeroPosDifferenceBetweenFrames, 8.0f*Input->dt);
+	world_position HeroWorldP = MapIntoChunkSpace(&GameState->World, &GameState->LastHeroWorldP, HeroPosDifferenceBetweenFrames);
+	sim_region *SimRegion = BeginSimulation(GameState, HeroWorldP, 
+											SimRegionUpdatableBounds, &TempState->Allocator, Input->dt);
+	GameState->LastHeroWorldP = HeroWorldP;
 
 	Camera->RotationMatrix = RotationMatrixFromDirection(Camera->OffsetFromHero);
 #if !defined(VOXEL_ENGINE_DEBUG_BUILD)
@@ -778,7 +786,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	SetupChunksVertices(&GameState->World, TempState);
 	LoadChunks(&GameState->World);
 	CorrectChunksWaterLevel(&GameState->World);
-
+	
 	// NOTE(georgy): Entity simulations
 	for(u32 EntityIndex = 0;
 		EntityIndex < SimRegion->EntityCount;
@@ -793,13 +801,18 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 			{
 				case EntityType_Hero:
 				{
+					ClearFlags(Entity, EntityFlag_GravityAffected);
+
 					MoveSpec.ddP = GameState->Hero.ddP;
-					MoveSpec.Speed = 20.0f;
+					MoveSpec.Speed = 8.0f;
+					if(IsSet(Entity, EntityFlag_InWater))
+					{
+						MoveSpec.Speed *= 0.5f;
+					}
 					MoveSpec.Drag = 2.0f;
 					if(GameState->Hero.dY && IsSet(Entity, EntityFlag_OnGround))
 					{
 						Entity->dP.SetY(GameState->Hero.dY);
-						ClearFlags(Entity, EntityFlag_InWater);
 					}
 
 					Entity->Rotation = GameState->Hero.AdditionalRotation;
@@ -812,7 +825,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 							ClearFlags(Fireball, EntityFlag_NonSpatial);
 							Fireball->DistanceLimit = 8.0f;
 							Fireball->P = Entity->P + vec3(0.0f, 0.5f, 0.0f);
-							Fireball->dP = vec3(Entity->dP.x(), 0.0f, Entity->dP.z()) + 5.0f*Forward;
+							Fireball->dP = vec3(Entity->dP.x(), 0.0f, Entity->dP.z()) + 3.0f*Forward;
 						}
 					}
 
@@ -824,7 +837,8 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 					}
 					if(!IsSet(Entity, EntityFlag_OnGround))
 					{
-						DesiredAnimation = CharacterAnimation_Jump;
+						DesiredAnimation = CharacterAnimation_Run;
+						// DesiredAnimation = CharacterAnimation_Jump;
 					}
 
 					if(Entity->AnimationState.Type != DesiredAnimation)
@@ -880,15 +894,11 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 			if(IsSet(Entity, EntityFlag_Moveable))
 			{
 				MoveEntity(GameState, SimRegion, Entity, MoveSpec, dt, false);
-				if(IsSet(Entity, EntityFlag_GravityAffected) && !IsSet(Entity, EntityFlag_InWater))
-				{
-					MoveEntity(GameState, SimRegion, Entity, MoveSpec, dt, true);
-				}
+				MoveEntity(GameState, SimRegion, Entity, MoveSpec, dt, true);
 			}
 		}
 	}
 	BlockParticlesUpdate(&GameState->BlockParticleGenerator, Input->dt);
-	
 
 	DEBUG_VARIABLE(bool32, ShowDebugDrawings, Rendering);
 
@@ -1257,6 +1267,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	
 	glDisable(GL_BLEND);
 	glEnable(GL_DEPTH_TEST);
+
 
 	EndSimulation(GameState, SimRegion, &GameState->WorldAllocator);
 	EndTemporaryMemory(WorldConstructionAndRenderMemory);

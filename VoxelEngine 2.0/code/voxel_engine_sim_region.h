@@ -51,6 +51,8 @@ struct sim_entity
 
 	entity_type Type;
 	bool32 Updatable;
+
+	bool32 CanBeGravityAffected;
 	u32 Flags;
 
 	entity_animation_state AnimationState;
