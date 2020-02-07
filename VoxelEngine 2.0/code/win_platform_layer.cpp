@@ -782,17 +782,17 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 			GameMemory.JobSystemQueue = &JobSystem;
 
-			GameMemory.PlatformAddEntry = WinAddEntry;
-			GameMemory.PlatformCompleteAllWork = WinCompleteAllWork;
-			GameMemory.PlatformReadEntireFile = WinReadEntireFile;
-			GameMemory.PlatformAllocateMemory = WinAllocateMemory;
-			GameMemory.PlatformFreeMemory = WinFreeMemory;
-			GameMemory.PlatformOutputDebugString = WinOutputDebugString;
+			GameMemory.PlatformAPI.AddEntry = WinAddEntry;
+			GameMemory.PlatformAPI.CompleteAllWork = WinCompleteAllWork;
+			GameMemory.PlatformAPI.ReadEntireFile = WinReadEntireFile;
+			GameMemory.PlatformAPI.AllocateMemory = WinAllocateMemory;
+			GameMemory.PlatformAPI.FreeMemory = WinFreeMemory;
+			GameMemory.PlatformAPI.OutputDebugString = WinOutputDebugString;
 
-			GameMemory.PlatformLoadCodepointBitmap = WinLoadCodepointBitmap;
-			GameMemory.PlatformBeginFont = WinBeginFont;
-			GameMemory.PlatformLoadCodepointBitmap = WinLoadCodepointBitmap;
-			GameMemory.PlatformEndFont = WinEndFont;
+			GameMemory.PlatformAPI.LoadCodepointBitmap = WinLoadCodepointBitmap;
+			GameMemory.PlatformAPI.BeginFont = WinBeginFont;
+			GameMemory.PlatformAPI.LoadCodepointBitmap = WinLoadCodepointBitmap;
+			GameMemory.PlatformAPI.EndFont = WinEndFont;
 
 			// TODO(georgy): Make the path to be created automatically in .exe directory
 			WinState.RecordStateFile = 
@@ -1020,7 +1020,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 				BEGIN_BLOCK(GameUpdateTime);
 
-				GameUpdate(&GameMemory, &GameInput, GlobalGamePause, Dimension.Width, Dimension.Height);
+				GameUpdate(&GameMemory, &GameInput, Dimension.Width, Dimension.Height, GlobalGamePause);
 
 				END_BLOCK(GameUpdateTime);
 

@@ -69,9 +69,8 @@ struct debug_draw_info
 {
 	bool32 IsInitialized;
 
-	shader Shader, AxesShader;
+	shader Shader;
 	GLuint CubeVAO, CubeVBO;
-	GLuint AxesVAO, AxesVBO;
 	GLuint LineVAO, LineVBO;
 
 	GLuint SphereVAO, SphereVBO, SphereEBO;

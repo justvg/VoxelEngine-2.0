@@ -34,7 +34,7 @@ InitializeDynamicArray(dynamic_array_vec3 *Array, u32 InitialMaxEntriesCount = I
 {
 	Array->MaxEntriesCount = InitialMaxEntriesCount;
 	Array->EntriesCount = 0;
-	Array->Entries = (vec3 *)PlatformAllocateMemory(Array->MaxEntriesCount * sizeof(vec3));
+	Array->Entries = (vec3 *)Platform.AllocateMemory(Array->MaxEntriesCount * sizeof(vec3));
 	Assert(Array->Entries);
 	Assert(((u64)Array->Entries & 15) == 0);
 }
@@ -45,7 +45,7 @@ ExpandDynamicArray(dynamic_array_vec3 *Array)
 	Assert(!(Array->EntriesCount < Array->MaxEntriesCount));
 
 	u32 NewMaxEntriesCount = Array->MaxEntriesCount ? Array->MaxEntriesCount * 2 : INITIAL_MAX_ENTRIES_COUNT;
-	vec3 *NewMemory = (vec3 *)PlatformAllocateMemory(NewMaxEntriesCount * sizeof(vec3));
+	vec3 *NewMemory = (vec3 *)Platform.AllocateMemory(NewMaxEntriesCount * sizeof(vec3));
 	Assert(NewMemory);
 	Assert(((u64)NewMemory & 15) == 0);
 
@@ -56,7 +56,7 @@ ExpandDynamicArray(dynamic_array_vec3 *Array)
 		NewMemory[EntryIndex] = Array->Entries[EntryIndex];
 	}
 
-	PlatformFreeMemory(Array->Entries);
+	Platform.FreeMemory(Array->Entries);
 	Array->MaxEntriesCount = NewMaxEntriesCount;
 	Array->Entries = NewMemory;
 }
@@ -75,7 +75,7 @@ PushEntry(dynamic_array_vec3 *Array, vec3 Entry)
 inline void
 FreeDynamicArray(dynamic_array_vec3 *Array)
 {
-	PlatformFreeMemory(Array->Entries);
+	Platform.FreeMemory(Array->Entries);
 	Array->MaxEntriesCount = 0;
 	Array->Entries = 0;
 	Array->EntriesCount = 0;
@@ -105,7 +105,7 @@ InitializeDynamicArray(dynamic_array_vec4 *Array, u32 InitialMaxEntriesCount = I
 {
 	Array->MaxEntriesCount = InitialMaxEntriesCount;
 	Array->EntriesCount = 0;
-	Array->Entries = (vec4 *)PlatformAllocateMemory(Array->MaxEntriesCount * sizeof(vec4));
+	Array->Entries = (vec4 *)Platform.AllocateMemory(Array->MaxEntriesCount * sizeof(vec4));
 	Assert(Array->Entries);
 	Assert(((u64)Array->Entries & 15) == 0);
 }
@@ -116,7 +116,7 @@ ExpandDynamicArray(dynamic_array_vec4 *Array)
 	Assert(!(Array->EntriesCount < Array->MaxEntriesCount));
 
 	u32 NewMaxEntriesCount = Array->MaxEntriesCount ? Array->MaxEntriesCount * 2 : INITIAL_MAX_ENTRIES_COUNT;
-	vec4 *NewMemory = (vec4 *)PlatformAllocateMemory(NewMaxEntriesCount * sizeof(vec4));
+	vec4 *NewMemory = (vec4 *)Platform.AllocateMemory(NewMaxEntriesCount * sizeof(vec4));
 	Assert(NewMemory);
 	Assert(((u64)NewMemory & 15) == 0);
 
@@ -127,7 +127,7 @@ ExpandDynamicArray(dynamic_array_vec4 *Array)
 		NewMemory[EntryIndex] = Array->Entries[EntryIndex];
 	}
 
-	PlatformFreeMemory(Array->Entries);
+	Platform.FreeMemory(Array->Entries);
 	Array->MaxEntriesCount = NewMaxEntriesCount;
 	Array->Entries = NewMemory;
 }
@@ -146,7 +146,7 @@ PushEntry(dynamic_array_vec4 *Array, vec4 Entry)
 inline void
 FreeDynamicArray(dynamic_array_vec4 *Array)
 {
-	PlatformFreeMemory(Array->Entries);
+	Platform.FreeMemory(Array->Entries);
 	Array->MaxEntriesCount = 0;
 	Array->Entries = 0;
 	Array->EntriesCount = 0;
@@ -176,7 +176,7 @@ InitializeDynamicArray(dynamic_array_u32 *Array, u32 InitialMaxEntriesCount = IN
 {
 	Array->MaxEntriesCount = InitialMaxEntriesCount;
 	Array->EntriesCount = 0;
-	Array->Entries = (u32 *)PlatformAllocateMemory(Array->MaxEntriesCount * sizeof(u32));
+	Array->Entries = (u32 *)Platform.AllocateMemory(Array->MaxEntriesCount * sizeof(u32));
 	Assert(Array->Entries);
 	Assert(((u64)Array->Entries & 15) == 0);
 }
@@ -187,7 +187,7 @@ ExpandDynamicArray(dynamic_array_u32 *Array)
 	Assert(!(Array->EntriesCount < Array->MaxEntriesCount));
 
 	u32 NewMaxEntriesCount = Array->MaxEntriesCount ? Array->MaxEntriesCount * 2 : INITIAL_MAX_ENTRIES_COUNT;
-	u32 *NewMemory = (u32 *)PlatformAllocateMemory(NewMaxEntriesCount * sizeof(u32));
+	u32 *NewMemory = (u32 *)Platform.AllocateMemory(NewMaxEntriesCount * sizeof(u32));
 	Assert(NewMemory);
 	Assert(((u64)NewMemory & 15) == 0);
 
@@ -198,7 +198,7 @@ ExpandDynamicArray(dynamic_array_u32 *Array)
 		NewMemory[EntryIndex] = Array->Entries[EntryIndex];
 	}
 
-	PlatformFreeMemory(Array->Entries);
+	Platform.FreeMemory(Array->Entries);
 	Array->MaxEntriesCount = NewMaxEntriesCount;
 	Array->Entries = NewMemory;
 }
@@ -217,7 +217,7 @@ PushEntry(dynamic_array_u32 *Array, u32 Entry)
 inline void
 FreeDynamicArray(dynamic_array_u32 *Array)
 {
-	PlatformFreeMemory(Array->Entries);
+	Platform.FreeMemory(Array->Entries);
 	Array->MaxEntriesCount = 0;
 	Array->Entries = 0;
 	Array->EntriesCount = 0;

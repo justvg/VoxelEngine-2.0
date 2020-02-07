@@ -3,15 +3,9 @@
 inline void
 InitializeWorld(world *World)
 {
+	*World = {};
 	World->ChunkDimInMeters = CHUNK_DIM / 2.0f;
 	World->BlockDimInMeters = World->ChunkDimInMeters / CHUNK_DIM;
-	World->RecentlyUsedCount = 0;
-	World->ChunksToRender = 0;
-	World->FirstFreeChunkBlocksInfo = 0;
-	World->FirstFreeWorldEntityBlock = 0;
-	World->Lock = 0;
-	World->ChunksToSetupBlocksThisFrameCount = 0;
-	World->ChunksToSetupFullyThisFrameCount = 0;
 }
 
 internal chunk *
@@ -32,7 +26,7 @@ GetChunk(world *World, i32 ChunkX, i32 ChunkY, i32 ChunkZ, stack_allocator *Allo
 			break;
 		}
 
-		ChunkPtr = &Chunk->Next;
+		ChunkPtr = &Chunk->NextInHash;
 		Chunk = *ChunkPtr;
 	}
 
@@ -66,7 +60,7 @@ OperationBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z, operatio
 	   (Y >=0) && (Y < CHUNK_DIM) &&
 	   (Z >=0) && (Z < CHUNK_DIM))
 	{
-		
+		// NOTE(georgy): In the initial chunk
 	}
 	else
 	{
@@ -118,19 +112,23 @@ OperationBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z, operatio
 	{
 		Assert(Chunk->IsSetupBlocks);
 		
-		Result = Chunk->IsNotEmpty && IsBlockActive(Chunk->BlocksInfo->Blocks, X, Y, Z) &&
-				 (GetBlockType(Chunk->BlocksInfo->Blocks, X, Y, Z) != BlockType_Water);
+		if(Op & OperationBetweenChunks_IsBlockActive)
+		{
+			Result = Chunk->IsNotEmpty && IsBlockActive(Chunk->BlocksInfo->Blocks, X, Y, Z) &&
+					(GetBlockType(Chunk->BlocksInfo->Blocks, X, Y, Z) != BlockType_Water);
+		}
 
 		if(Op & OperationBetweenChunks_SetActiveness)
 		{
 			// NOTE(georgy): This assumes to only set Activeness to false!
-			Chunk->BlocksInfo->Blocks[Z*CHUNK_DIM*CHUNK_DIM + Y*CHUNK_DIM + X].Active = Activeness;
+			SetActiveness(Chunk->BlocksInfo->Blocks, X, Y, Z, Activeness);
 			Chunk->IsModified = true;
 		}
+
 		if(Op & OperationBetweenChunks_GetColor)
 		{
 			Assert(Color);
-			*Color = Chunk->BlocksInfo->Colors[Z*CHUNK_DIM*CHUNK_DIM + Y*CHUNK_DIM + X];
+			*Color = GetBlockColor(Chunk->BlocksInfo->Colors, X, Y, Z);
 		}
 	}
 
@@ -171,6 +169,15 @@ IsValid(world_position P)
 {
 	bool32 Result = P.ChunkX != INVALID_POSITION;
 	return(Result);
+}
+
+internal void
+GetBlockIndexFromOffsetInChunk(world *World, vec3 Offset, i32 *X, i32 *Y, i32 *Z)
+{
+	vec3 Indices = Offset / World->BlockDimInMeters;
+	*X = (i32)Indices.x();
+	*Y = (i32)Indices.y();
+	*Z = (i32)Indices.z();
 }
 
 internal void
@@ -715,9 +722,9 @@ CorrectChunkWaterLevel(world *World, chunk *Chunk)
 						r32 ColorNoise = Clamp(PerlinNoise3D(0.03f*vec3(X, Y, Z)), 0.0f, 1.0f);
 						ColorNoise *= ColorNoise;
 						vec4 Color = Lerp(vec4(0.0f, 0.25f, 0.8f, 0.1f), vec4(0.0f, 0.18f, 1.0f, 0.1f), ColorNoise);
-						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + (BlockY+1)*CHUNK_DIM + BlockX].Active = true;
-						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + (BlockY+1)*CHUNK_DIM + BlockX].Type = BlockType_Water;
-						Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + (BlockY+1)*CHUNK_DIM + BlockX] = Color;
+						SetActiveness(Blocks, BlockX, BlockY + 1, BlockZ, true);
+						SetBlockType(Blocks, BlockX, BlockY + 1, BlockZ, BlockType_Water);
+						SetBlockColor(Colors, BlockX, BlockY + 1, BlockZ, Color);
 
 						ChunkWasChanged = true;
 					}
@@ -792,8 +799,8 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 			if(Chunk->Y == 0)
 			{
 				Chunk->IsNotEmpty = true;
-				Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + (CHUNK_DIM - 1)*CHUNK_DIM + BlockX].Active = true;
-				Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + (CHUNK_DIM - 1)*CHUNK_DIM + BlockX] = vec4(0.53f, 0.53f, 0.53f, 1.0f);
+				SetActiveness(Blocks, BlockX, CHUNK_DIM - 1, BlockZ, true);
+				SetBlockColor(Colors, BlockX, CHUNK_DIM - 1, BlockZ, vec4(0.53f, 0.53f, 0.53f, 1.0f));
 			}
 			else
 			{
@@ -880,7 +887,7 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 					BiomeType = WorldBiome_Grassland;
 				}
 
-				u32 Height = (u32)roundf(CHUNK_DIM * (MAX_CHUNKS_Y + 1) * NoiseValue);
+				u32 Height = (u32)Round(CHUNK_DIM * (MAX_CHUNKS_Y + 1) * NoiseValue);
 				Height++;
 				u32 HeightForThisChunk = (u32)Clamp((r32)Height - (r32)(Chunk->Y-1)*CHUNK_DIM, 0.0f, CHUNK_DIM);
 				for(u32 BlockY = 0;
@@ -892,11 +899,11 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 					{
 						r32 CaveNoise = Clamp(PerlinNoise3D(0.02f*vec3(X, 2.0f*(Y + 10.0f), Z)), 0.0f, 1.0f);
 						CaveNoise = CaveNoise*CaveNoise*CaveNoise;
-						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = (CaveNoise < 0.475f);
+						SetActiveness(Blocks, BlockX, BlockY, BlockZ, (CaveNoise < 0.475f));
 					}
 					else
 					{
-						Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Active = true;
+						SetActiveness(Blocks, BlockX, BlockY, BlockZ, true);
 					}
 
 					if(IsBlockActive(Blocks, BlockX, BlockY, BlockZ))
@@ -912,7 +919,7 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 						case WorldBiome_Water:
 						{
 							Color = Lerp(vec4(0.0f, 0.25f, 0.8f, 0.1f), vec4(0.0f, 0.18f, 1.0f, 0.1f), ColorNoise);
-							Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Type = BlockType_Water;
+							SetBlockType(Blocks, BlockX, BlockY, BlockZ, BlockType_Water);
 
 							if(Chunk->MaxWaterLevel < BlockY)
 							{
@@ -938,7 +945,7 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 						case WorldBiome_Snow:
 						{
 							Color = Lerp(vec4(0.75f, 0.75f, 0.85f, 1.0f), vec4(0.67f, 0.55f, 1.0f, 1.0f), ColorNoise);
-							Blocks[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX].Type = BlockType_Snow;
+							SetBlockType(Blocks, BlockX, BlockY, BlockZ, BlockType_Snow);
 						} break;
 
 						case WorldBiome_Grassland:
@@ -946,7 +953,8 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 							Color = Lerp(vec4(0.0f, 0.56f, 0.16f, 1.0f), vec4(0.65f, 0.9f, 0.0f, 1.0f), ColorNoise);
 						} break;
 					}
-					Colors[BlockZ*CHUNK_DIM*CHUNK_DIM + BlockY*CHUNK_DIM + BlockX] = Color;
+
+					SetBlockColor(Colors, BlockX, BlockY, BlockZ, Color);
 				}
 			}
 		}
@@ -1328,10 +1336,10 @@ SetupChunksBlocks(world *World, stack_allocator *WorldAllocator, temp_state *Tem
 		Job->Chunk = World->ChunksToSetupBlocks[ChunkIndex];
 		Job->WorldAllocator = WorldAllocator;
 
-		PlatformAddEntry(TempState->JobSystemQueue, SetupChunkBlocks, Job);
+		Platform.AddEntry(TempState->JobSystemQueue, SetupChunkBlocks, Job);
 	}
 	
-	PlatformCompleteAllWork(TempState->JobSystemQueue);
+	Platform.CompleteAllWork(TempState->JobSystemQueue);
 
 	World->ChunksToSetupBlocksThisFrameCount = 0;
 }
@@ -1346,18 +1354,18 @@ CanSetupAO(world *World, chunk *Chunk, stack_allocator *WorldAllocator)
 	Result = GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= ChunkMaxY || GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= ChunkMaxY || GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= ChunkMaxY || GetChunk(World, Chunk->X - 1, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
-	Result &= GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks || ChunkMaxY;
+	Result &= ChunkMaxY || GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= ChunkMaxY || GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= ChunkMaxY || GetChunk(World, Chunk->X + 1, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
+	Result &= ChunkMaxY || GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
+	Result &= ChunkMaxY || GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
+	Result &= ChunkMaxY || GetChunk(World, Chunk->X, Chunk->Y + 1, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X, Chunk->Y, Chunk->Z - 1, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X, Chunk->Y, Chunk->Z + 1, WorldAllocator)->IsSetupBlocks;
 	Result &= GetChunk(World, Chunk->X - 1, Chunk->Y - 1, Chunk->Z, WorldAllocator)->IsSetupBlocks;
@@ -1415,10 +1423,10 @@ SetupChunksVertices(world *World, temp_state *TempState)
 		Job->World = World;
 		Job->Chunk = World->ChunksToSetupFully[ChunkIndex];
 
-		PlatformAddEntry(TempState->JobSystemQueue, SetupChunkVertices, Job);
+		Platform.AddEntry(TempState->JobSystemQueue, SetupChunkVertices, Job);
 	}
 	
-	PlatformCompleteAllWork(TempState->JobSystemQueue);
+	Platform.CompleteAllWork(TempState->JobSystemQueue);
 
 	World->ChunksToSetupFullyThisFrameCount = 0;
 }
@@ -1542,7 +1550,7 @@ UnloadChunk(world *World, chunk *Chunk)
 internal void
 UnloadChunks(world *World, world_position *MinChunkP, world_position *MaxChunkP)
 {
-	u32 MaxChunksToUnloadPerFrame = 6;
+	u32 MaxChunksToUnloadPerFrame = MAX_CHUNKS_TO_UNLOAD;
 	u32 ChunksUnloaded = 0;
 	for(u32 ChunkHashBucket = 0;
 	   (ChunkHashBucket < ArrayCount(World->ChunkHash)) && (ChunksUnloaded < MaxChunksToUnloadPerFrame);
@@ -1564,7 +1572,7 @@ UnloadChunks(world *World, world_position *MinChunkP, world_position *MaxChunkP)
 				}
 			}
 
-			Chunk = Chunk->Next;
+			Chunk = Chunk->NextInHash;
 		}
 	}
 }
@@ -1845,7 +1853,7 @@ ChangeEntityLocation(world *World, stack_allocator *WorldAllocator, u32 EntityIn
 								world_entity_block *BlockToFree = FirstBlock->Next;
 								*FirstBlock = *BlockToFree;
 
-								BlockToFree->Next = World->FirstFreeWorldEntityBlock;
+								BlockToFree->NextFree = World->FirstFreeWorldEntityBlock;
 								World->FirstFreeWorldEntityBlock = BlockToFree;
 							}
 						}
@@ -1870,7 +1878,7 @@ ChangeEntityLocation(world *World, stack_allocator *WorldAllocator, u32 EntityIn
 				}
 
 				world_entity_block *OldBlock = World->FirstFreeWorldEntityBlock;
-				World->FirstFreeWorldEntityBlock = OldBlock->Next;
+				World->FirstFreeWorldEntityBlock = OldBlock->NextFree;
 				*OldBlock = *Block;
 				Block->StoredEntityCount = 0;
 			}

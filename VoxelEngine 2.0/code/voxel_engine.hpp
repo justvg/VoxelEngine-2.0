@@ -165,7 +165,6 @@ AddParticlesToEntity(game_state *GameState, stored_entity *Entity, particle_emit
 	// TODO(georgy): Allow multiple particle systems for an entity
 	if(!Entity->Sim.Particles)
 	{
-		// TODO(georgy): Do I want to use _world_ allocator here?
 		Entity->Sim.Particles = PushStruct(&GameState->FundamentalTypesAllocator, particle_emitter);
 		particle_emitter *EntityParticles = Entity->Sim.Particles;
 		EntityParticles->Info = Info;
@@ -249,28 +248,17 @@ AddTree(game_state *GameState, world_position P)
 }
 
 internal void
-GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, int BufferWidth, int BufferHeight)
+GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHeight, bool32 GameProfilingPause)
 {
+	Platform = Memory->PlatformAPI;
+
 	Assert(sizeof(game_state) <= Memory->PermanentStorageSize);
 	game_state *GameState = (game_state *)Memory->PermanentStorage;
 	if (!GameState->IsInitialized)
 	{
-		PlatformAddEntry = Memory->PlatformAddEntry;
-		PlatformCompleteAllWork = Memory->PlatformCompleteAllWork;
-		PlatformReadEntireFile = Memory->PlatformReadEntireFile;
-		PlatformAllocateMemory = Memory->PlatformAllocateMemory;
-		PlatformFreeMemory = Memory->PlatformFreeMemory;
-		PlatformOutputDebugString = Memory->PlatformOutputDebugString;
-		PlatformLoadCodepointBitmap = Memory->PlatformLoadCodepointBitmap;
-		PlatformBeginFont = Memory->PlatformBeginFont;
-		PlatformLoadCodepointBitmap = Memory->PlatformLoadCodepointBitmap;
-		PlatformEndFont = Memory->PlatformEndFont;
-
 		InitializeStackAllocator(&GameState->WorldAllocator, Memory->PermanentStorageSize - sizeof(game_state),
 															 (u8 *)Memory->PermanentStorage + sizeof(game_state));
 		SubAllocator(&GameState->FundamentalTypesAllocator, &GameState->WorldAllocator, Megabytes(64));
-
-		GameState->StoredEntityCount = 0;
 
 		GameState->Camera = {};
 		GameState->Camera.DistanceFromHero = 9.0f;
@@ -480,10 +468,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 		AddStoredEntity(GameState, EntityType_Null, InvalidPosition());
 
 		world_position TestP = {};
-		TestP.ChunkX = 0;
-		TestP.ChunkY = 0;
-		TestP.ChunkZ = 0;
-		TestP.Offset = vec3(0.0f, 4.0f, 3.0f);
+		TestP.Offset = vec3(0.0f, 8.0f, 3.0f);
 		particle_emitter_info CubeParticleEmitterInfo = {};
 		CubeParticleEmitterInfo.Additive = true;
 		CubeParticleEmitterInfo.MaxLifeTime = 2.0f;
@@ -498,9 +483,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 							 CubeParticleEmitterInfo, AssetType_Cosmic);
 
 		world_position HeroP = {};
-		HeroP.ChunkX = 0;
 		HeroP.ChunkY = MAX_CHUNKS_Y;
-		HeroP.ChunkZ = 0;
 		HeroP.Offset = vec3(0.3f, 5.0f, 3.0f);
 		GameState->Hero.Entity = AddHero(GameState, HeroP);
 		GameState->LastHeroWorldP = HeroP;
@@ -515,9 +498,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 		// AddParticlesToEntity(GameState, GameState->Hero.Entity, ParticleEmitterInfo, AssetType_Smoke);
 
 		world_position TestTreeP = {};
-		TestTreeP.ChunkX = 0;
 		TestTreeP.ChunkY = MAX_CHUNKS_Y;
-		TestTreeP.ChunkZ = 0;
 		TestTreeP.Offset = vec3(0.0f, 2.0f, 3.0f);
 		AddTree(GameState, TestTreeP);
 
@@ -600,6 +581,8 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 	}
 
 	camera *Camera = &GameState->Camera;
+	Camera->AspectRatio = (r32)BufferWidth/(r32)BufferHeight;
+
 	Camera->Pitch -= Input->MouseYDisplacement*Camera->RotSensetivity;
 	Camera->Head += Input->MouseXDisplacement*Camera->RotSensetivity;
 
@@ -623,11 +606,9 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 		r32 ZOffsetFromHero = HorizontalDistanceFromHero * Cos(HeadRadians);
 		vec3 NewTargetOffsetFromHero = vec3(XOffsetFromHero, YOffsetFromHero, ZOffsetFromHero);
 		// Camera->LastOffsetFromHero -= vec3(0.0f, Camera->LastHeroMovement.y(), 0.0f);
-		Camera->OffsetFromHero = Camera->DistanceFromHero * Normalize(Lerp(Camera->LastOffsetFromHero, NewTargetOffsetFromHero, 6.0f*Input->dt));
+		Camera->OffsetFromHero = Camera->DistanceFromHero * Normalize(Lerp(Camera->LastOffsetFromHero, NewTargetOffsetFromHero, 7.0f*Input->dt));
 		Camera->LastOffsetFromHero = Camera->OffsetFromHero;
 	}
-
-	Camera->AspectRatio = (r32)BufferWidth/(r32)BufferHeight;
 
 	vec3 Forward;
 	if(!DebugCamera)
@@ -765,11 +746,11 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 #endif
 
 
-	temporary_memory WorldConstructionAndRenderMemory = BeginTemporaryMemory(&TempState->Allocator);
+	temporary_memory SimulationAndRenderMemory = BeginTemporaryMemory(&TempState->Allocator);
 
 	DEBUG_VARIABLE(r32, SimBoundsRadius, World);
-	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-SimBoundsRadius, -20.0f, -SimBoundsRadius), 
-												vec3(SimBoundsRadius, 20.0f, SimBoundsRadius));
+	rect3 SimRegionUpdatableBounds = RectMinMax(vec3(-SimBoundsRadius, -SimBoundsRadius, -SimBoundsRadius), 
+												vec3(SimBoundsRadius, SimBoundsRadius, SimBoundsRadius));
 
 	vec3 HeroPosDifferenceBetweenFrames = Substract(&GameState->World, &GameState->Hero.Entity->P, &GameState->LastHeroWorldP);
 	HeroPosDifferenceBetweenFrames = Lerp(vec3(0.0f, 0.0f, 0.0f), HeroPosDifferenceBetweenFrames, 8.0f*Input->dt);
@@ -851,7 +832,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 						AnimationTimeStep = dt;
 						if(Entity->AnimationState.Type == CharacterAnimation_Run)
 						{
-							AnimationTimeStep = 2.0f*Length(vec3(Entity->dP.x(), 0.0f, Entity->dP.z()))*dt;
+							AnimationTimeStep = 1.5f*Length(vec3(Entity->dP.x(), 0.0f, Entity->dP.z()))*dt;
 						}
 					}
 
@@ -1015,7 +996,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 				}
 			}
 
-			Radius = roundf(Radius);
+			Radius = Round(Radius);
 			
 			r32 ExtraBackup = 60.0f;
 			r32 NearClip = 1.0f;
@@ -1034,7 +1015,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 			vec4 HeroChunkP = vec4(HeroChunk->Translation, 1.0f);
 			vec3 ShadowOrigin = vec3((LightSpaceMatrices[CascadeIndex] * HeroChunkP).m);
 			ShadowOrigin *= 0.5f*GameState->ShadowMapsWidth;
-			vec2 RoundedOrigin = vec2(roundf(ShadowOrigin.x()), roundf(ShadowOrigin.y()));
+			vec2 RoundedOrigin = vec2(Round(ShadowOrigin.x()), Round(ShadowOrigin.y()));
 			vec2 Rounding = RoundedOrigin - vec2(ShadowOrigin.x(), ShadowOrigin.y());
 			Rounding *= 2.0f / GameState->ShadowMapsWidth;
 			mat4 RoundMatrix = Translate(vec3(Rounding.x, Rounding.y, 0.0f));
@@ -1047,12 +1028,11 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 			UseShader(GameState->BlockParticleDepthShader);
 			SetMat4(GameState->BlockParticleDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
 
-
 			RenderEntities(GameState, TempState, SimRegion, GameState->WorldDepthShader, 
 						   GameState->CharacterDepthShader, GameState->HitpointsShader, Right);
 			RenderChunks(&GameState->World, GameState->WorldDepthShader, GameState->WaterShader, LightSpaceMatrices[CascadeIndex], Camera->OffsetFromHero);
 			RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, &TempState->Allocator, 
-								GameState->BlockParticleDepthShader, GameState->Hero.Entity->P);
+								 GameState->BlockParticleDepthShader, GameState->Hero.Entity->P);
 		}
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -1270,7 +1250,7 @@ GameUpdate(game_memory *Memory, game_input *Input, bool32 GameProfilingPause, in
 
 
 	EndSimulation(GameState, SimRegion, &GameState->WorldAllocator);
-	EndTemporaryMemory(WorldConstructionAndRenderMemory);
+	EndTemporaryMemory(SimulationAndRenderMemory);
 
 	UnloadAssetsIfNecessary(TempState->GameAssets);
 }

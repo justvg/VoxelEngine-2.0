@@ -7,7 +7,7 @@ LoadCub(char *Filename, u64 *ModelSize, r32 AdditionalAlignmentY = 0.0f, r32 Add
 	loaded_model Model = {};
 
 	u32 Width, Height, Depth;
-	read_entire_file_result FileData = PlatformReadEntireFile(Filename);
+	read_entire_file_result FileData = Platform.ReadEntireFile(Filename);
 	if(FileData.Size != 0)
 	{
 		InitializeDynamicArray(&Model.VerticesP);
@@ -18,7 +18,7 @@ LoadCub(char *Filename, u64 *ModelSize, r32 AdditionalAlignmentY = 0.0f, r32 Add
 		Depth = *((u32 *)FileData.Memory + 1);
 		Height = *((u32 *)FileData.Memory + 2);
 
-		bool8 *VoxelsStates = (bool8 *)PlatformAllocateMemory(sizeof(bool8)*Width*Height*Depth);
+		bool8 *VoxelsStates = (bool8 *)Platform.AllocateMemory(sizeof(bool8)*Width*Height*Depth);
 		u8 *Voxels = (u8 *)((u32 *)FileData.Memory + 3);
 		u8 *Colors = Voxels;
 		for(u32 VoxelY = 0;
@@ -151,8 +151,8 @@ LoadCub(char *Filename, u64 *ModelSize, r32 AdditionalAlignmentY = 0.0f, r32 Add
 		Model.VerticesCount = Model.VerticesP.EntriesCount;
 		*ModelSize = Model.VerticesP.EntriesCount*sizeof(vec3) + Model.Normals.EntriesCount*sizeof(vec3) + Model.VertexColors.EntriesCount*sizeof(vec3);
 
-		PlatformFreeMemory(VoxelsStates);
-		PlatformFreeMemory(FileData.Memory);
+		Platform.FreeMemory(VoxelsStates);
+		Platform.FreeMemory(FileData.Memory);
 	}
 
 	return (Model);
@@ -189,7 +189,7 @@ LoadBMP(char *Filename)
 	TIME_BLOCK;
 	loaded_texture Result = {};
 
-	read_entire_file_result FileData = PlatformReadEntireFile(Filename);
+	read_entire_file_result FileData = Platform.ReadEntireFile(Filename);
 	if(FileData.Size != 0)
 	{
 		bmp_file_header *Header = (bmp_file_header *)FileData.Memory;
@@ -249,16 +249,16 @@ LoadFont(char *Filename, char *FontName, u64 *AssetSize)
 	Result.LastCodepoint = '~';
 	Result.GlyphsCount = (Result.LastCodepoint + 1) - Result.FirstCodepoint;
 
-	Result.Glyphs = (loaded_texture *)PlatformAllocateMemory(Result.GlyphsCount*sizeof(loaded_texture));
+	Result.Glyphs = (loaded_texture *)Platform.AllocateMemory(Result.GlyphsCount*sizeof(loaded_texture));
 
-	PlatformBeginFont(&Result, Filename, FontName);
+	Platform.BeginFont(&Result, Filename, FontName);
 
 	for(u32 Character = Result.FirstCodepoint, GlyphIndex = 0;
 		Character <= Result.LastCodepoint;
 		Character++, GlyphIndex++)
 	{
 		loaded_texture *Glyph = Result.Glyphs + GlyphIndex;
-		Glyph->Data = PlatformLoadCodepointBitmap(&Result, Character, (u32 *)&Glyph->Width, (u32 *)&Glyph->Height, 
+		Glyph->Data = Platform.LoadCodepointBitmap(&Result, Character, (u32 *)&Glyph->Width, (u32 *)&Glyph->Height, 
 												  &Glyph->AlignPercentageY);
 		Glyph->Free = Glyph->Data;
 		Glyph->ChannelsCount = 1;
@@ -266,7 +266,7 @@ LoadFont(char *Filename, char *FontName, u64 *AssetSize)
 		*AssetSize += Glyph->Width*Glyph->Height*Glyph->ChannelsCount;
 	}
 
-	PlatformEndFont(&Result);
+	Platform.EndFont(&Result);
 
 	return(Result);
 }
@@ -288,7 +288,7 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(LoadAssetJob)
 	asset *Asset = Job->Asset;
 	Assert(!Asset->Header);
 
-	Asset->Header = (asset_memory_header *)PlatformAllocateMemory(sizeof(asset_memory_header));
+	Asset->Header = (asset_memory_header *)Platform.AllocateMemory(sizeof(asset_memory_header));
 	u64 AssetSize = 0;
 	Asset->Header->AssetIndex = Job->AssetIndex;
 	switch(Job->AssetDataType)
@@ -328,7 +328,7 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(LoadAssetJob)
     Asset->State = Job->FinalState;
 	EndAssetLock(Job->GameAssets);
 
-    PlatformFreeMemory(Job);
+    Platform.FreeMemory(Job);
 }
 
 inline void
@@ -342,14 +342,14 @@ LoadAsset(game_assets *GameAssets, u32 AssetIndex)
 			Assert(!Asset->Header);
 			Asset->State = AssetState_Queued;
 
-            load_asset_job *Job = (load_asset_job *)PlatformAllocateMemory(sizeof(load_asset_job));
+            load_asset_job *Job = (load_asset_job *)Platform.AllocateMemory(sizeof(load_asset_job));
             Job->GameAssets = GameAssets;
             Job->Asset = Asset;
             Job->AssetIndex = AssetIndex;
             Job->FinalState = AssetState_Loaded;
 			Job->AssetDataType = Asset->DataType;
 
-			PlatformAddEntry(GameAssets->TempState->JobSystemQueue, LoadAssetJob, Job);
+			Platform.AddEntry(GameAssets->TempState->JobSystemQueue, LoadAssetJob, Job);
 		}
 	}
 }
@@ -652,7 +652,7 @@ UnloadAssetsIfNecessary(game_assets *GameAssets)
 			GameAssets->Assets[LastUsedAsset->AssetIndex].State = AssetState_Unloaded;
 
 			GameAssets->UsedMemory -= LastUsedAsset->TotalSize;
-			PlatformFreeMemory(LastUsedAsset);
+			Platform.FreeMemory(LastUsedAsset);
 		}
 	}
 	EndAssetLock(GameAssets);

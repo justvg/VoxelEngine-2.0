@@ -64,6 +64,23 @@ FloorReal32ToInt32(r32 Value)
 }
 
 inline r32
+Round(r32 Value)
+{
+	r32 Result;
+
+    if(Value >= 0.0f)
+    {
+        Result = (r32)((i32)(Value + 0.5f));
+    }
+    else
+    {
+        Result = (r32)((i32)(Value - 0.5f));
+    }
+    
+    return(Result);
+}
+
+inline r32
 Sin(r32 Angle)
 {
     r32 Result = sinf(Angle);

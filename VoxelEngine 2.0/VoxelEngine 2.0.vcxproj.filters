@@ -73,6 +73,9 @@
     <ClInclude Include="code\voxel_engine_debug.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="code\voxel_engine_dynamic_array.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="code\win_platform_layer.cpp">

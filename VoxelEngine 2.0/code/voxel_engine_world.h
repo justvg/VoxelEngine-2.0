@@ -4,14 +4,22 @@
 #define MIN_CHUNKS_Y -1
 #define MAX_CHUNKS_Y 3
 #define IsBlockActive(Blocks, X, Y, Z) ((Blocks[(Z)*CHUNK_DIM*CHUNK_DIM + (Y)*CHUNK_DIM + (X)]).Active) 
+#define SetActiveness(Blocks, X, Y, Z, Activeness) ((Blocks[(Z)*CHUNK_DIM*CHUNK_DIM + (Y)*CHUNK_DIM + (X)]).Active = (Activeness)) 
 #define GetBlockType(Blocks, X, Y, Z) ((Blocks[(Z)*CHUNK_DIM*CHUNK_DIM + (Y)*CHUNK_DIM + (X)]).Type) 
+#define SetBlockType(Blocks, X, Y, Z, BlockType) ((Blocks[(Z)*CHUNK_DIM*CHUNK_DIM + (Y)*CHUNK_DIM + (X)]).Type = (BlockType)) 
+#define GetBlockColor(Colors, X, Y, Z) ((Colors[(Z)*CHUNK_DIM*CHUNK_DIM + (Y)*CHUNK_DIM + (X)])) 
+#define SetBlockColor(Colors, X, Y, Z, Color) ((Colors[(Z)*CHUNK_DIM*CHUNK_DIM + (Y)*CHUNK_DIM + (X)]) = (Color)) 
 
 struct world_entity_block
 {
 	u32 StoredEntityCount;
 	u32 StoredEntityIndex[16];
 
-	world_entity_block *Next;
+	union
+	{
+		world_entity_block *Next;
+		world_entity_block *NextFree;
+	};
 };
 
 enum block_type
@@ -67,12 +75,17 @@ struct chunk
 
 	world_entity_block FirstEntityBlock;
 
-	chunk *Next;
+	union
+	{
+		chunk *NextInHash;
+		chunk *Next;
+	};
 };
 
 #define MAX_CHUNKS_TO_SETUP_BLOCKS 8
 #define MAX_CHUNKS_TO_SETUP_FULLY 8
 #define MAX_CHUNKS_TO_LOAD 8
+#define MAX_CHUNKS_TO_UNLOAD 6
 struct world
 {
 	r32 ChunkDimInMeters;

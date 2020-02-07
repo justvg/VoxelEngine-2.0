@@ -169,6 +169,7 @@
     <ClInclude Include="code\voxel_engine_asset.hpp" />
     <ClInclude Include="code\voxel_engine_debug.h" />
     <ClInclude Include="code\voxel_engine_debug.hpp" />
+    <ClInclude Include="code\voxel_engine_dynamic_array.h" />
     <ClInclude Include="code\voxel_engine_intrinsics.h" />
     <ClInclude Include="code\voxel_engine_math.h" />
     <ClInclude Include="code\voxel_engine_platform.h" />

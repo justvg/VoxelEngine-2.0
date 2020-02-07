@@ -857,22 +857,20 @@ HandleCollision(game_state *GameState, sim_region *SimRegion, sim_entity *Entity
 					BlockX <= 2;
 					BlockX++)
 				{
-					i32 X = (i32)((CollisionWorldP.Offset.x() + World->BlockDimInMeters*BlockX) / World->BlockDimInMeters);
-					i32 Y = (i32)((CollisionWorldP.Offset.y() + World->BlockDimInMeters*BlockY) / World->BlockDimInMeters);
-					i32 Z = (i32)((CollisionWorldP.Offset.z() + World->BlockDimInMeters*BlockZ) / World->BlockDimInMeters);
-					//if(Chunk->BlocksInfo->Blocks[Z*CHUNK_DIM*CHUNK_DIM + Y*CHUNK_DIM + X].Type == BlockType_Snow)
+					world_position WorldBlockP = CollisionWorldP;
+					WorldBlockP.Offset += World->BlockDimInMeters*vec3i(BlockX, BlockY, BlockZ);
+
+					i32 X, Y, Z;
+					GetBlockIndexFromOffsetInChunk(World, WorldBlockP.Offset,&X, &Y, &Z);
+					// if(GetBlockType(Chunk->BlocksInfo->Blocks, X, Y, Z) == BlockType_Snow)
 					{
 						bool32 Active = IsBlockActiveBetweenChunks(World, Chunk, X, Y, Z);
 						if(Active)
 						{
-							vec3 OffsetInChunk = World->BlockDimInMeters*vec3((r32)X, (r32)Y, (r32)Z) + 
-												 0.5f*vec3(World->BlockDimInMeters, World->BlockDimInMeters, World->BlockDimInMeters);
-							world_position WorldBlockP = { Chunk->X, Chunk->Y, Chunk->Z, OffsetInChunk };
-							RecanonicalizeCoords(World, &WorldBlockP);
 							vec4 BlockColor;
-							u32 Op = OperationBetweenChunks_SetActiveness |
-									 OperationBetweenChunks_GetColor;
-							OperationBetweenChunks(World, Chunk, X, Y, Z, (operation_between_chunks)Op, false, &BlockColor);
+							operation_between_chunks Op = (operation_between_chunks)(OperationBetweenChunks_SetActiveness |
+																					 OperationBetweenChunks_GetColor);
+							OperationBetweenChunks(World, Chunk, X, Y, Z, Op, false, &BlockColor);
 							AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, vec3(BlockColor.m));
 						}
 					} 
@@ -899,7 +897,6 @@ HandleCollision(game_state *GameState, sim_region *SimRegion, sim_entity *Entity
 	}
 	else if((A == EntityType_Water) && (B == EntityType_Hero))
 	{
-		// Result = false;
 		if(!IsSet(EntityB, EntityFlag_InWater))
 		{
 			AddFlags(EntityB, EntityFlag_InWater);
@@ -910,23 +907,11 @@ HandleCollision(game_state *GameState, sim_region *SimRegion, sim_entity *Entity
 		chunk *Chunk = GetChunk(World, CollisionWorldP.ChunkX, CollisionWorldP.ChunkY, CollisionWorldP.ChunkZ);
 		Assert(Chunk && Chunk->IsSetupBlocks && Chunk->IsFullySetup && Chunk->IsLoaded);
 
-		i32 X = (i32)((CollisionWorldP.Offset.x()) / World->BlockDimInMeters);
-		i32 Y = (i32)((CollisionWorldP.Offset.y()) / World->BlockDimInMeters);
-		i32 Z = (i32)((CollisionWorldP.Offset.z()) / World->BlockDimInMeters);
-		{
-			vec3 OffsetInChunk = World->BlockDimInMeters*vec3((r32)X, (r32)Y, (r32)Z) + 
-									0.5f*vec3(World->BlockDimInMeters, World->BlockDimInMeters, World->BlockDimInMeters);
-			world_position WorldBlockP = { Chunk->X, Chunk->Y, Chunk->Z, OffsetInChunk };
-			RecanonicalizeCoords(World, &WorldBlockP);
-			vec4 BlockColor;
-			u32 Op = OperationBetweenChunks_GetColor;
-			OperationBetweenChunks(World, Chunk, X, Y, Z, (operation_between_chunks)Op, false, &BlockColor);
-			AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, vec3(BlockColor.m));
-			AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, vec3(BlockColor.m));
-			AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, vec3(BlockColor.m));
-			AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, vec3(BlockColor.m));
-			AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, vec3(BlockColor.m));
-		} 
+		i32 X, Y, Z;
+		GetBlockIndexFromOffsetInChunk(World, CollisionWorldP.Offset, &X, &Y, &Z);
+		
+		vec4 BlockColor	= GetBlockColorBetweenChunks(World, Chunk, X, Y, Z);
+		AddBlockParticles(&GameState->BlockParticleGenerator, 5, CollisionWorldP, vec3(BlockColor.m));
 	}
 
 	return(Result);
@@ -1004,6 +989,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 
 			if(RectIntersect(TestEntityAABB, EntityOldPAABB) || RectIntersect(TestEntityAABB, EntityDesiredPAABB))
 			{
+				Assert(CollideEntitiesCount < ArrayCount(CollideEntities));
 				CollideEntities[CollideEntitiesCount++] = TestEntity;
 			}
 		}

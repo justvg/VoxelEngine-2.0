@@ -7,8 +7,8 @@ CompileShader(shader *Shader, char *VertexPath, char *FragmentPath)
 	u32 FS = glCreateShader(GL_FRAGMENT_SHADER);
 	Shader->ID = glCreateProgram();
 
-	read_entire_file_result VSSourceCode = PlatformReadEntireFile(VertexPath);
-	read_entire_file_result FSSourceCode = PlatformReadEntireFile(FragmentPath);
+	read_entire_file_result VSSourceCode = Platform.ReadEntireFile(VertexPath);
+	read_entire_file_result FSSourceCode = Platform.ReadEntireFile(FragmentPath);
 
 	i32 Success;
 	char InfoLog[1024];
@@ -19,9 +19,9 @@ CompileShader(shader *Shader, char *VertexPath, char *FragmentPath)
 	if (!Success)
 	{
 		glGetShaderInfoLog(VS, sizeof(InfoLog), 0, InfoLog);
-		PlatformOutputDebugString("ERROR::SHADER_COMPILATION_ERROR of type: VS\n");
-		PlatformOutputDebugString(InfoLog);
-		PlatformOutputDebugString("\n");
+		Platform.OutputDebugString("ERROR::SHADER_COMPILATION_ERROR of type: VS\n");
+		Platform.OutputDebugString(InfoLog);
+		Platform.OutputDebugString("\n");
 	}
 
 	glShaderSource(FS, 1, (char **)&FSSourceCode.Memory, (GLint *)&FSSourceCode.Size);
@@ -30,9 +30,9 @@ CompileShader(shader *Shader, char *VertexPath, char *FragmentPath)
 	if (!Success)
 	{
 		glGetShaderInfoLog(FS, sizeof(InfoLog), 0, InfoLog);
-		PlatformOutputDebugString("ERROR::SHADER_COMPILATION_ERROR of type: FS\n");
-		PlatformOutputDebugString(InfoLog);
-		PlatformOutputDebugString("\n");
+		Platform.OutputDebugString("ERROR::SHADER_COMPILATION_ERROR of type: FS\n");
+		Platform.OutputDebugString(InfoLog);
+		Platform.OutputDebugString("\n");
 	}
 
 	glAttachShader(Shader->ID, VS);
@@ -42,13 +42,13 @@ CompileShader(shader *Shader, char *VertexPath, char *FragmentPath)
 	if (!Success)
 	{
 		glGetProgramInfoLog(Shader->ID, sizeof(InfoLog), 0, InfoLog);
-		PlatformOutputDebugString("ERROR::PROGRAM_LINKING_ERROR of type:: PROGRAM\n");
-		PlatformOutputDebugString(InfoLog);
-		PlatformOutputDebugString("\n");
+		Platform.OutputDebugString("ERROR::PROGRAM_LINKING_ERROR of type:: PROGRAM\n");
+		Platform.OutputDebugString(InfoLog);
+		Platform.OutputDebugString("\n");
 	}
 
-	PlatformFreeMemory(VSSourceCode.Memory);
-	PlatformFreeMemory(FSSourceCode.Memory);
+	Platform.FreeMemory(VSSourceCode.Memory);
+	Platform.FreeMemory(FSSourceCode.Memory);
 	glDeleteShader(VS);
 	glDeleteShader(FS);
 }
@@ -370,6 +370,17 @@ AddBlockParticle(block_particle_generator *Generator, world_position BaseP, vec3
 }
 
 internal void
+AddBlockParticles(block_particle_generator *Generator, u32 Count, world_position BaseP, vec3 Color)
+{
+	for(u32 BlockParticleIndex = 0;
+		BlockParticleIndex < Count;
+		BlockParticleIndex++)
+	{
+		AddBlockParticle(Generator, BaseP, Color);
+	}
+}
+
+internal void
 BlockParticlesUpdate(block_particle_generator *Generator, r32 dt)
 {
 	TIME_BLOCK;
@@ -440,7 +451,6 @@ internal void
 InitializeGlobalDrawInfo(void)
 {
 	CompileShader(&GlobalDebugDrawInfo.Shader, "data/shaders/DebugDrawingVS.glsl", "data/shaders/DebugDrawingFS.glsl");
-	CompileShader(&GlobalDebugDrawInfo.AxesShader, "data/shaders/DebugDrawingAxesVS.glsl", "data/shaders/DebugDrawingAxesFS.glsl");
 
 	// NOTE(georgy): Cube data
 	{
@@ -581,32 +591,6 @@ InitializeGlobalDrawInfo(void)
 		FreeDynamicArray(&Vertices);
 	}
 
-	// NOTE(georgy): Axes data
-	{
-		r32 AxesVertices[] = 
-		{
-			0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
-			0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
-
-			0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-			1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-
-			0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-			0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
-		};
-
-		glGenVertexArrays(1, &GlobalDebugDrawInfo.AxesVAO);
-		glGenBuffers(1, &GlobalDebugDrawInfo.AxesVBO);
-		glBindVertexArray(GlobalDebugDrawInfo.AxesVAO);
-		glBindBuffer(GL_ARRAY_BUFFER, GlobalDebugDrawInfo.AxesVBO);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(AxesVertices), AxesVertices, GL_STATIC_DRAW);
-		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6*sizeof(r32), (void *)0);
-		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6*sizeof(r32), (void *)(3*sizeof(r32)));
-		glBindVertexArray(0);
-	}
-
 	// NOTE(georgy): Line data
 	{
 		glGenVertexArrays(1, &GlobalDebugDrawInfo.LineVAO);
@@ -675,19 +659,6 @@ DEBUGRenderSphere(vec3 P, vec3 Scaling, r32 Rotation = 0.0f,
 }
 
 internal void
-DEBUGRenderAxes(mat4 Transformation)
-{
-	mat4 Model = Transformation;
-	DEBUGBeginRenderDebugObject(&GlobalDebugDrawInfo.AxesShader, &GlobalDebugDrawInfo.AxesVAO, Model);
-	glLineWidth(8.0f);
-
-	glDrawArrays(GL_LINES, 0, 6);
-
-	glLineWidth(1.0f);
-	DEBUGEndRenderDebugObject();
-}
-
-internal void
 DEBUGRenderLine(vec3 FromP, vec3 ToP, vec3 Color = vec3(1.0f, 0.0f, 0.0f))
 {
 	DEBUGBeginRenderDebugObject(&GlobalDebugDrawInfo.Shader, &GlobalDebugDrawInfo.LineVAO, Identity());
@@ -709,6 +680,14 @@ DEBUGRenderLine(vec3 FromP, vec3 ToP, vec3 Color = vec3(1.0f, 0.0f, 0.0f))
 
 	glLineWidth(1.0f);
 	DEBUGEndRenderDebugObject();
+}
+
+internal void
+DEBUGRenderAxes(mat4 Transformation)
+{
+	DEBUGRenderLine(vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 1.0f, 0.0f), vec3(0.0f, 1.0f, 0.0f));
+	DEBUGRenderLine(vec3(0.0f, 0.0f, 0.0f), vec3(1.0f, 0.0f, 0.0f), vec3(1.0f, 0.0f, 0.0f));
+	DEBUGRenderLine(vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 0.0f, 1.0f), vec3(0.0f, 0.0f, 1.0f));
 }
 
 inline void

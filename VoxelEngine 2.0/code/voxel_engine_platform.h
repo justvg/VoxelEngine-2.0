@@ -153,6 +153,20 @@ WasUp(button *Button)
 	return(Result);
 }
 
+struct platform_api
+{
+	platform_add_entry *AddEntry;
+	platform_complete_all_work *CompleteAllWork;
+	platform_read_entire_file *ReadEntireFile;
+	platform_allocate_memory *AllocateMemory;
+	platform_free_memory *FreeMemory;
+	platform_output_debug_string *OutputDebugString;
+
+	platform_begin_font *BeginFont;
+	platform_load_codepoint_bitmap *LoadCodepointBitmap;
+	platform_end_font *EndFont;
+};
+
 struct game_memory
 {
 	u64 PermanentStorageSize;
@@ -166,14 +180,5 @@ struct game_memory
 
 	platform_job_system_queue *JobSystemQueue;
 
-	platform_add_entry *PlatformAddEntry;
-	platform_complete_all_work *PlatformCompleteAllWork;
-	platform_read_entire_file *PlatformReadEntireFile;
-	platform_allocate_memory *PlatformAllocateMemory;
-	platform_free_memory *PlatformFreeMemory;
-	platform_output_debug_string *PlatformOutputDebugString;
-
-	platform_begin_font *PlatformBeginFont;
-	platform_load_codepoint_bitmap *PlatformLoadCodepointBitmap;
-	platform_end_font *PlatformEndFont;
+	platform_api PlatformAPI;
 };

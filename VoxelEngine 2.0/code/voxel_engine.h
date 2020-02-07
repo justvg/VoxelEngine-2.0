@@ -1,18 +1,9 @@
 #pragma once
 
-global_variable platform_add_entry *PlatformAddEntry;
-global_variable platform_complete_all_work *PlatformCompleteAllWork;
-global_variable platform_read_entire_file *PlatformReadEntireFile;
-global_variable platform_allocate_memory *PlatformAllocateMemory;
-global_variable platform_free_memory *PlatformFreeMemory;
-global_variable platform_output_debug_string *PlatformOutputDebugString;
-
-global_variable platform_begin_font *PlatformBeginFont;
-global_variable platform_load_codepoint_bitmap *PlatformLoadCodepointBitmap;
-global_variable platform_end_font *PlatformEndFont;
+global_variable platform_api Platform;
 
 #define PLATFORM_FREE_MEMORY_AND_ZERO_POINTER(Memory) \
-		PlatformFreeMemory(Memory); \
+		Platform.FreeMemory(Memory); \
 		(Memory) = 0;
 
 #define DEFAULT_ALIGNMENT 16
@@ -223,8 +214,8 @@ struct game_state
 
 	r32 t;
 
-#define CASCADES_COUNT 3
 	vec3 DirectionalLightDir;
+#define CASCADES_COUNT 3
 	GLuint ShadowMapFBO, ShadowMapsArray;
 	u32 ShadowMapsWidth, ShadowMapsHeight;
 	GLuint ShadowNoiseTexture;
