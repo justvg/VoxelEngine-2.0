@@ -11,10 +11,13 @@
 #include "voxel_engine.hpp"
 
 #include <Windows.h>
+#include <mmeapi.h>
+#include <dsound.h>
 #include <timeapi.h>
 
 global_variable bool8 GlobalRunning;
 global_variable bool8 GlobalGamePause;
+global_variable LPDIRECTSOUNDBUFFER GlobalSecondaryBuffer;
 global_variable bool8 GlobalCursorShouldBeClipped;
 global_variable LARGE_INTEGER GlobalPerformanceFrequency;
 global_variable WINDOWPLACEMENT GlobalWindowPosition = { sizeof(GlobalWindowPosition) };
@@ -390,6 +393,125 @@ WinInitOpenGL(HWND Window, HINSTANCE Instance, LPCSTR WindowClassName)
 	}
 }
 
+typedef HRESULT WINAPI direct_sound_create(LPGUID lpGuid, LPDIRECTSOUND* ppDS, LPUNKNOWN  pUnkOuter);
+
+internal void
+WinInitDirectSound(HWND Window, u32 SamplesPerSecond, u32 BufferSize)
+{
+	HMODULE DirectSoundLibrary = LoadLibrary("dsound.dll");
+	if(DirectSoundLibrary)
+	{
+		direct_sound_create *DirectSoundCreate = (direct_sound_create *)GetProcAddress(DirectSoundLibrary, "DirectSoundCreate");
+
+		LPDIRECTSOUND DirectSound;
+		if(DirectSoundCreate && (DirectSoundCreate(0, &DirectSound, 0) == DS_OK))
+		{
+			WAVEFORMATEX WaveFormat = {};
+			WaveFormat.wFormatTag = WAVE_FORMAT_PCM;
+			WaveFormat.nChannels = 2;
+			WaveFormat.nSamplesPerSec = SamplesPerSecond;
+			WaveFormat.wBitsPerSample = 16;
+			WaveFormat.nBlockAlign = (WaveFormat.nChannels * WaveFormat.wBitsPerSample) / 8;
+			WaveFormat.nAvgBytesPerSec = WaveFormat.nSamplesPerSec * WaveFormat.nBlockAlign;
+
+			if(DirectSound->SetCooperativeLevel(Window, DSSCL_PRIORITY) == DS_OK)
+			{
+				DSBUFFERDESC BufferDescription = {sizeof(DSBUFFERDESC)};
+				BufferDescription.dwFlags = DSBCAPS_PRIMARYBUFFER;
+
+				LPDIRECTSOUNDBUFFER PrimaryBuffer;
+				if(DirectSound->CreateSoundBuffer(&BufferDescription, &PrimaryBuffer, 0) == DS_OK)
+				{
+					if(PrimaryBuffer->SetFormat(&WaveFormat) == DS_OK)
+					{
+						// NOTE(georgy): Primary buffer's format is set
+						OutputDebugString("Primary buffer's format is set.\n");
+					}
+					else
+					{
+						// TODO(georgy): Diagnostic
+					}
+				}
+				else
+				{
+					// TODO(georgy): Diagnostic
+				}
+			}
+			else
+			{
+				// TODO(georgy): Diagnostic
+			}
+
+			DSBUFFERDESC BufferDescription = {sizeof(DSBUFFERDESC)};
+			BufferDescription.dwFlags =  DSBCAPS_GETCURRENTPOSITION2;
+#if VOXEL_ENGINE_INTERNAL
+			BufferDescription.dwFlags |= DSBCAPS_GLOBALFOCUS;
+#endif
+			BufferDescription.dwBufferBytes = BufferSize;
+			BufferDescription.lpwfxFormat = &WaveFormat;
+			if(DirectSound->CreateSoundBuffer(&BufferDescription, &GlobalSecondaryBuffer, 0) == DS_OK)
+			{
+				// NOTE(georgy): Secondary buffer created
+				OutputDebugString("Secondary buffer created.\n");
+			}
+		}
+		else
+		{
+			// TODO(georgy): Diagnostic
+		}
+	}
+	else
+	{
+		// TODO(georgy): Diagnostic
+	}
+}
+
+struct win_sound_output
+{
+	u32 SamplesPerSecond;
+	u32 RunningSampleIndex;
+	u32 BytesPerSample;
+	DWORD SecondaryBufferSize;
+	i32 LatencySampleCount;
+	DWORD SafetyBytes;
+};
+
+internal void
+WinFillSoundBuffer(win_sound_output *SoundOutput, DWORD ByteToLock, DWORD BytesToWrite, game_sound_output_buffer *SourceBuffer)
+{
+	VOID *Part1, *Part2;
+	DWORD Part1Size, Part2Size;
+	if(GlobalSecondaryBuffer->Lock(ByteToLock, BytesToWrite, &Part1, &Part1Size, &Part2, &Part2Size, 0) == DS_OK)
+	{
+		DWORD Part1SampleCount = Part1Size / SoundOutput->BytesPerSample;
+		i16 *SampleDest = (i16 *)Part1;
+		i16 *SampleSource = SourceBuffer->Samples;
+		for(DWORD SampleIndex = 0;
+			SampleIndex < Part1SampleCount;
+			SampleIndex++)
+		{
+			*SampleDest++ = *SampleSource++;
+			*SampleDest++ = *SampleSource++;
+
+			SoundOutput->RunningSampleIndex++;
+		}
+
+		DWORD Part2SampleCount = Part2Size / SoundOutput->BytesPerSample;
+		SampleDest = (i16 *)Part2;
+		for(DWORD SampleIndex = 0;
+			SampleIndex < Part2SampleCount;
+			SampleIndex++)
+		{
+			*SampleDest++ = *SampleSource++;
+			*SampleDest++ = *SampleSource++;
+
+			SoundOutput->RunningSampleIndex++;
+		}
+
+		GlobalSecondaryBuffer->Unlock(Part1, Part1Size, Part2, Part2Size);
+	}
+}
+
 struct window_dimension
 {
 	int Width;
@@ -690,6 +812,7 @@ WinBeginInputPlayback(win_state *WinState)
 
 	CopyMemory(WinState->GameMemory, WinState->RecordStateMemory, WinState->GameMemorySize);
 	DEBUGGlobalPlaybackInfo.RefreshNow = true;
+	DEBUGGlobalPlaybackInfo.PlaybackPhase = true;
 }
 
 internal void
@@ -700,6 +823,8 @@ WinEndInputPlayback(win_state *WinState)
 	CloseHandle(WinState->PlaybackInputFile);
 	WinState->PlaybackInputFile = 0;
 	WinState->InputPlayback = false;
+
+	DEBUGGlobalPlaybackInfo.PlaybackPhase = false;
 }
 
 internal void
@@ -753,11 +878,6 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			WinInitOpenGL(Window, Instance, WindowClass.lpszClassName);
 			// ToggleFullscreen(Window);
 			ShowWindow(Window, SW_SHOW);
-			
-			window_dimension Dimension = WinGetWindowDimension(Window);
-			glViewport(0, 0, Dimension.Width, Dimension.Height);
-			glClearColor(0.0f, SquareRoot(0.175f), SquareRoot(0.375f), 1.0f);
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 			int RefreshRate = 60;
 			HDC WindowDC = GetDC(Window);
@@ -770,6 +890,50 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			r32 TargetSecondsPerFrame = 1.0f / GameRefreshRate;
 			ReleaseDC(Window, WindowDC);
 
+			win_sound_output SoundOutput = {};
+			SoundOutput.SamplesPerSecond = 44100;
+			SoundOutput.BytesPerSample = sizeof(i16)*2;
+			SoundOutput.SecondaryBufferSize = SoundOutput.SamplesPerSecond* SoundOutput.BytesPerSample;
+			SoundOutput.LatencySampleCount = 3*(SoundOutput.SamplesPerSecond / GameRefreshRate);
+			SoundOutput.SafetyBytes = ((SoundOutput.SamplesPerSecond*SoundOutput.BytesPerSample) / GameRefreshRate) / 2;
+
+			bool32 SoundIsValid = false;
+			DWORD AudioLatencyBytes = 0;
+			r32 AudioLatencySeconds = 0;
+
+			i16 *Samples = (i16 *)VirtualAlloc(0, SoundOutput.SamplesPerSecond*SoundOutput.BytesPerSample, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+			WinInitDirectSound(Window, SoundOutput.SamplesPerSecond, SoundOutput.SecondaryBufferSize);
+			// NOTE(georgy): Clear sound buffer
+			{
+				VOID *Part1, *Part2;
+				DWORD Part1Size, Part2Size;
+				if(GlobalSecondaryBuffer->Lock(0, SoundOutput.SecondaryBufferSize, &Part1, &Part1Size, &Part2, &Part2Size, 0) == DS_OK)
+				{
+					u8 *Dest = (u8 *)Part1;
+					for(u32 ByteIndex = 0;
+						ByteIndex < Part1Size;
+						ByteIndex++)
+					{
+						*Dest++ = 0;
+					}
+
+					Dest = (u8 *)Part2;
+					for(u32 ByteIndex = 0;
+						ByteIndex < Part2Size;
+						ByteIndex++)
+					{
+						*Dest++ = 0;
+					}
+
+					GlobalSecondaryBuffer->Unlock(Part1, Part1Size, Part2, Part2Size);
+				}
+			}
+         
+			window_dimension Dimension = WinGetWindowDimension(Window);
+			glViewport(0, 0, Dimension.Width, Dimension.Height);
+			glClearColor(0.0f, SquareRoot(0.175f), SquareRoot(0.375f), 1.0f);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 			game_memory GameMemory = {};
 			GameMemory.PermanentStorageSize = Gigabytes(2);
 			GameMemory.TemporaryStorageSize = Megabytes(128);
@@ -780,297 +944,388 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			GameMemory.TemporaryStorage = (u8 *)GameMemory.PermanentStorage + GameMemory.PermanentStorageSize;
 			GameMemory.DebugStorage = (u8 *)GameMemory.TemporaryStorage + GameMemory.TemporaryStorageSize;
 
-			GameMemory.JobSystemQueue = &JobSystem;
-
-			GameMemory.PlatformAPI.AddEntry = WinAddEntry;
-			GameMemory.PlatformAPI.CompleteAllWork = WinCompleteAllWork;
-			GameMemory.PlatformAPI.ReadEntireFile = WinReadEntireFile;
-			GameMemory.PlatformAPI.AllocateMemory = WinAllocateMemory;
-			GameMemory.PlatformAPI.FreeMemory = WinFreeMemory;
-			GameMemory.PlatformAPI.OutputDebugString = WinOutputDebugString;
-
-			GameMemory.PlatformAPI.LoadCodepointBitmap = WinLoadCodepointBitmap;
-			GameMemory.PlatformAPI.BeginFont = WinBeginFont;
-			GameMemory.PlatformAPI.LoadCodepointBitmap = WinLoadCodepointBitmap;
-			GameMemory.PlatformAPI.EndFont = WinEndFont;
-
-			// TODO(georgy): Make the path to be created automatically in .exe directory
-			WinState.RecordStateFile = 
-				CreateFileA("C:/Users/georg/source/repos/VoxelEngine 2.0/build/playback_state.vep", GENERIC_WRITE|GENERIC_READ, 
-							0, 0, CREATE_ALWAYS, 0, 0);
-
-			LARGE_INTEGER MaxSize;
-			MaxSize.QuadPart = WinState.GameMemorySize;
-			WinState.RecordStateMemoryMap = 
-				CreateFileMapping(WinState.RecordStateFile, 0, PAGE_READWRITE,
-								  MaxSize.HighPart, MaxSize.LowPart, 0);
-
-			WinState.RecordStateMemory = 
-				MapViewOfFile(WinState.RecordStateMemoryMap, FILE_MAP_ALL_ACCESS, 0, 0, WinState.GameMemorySize);
-
-
-			game_input GameInput = {};
-			GameInput.dt = TargetSecondsPerFrame;
-
-			RAWINPUTDEVICE RID;
-			RID.usUsagePage = 1;
-			RID.usUsage = 2; // NOTE(georgy): 2 is for mouse input
-			RID.dwFlags = 0;
-			RID.hwndTarget = Window;
-			RegisterRawInputDevices(&RID, 1, sizeof(RID));
-
-			GlobalRunning = true;
-			LARGE_INTEGER LastCounter = WinGetPerformanceCounter();
-			while(GlobalRunning)
+			if(GameMemory.PermanentStorage && GameMemory.TemporaryStorage && Samples)
 			{
-#if VOXEL_ENGINE_INTERNAL
-				if(WasDown(&GameInput.Pause))
+				GameMemory.JobSystemQueue = &JobSystem;
+
+				GameMemory.PlatformAPI.AddEntry = WinAddEntry;
+				GameMemory.PlatformAPI.CompleteAllWork = WinCompleteAllWork;
+				GameMemory.PlatformAPI.ReadEntireFile = WinReadEntireFile;
+				GameMemory.PlatformAPI.AllocateMemory = WinAllocateMemory;
+				GameMemory.PlatformAPI.FreeMemory = WinFreeMemory;
+				GameMemory.PlatformAPI.OutputDebugString = WinOutputDebugString;
+
+				GameMemory.PlatformAPI.LoadCodepointBitmap = WinLoadCodepointBitmap;
+				GameMemory.PlatformAPI.BeginFont = WinBeginFont;
+				GameMemory.PlatformAPI.LoadCodepointBitmap = WinLoadCodepointBitmap;
+				GameMemory.PlatformAPI.EndFont = WinEndFont;
+
+				// TODO(georgy): Make the path to be created automatically in .exe directory
+				WinState.RecordStateFile = 
+					CreateFileA("C:/Users/georg/source/repos/VoxelEngine 2.0/build/playback_state.vep", GENERIC_WRITE|GENERIC_READ, 
+								0, 0, CREATE_ALWAYS, 0, 0);
+
+				LARGE_INTEGER MaxSize;
+				MaxSize.QuadPart = WinState.GameMemorySize;
+				WinState.RecordStateMemoryMap = 
+					CreateFileMapping(WinState.RecordStateFile, 0, PAGE_READWRITE,
+									MaxSize.HighPart, MaxSize.LowPart, 0);
+
+				WinState.RecordStateMemory = 
+					MapViewOfFile(WinState.RecordStateMemoryMap, FILE_MAP_ALL_ACCESS, 0, 0, WinState.GameMemorySize);
+
+
+				game_input GameInput = {};
+				GameInput.dt = TargetSecondsPerFrame;
+
+				game_input DebugCameraInput = {};
+
+				RAWINPUTDEVICE RID;
+				RID.usUsagePage = 1;
+				RID.usUsage = 2; // NOTE(georgy): 2 is for mouse input
+				RID.dwFlags = 0;
+				RID.hwndTarget = Window;
+				RegisterRawInputDevices(&RID, 1, sizeof(RID));
+
+				GlobalSecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
+
+				GlobalRunning = true;
+				LARGE_INTEGER LastCounter = WinGetPerformanceCounter();
+				while(GlobalRunning)
 				{
-					GlobalGamePause = !GlobalGamePause;
-					GameInput.dt = GlobalGamePause ? 0.0f : TargetSecondsPerFrame;
-					GlobalDebugTable.ProfilePause = !GlobalDebugTable.ProfilePause || GlobalGamePause;
-				}
-#endif
-
-				BEGIN_BLOCK(InputAndMessageTime);
-
-				if (GlobalCursorShouldBeClipped)
-				{
-					RECT WindowRect;
-					GetWindowRect(Window, &WindowRect);
-					LONG WindowRectHeight = WindowRect.bottom - WindowRect.top;
-					LONG WindowRectWidth = WindowRect.right - WindowRect.left;
-					WindowRect.top = WindowRect.bottom = WindowRect.top + WindowRectHeight/2;
-					WindowRect.left = WindowRect.right = WindowRect.left + WindowRectWidth/2;
-					ClipCursor(&WindowRect);
-				}
-				else
-				{
-					ClipCursor(0);
-				}
-
-				GameInput.MouseXDisplacement = GameInput.MouseYDisplacement = 0;
-				GameInput.MouseRight.HalfTransitionCount = GameInput.MouseLeft.HalfTransitionCount = 0;
-
-				for(u32 ButtonIndex = 0;
-					ButtonIndex < ArrayCount(GameInput.Buttons);
-					ButtonIndex++)
-				{
-					button *Button = GameInput.Buttons + ButtonIndex;
-					Button->HalfTransitionCount = 0;
-				}
-
-				window_dimension Dimension = WinGetWindowDimension(Window);
-				POINT MouseP;
-				GetCursorPos(&MouseP);
-				ScreenToClient(Window, &MouseP);
-				GameInput.MouseX = (MouseP.x - 0.5f*Dimension.Width);
-				GameInput.MouseY = (0.5f*Dimension.Height - MouseP.y);				
-
-				MSG Message;
-				while (PeekMessage(&Message, 0, 0, 0, PM_REMOVE))
-				{
-					switch (Message.message)
+	#if VOXEL_ENGINE_INTERNAL
+					if(WasDown(&GameInput.Pause))
 					{
-						case WM_QUIT:
-						{
-							GlobalRunning = false;
-						} break;
+						GlobalGamePause = !GlobalGamePause;
+						GameInput.dt = GlobalGamePause ? 0.0f : TargetSecondsPerFrame;
+						GlobalDebugTable.ProfilePause = !GlobalDebugTable.ProfilePause || GlobalGamePause;
+					}
+	#endif
 
-						case WM_SYSKEYDOWN:
-						case WM_SYSKEYUP:
-						case WM_KEYDOWN:
-						case WM_KEYUP:
-						{
-							u32 KeyCode = (u32)Message.wParam;
+					BEGIN_BLOCK(InputAndMessageTime);
 
-							bool WasDown = ((Message.lParam & (1 << 30)) != 0);
-							bool IsDown = ((Message.lParam & (1 << 31)) == 0);
-							if (WasDown != IsDown)
+					if (GlobalCursorShouldBeClipped)
+					{
+						RECT WindowRect;
+						GetWindowRect(Window, &WindowRect);
+						LONG WindowRectHeight = WindowRect.bottom - WindowRect.top;
+						LONG WindowRectWidth = WindowRect.right - WindowRect.left;
+						WindowRect.top = WindowRect.bottom = WindowRect.top + WindowRectHeight/2;
+						WindowRect.left = WindowRect.right = WindowRect.left + WindowRectWidth/2;
+						ClipCursor(&WindowRect);
+					}
+					else
+					{
+						ClipCursor(0);
+					}
+
+					game_input *Input;
+					DEBUG_IF(DebugCamera, DebugTools)
+					{
+						Input = &DebugCameraInput;
+					}				
+					else
+					{
+						Input = &GameInput;
+					}
+
+					Input->MouseXDisplacement = Input->MouseYDisplacement = 0;
+					Input->MouseRight.HalfTransitionCount = Input->MouseLeft.HalfTransitionCount = 0;
+
+					for(u32 ButtonIndex = 0;
+						ButtonIndex < ArrayCount(Input->Buttons);
+						ButtonIndex++)
+					{
+						button *Button = Input->Buttons + ButtonIndex;
+						Button->HalfTransitionCount = 0;
+					}
+
+					window_dimension Dimension = WinGetWindowDimension(Window);
+					POINT MouseP;
+					GetCursorPos(&MouseP);
+					ScreenToClient(Window, &MouseP);
+					Input->MouseX = (MouseP.x - 0.5f*Dimension.Width);
+					Input->MouseY = (0.5f*Dimension.Height - MouseP.y);				
+
+					MSG Message;
+					while (PeekMessage(&Message, 0, 0, 0, PM_REMOVE))
+					{
+						switch (Message.message)
+						{
+							case WM_QUIT:
 							{
-								if (KeyCode == 'W')
-								{
-									WinProcessKey(&GameInput.MoveForward, IsDown);
-								}
-								if (KeyCode == 'S')
-								{
-									WinProcessKey(&GameInput.MoveBack, IsDown);
-								}
-								if (KeyCode == 'D')
-								{
-									WinProcessKey(&GameInput.MoveRight, IsDown);
-								}
-								if (KeyCode == 'A')
-								{
-									WinProcessKey(&GameInput.MoveLeft, IsDown);
-								}
-								if (KeyCode == VK_SPACE)
-								{
-									WinProcessKey(&GameInput.MoveUp, IsDown);
-								}
+								GlobalRunning = false;
+							} break;
 
-#if VOXEL_ENGINE_INTERNAL
-								if (KeyCode == 'P')
+							case WM_SYSKEYDOWN:
+							case WM_SYSKEYUP:
+							case WM_KEYDOWN:
+							case WM_KEYUP:
+							{
+								u32 KeyCode = (u32)Message.wParam;
+
+								bool WasDown = ((Message.lParam & (1 << 30)) != 0);
+								bool IsDown = ((Message.lParam & (1 << 31)) == 0);
+								if (WasDown != IsDown)
 								{
-									// TODO(georgy): I don't want the pause button to be _game_ input
-									WinProcessKey(&GameInput.Pause, IsDown);
-									// if(IsDown)
-									// {
-									// 	GlobalGamePause = !GlobalGamePause;
-									// 	GameInput.dt = GlobalGamePause ? 0.0f : TargetSecondsPerFrame;
-									// 	GlobalDebugTable.ProfilePause = !GlobalDebugTable.ProfilePause || GlobalGamePause;
-									// }
-								}
-								if (KeyCode == 'L')
-								{
-									if(IsDown)
+									if (KeyCode == 'W')
 									{
-										if(!WinState.InputPlayback)
+										WinProcessKey(&Input->MoveForward, IsDown);
+									}
+									if (KeyCode == 'S')
+									{
+										WinProcessKey(&Input->MoveBack, IsDown);
+									}
+									if (KeyCode == 'D')
+									{
+										WinProcessKey(&Input->MoveRight, IsDown);
+									}
+									if (KeyCode == 'A')
+									{
+										WinProcessKey(&Input->MoveLeft, IsDown);
+									}
+									if (KeyCode == VK_SPACE)
+									{
+										WinProcessKey(&Input->MoveUp, IsDown);
+									}
+
+	#if VOXEL_ENGINE_INTERNAL
+									if (KeyCode == 'P')
+									{
+										// TODO(georgy): I don't want the pause button to be _game_ input
+										WinProcessKey(&Input->Pause, IsDown);
+										// if(IsDown)
+										// {
+										// 	GlobalGamePause = !GlobalGamePause;
+										// 	GameInput.dt = GlobalGamePause ? 0.0f : TargetSecondsPerFrame;
+										// 	GlobalDebugTable.ProfilePause = !GlobalDebugTable.ProfilePause || GlobalGamePause;
+										// }
+									}
+									if (KeyCode == 'L')
+									{
+										if(IsDown)
 										{
-											WinCompleteAllWork(GameMemory.JobSystemQueue);
-											if(!WinState.InputRecording)
+											if(!WinState.InputPlayback)
 											{
-												WinBeginRecordingInput(&WinState);
+												WinCompleteAllWork(GameMemory.JobSystemQueue);
+												if(!WinState.InputRecording)
+												{
+													WinBeginRecordingInput(&WinState);
+												}
+												else
+												{
+													WinEndRecordingInput(&WinState);
+													WinBeginInputPlayback(&WinState);
+												}
 											}
 											else
 											{
-												WinEndRecordingInput(&WinState);
-												WinBeginInputPlayback(&WinState);
+												WinEndInputPlayback(&WinState);
 											}
 										}
-										else
+									}
+									if (KeyCode == 0x32)
+									{
+										if(IsDown)
 										{
-											WinEndInputPlayback(&WinState);
+											GlobalDEBUGCursor = !GlobalDEBUGCursor;
+											GlobalCursorShouldBeClipped = !GlobalDEBUGCursor;
+											ShowCursor(GlobalDEBUGCursor);
 										}
 									}
+	#endif
 								}
-								if (KeyCode == 0x32)
+							} break;
+
+							case WM_INPUT:
+							{
+								RAWINPUT RawInput;
+								UINT RawInputSize = sizeof(RawInput);
+								GetRawInputData((HRAWINPUT)Message.lParam, RID_INPUT,
+												&RawInput, &RawInputSize, sizeof(RAWINPUTHEADER));
+								
+								if (RawInput.header.dwType == RIM_TYPEMOUSE)
 								{
-									if(IsDown)
+									if(!GlobalDEBUGCursor)
 									{
-										GlobalDEBUGCursor = !GlobalDEBUGCursor;
-										GlobalCursorShouldBeClipped = !GlobalDEBUGCursor;
-										ShowCursor(GlobalDEBUGCursor);
+										Input->MouseXDisplacement = RawInput.data.mouse.lLastX;
+										Input->MouseYDisplacement = RawInput.data.mouse.lLastY;
+									}
+									// GameInput.MouseX += RawInput.data.mouse.lLastX;
+									// GameInput.MouseY += RawInput.data.mouse.lLastY;
+									
+									if(RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN ||
+									RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_UP)
+									{
+										WinProcessKey(&Input->MouseLeft, RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN);
+									}
+										
+									if(RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN ||
+									RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_UP)
+									{
+										WinProcessKey(&Input->MouseRight, RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN);
 									}
 								}
-#endif
-							}
-						} break;
-
-						case WM_INPUT:
-						{
-							RAWINPUT RawInput;
-							UINT RawInputSize = sizeof(RawInput);
-							GetRawInputData((HRAWINPUT)Message.lParam, RID_INPUT,
-											&RawInput, &RawInputSize, sizeof(RAWINPUTHEADER));
+							} break;
 							
-							if (RawInput.header.dwType == RIM_TYPEMOUSE)
+							default:
 							{
-								if(!GlobalDEBUGCursor)
-								{
-									GameInput.MouseXDisplacement = RawInput.data.mouse.lLastX;
-									GameInput.MouseYDisplacement = RawInput.data.mouse.lLastY;
-								}
-								// GameInput.MouseX += RawInput.data.mouse.lLastX;
-								// GameInput.MouseY += RawInput.data.mouse.lLastY;
-								
-								if(RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN ||
-								   RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_UP)
-								{
-									WinProcessKey(&GameInput.MouseLeft, RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN);
-								}
-									
-								if(RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN ||
-								   RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_UP)
-								{
-									WinProcessKey(&GameInput.MouseRight, RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN);
-								}
-							}
-						} break;
-						
-						default:
+								TranslateMessage(&Message);
+								DispatchMessage(&Message);
+							} break;
+						}
+					}
+					
+					END_BLOCK(InputAndMessageTime);
+
+	#if VOXEL_ENGINE_INTERNAL
+					if(!GlobalGamePause)
+					{
+						if(WinState.InputRecording)
 						{
-							TranslateMessage(&Message);
-							DispatchMessage(&Message);
-						} break;
-					}
-				}
-				
-				END_BLOCK(InputAndMessageTime);
+							WinRecordInput(&WinState, &GameInput);
+						}
 
-#if VOXEL_ENGINE_INTERNAL
-				if(!GlobalGamePause)
-				{
-					if(WinState.InputRecording)
+						if(WinState.InputPlayback)
+						{
+							game_input TempInput = GameInput;
+							WinPlaybackInput(&WinState, &GameInput);
+							GameInput.MouseX = TempInput.MouseX;
+							GameInput.MouseY = TempInput.MouseY;
+							GameInput.MouseLeft = TempInput.MouseLeft;
+							GameInput.Pause = TempInput.Pause;
+						}
+					}
+	#endif
+
+					BEGIN_BLOCK(GameUpdateTime); 
+
+					GameUpdate(&GameMemory, &GameInput, Dimension.Width, Dimension.Height, GlobalGamePause, DebugCamera, &DebugCameraInput);
+
+					END_BLOCK(GameUpdateTime);
+
+					
+					r32 FromBeginToAudioSeconds = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
+
+					DWORD PlayCursor;
+					DWORD WriteCursor;
+					if(GlobalSecondaryBuffer->GetCurrentPosition(&PlayCursor, &WriteCursor) == DS_OK)
 					{
-						WinRecordInput(&WinState, &GameInput);
-					}
+						if(!SoundIsValid)
+						{
+							SoundOutput.RunningSampleIndex = WriteCursor / SoundOutput.BytesPerSample;
+							SoundIsValid = true;
+						}
 
-					if(WinState.InputPlayback)
+						DWORD ByteToLock = (SoundOutput.RunningSampleIndex*SoundOutput.BytesPerSample) % SoundOutput.SecondaryBufferSize;
+
+						DWORD ExpectedSoundBytesPerFrame = (SoundOutput.SamplesPerSecond*SoundOutput.BytesPerSample) / GameRefreshRate;
+						r32 SecondsLeftUntilFlip = TargetSecondsPerFrame - FromBeginToAudioSeconds;
+						DWORD ExpectedBytesUntilFlip = (DWORD)((SecondsLeftUntilFlip/TargetSecondsPerFrame)*
+																(r32)ExpectedSoundBytesPerFrame);
+
+						DWORD ExpectedFrameBoundaryByte = PlayCursor + ExpectedBytesUntilFlip;
+
+						DWORD SafeWriteCursor = WriteCursor;
+						if(SafeWriteCursor < PlayCursor)
+						{
+							SafeWriteCursor += SoundOutput.SecondaryBufferSize;
+						} 
+						Assert(SafeWriteCursor >= PlayCursor);
+						SafeWriteCursor += SoundOutput.SafetyBytes;
+
+						bool32 AudioCardIsLowLatency = (SafeWriteCursor < ExpectedFrameBoundaryByte);
+
+						DWORD TargetCursor = 0;
+						if(AudioCardIsLowLatency)
+						{
+							TargetCursor = (ExpectedFrameBoundaryByte + ExpectedSoundBytesPerFrame);
+						}
+						else
+						{
+							TargetCursor = (WriteCursor + ExpectedSoundBytesPerFrame + SoundOutput.SafetyBytes);
+						}
+						TargetCursor = (TargetCursor % SoundOutput.SecondaryBufferSize);
+
+						DWORD BytesToWrite = 0;
+						if(ByteToLock > TargetCursor)
+						{
+							BytesToWrite = SoundOutput.SecondaryBufferSize - ByteToLock;
+							BytesToWrite += TargetCursor;
+						}
+						else
+						{
+							BytesToWrite = TargetCursor - ByteToLock;
+						}
+
+						game_sound_output_buffer SoundBuffer = {};
+						SoundBuffer.Samples = Samples;
+						SoundBuffer.SamplesPerSecond = SoundOutput.SamplesPerSecond;
+						SoundBuffer.SampleCount = BytesToWrite / SoundOutput.BytesPerSample;
+						GameGetSoundSamples(&GameMemory, &SoundBuffer);
+
+						DWORD PlayCursor;
+						DWORD WriteCursor;
+						GlobalSecondaryBuffer->GetCurrentPosition(&PlayCursor, &WriteCursor);
+
+						WinFillSoundBuffer(&SoundOutput, ByteToLock, BytesToWrite, &SoundBuffer);
+					}
+					else
 					{
-						game_input TempInput = GameInput;
-						WinPlaybackInput(&WinState, &GameInput);
-						GameInput.MouseX = TempInput.MouseX;
-						GameInput.MouseY = TempInput.MouseY;
-						GameInput.MouseLeft = TempInput.MouseLeft;
-						GameInput.Pause = TempInput.Pause;
+						SoundIsValid = false;
 					}
-				}
-#endif
 
-				BEGIN_BLOCK(GameUpdateTime);
+	#if VOXEL_ENGINE_INTERNAL
+					BEGIN_BLOCK(DebugStuffTime);
 
-				GameUpdate(&GameMemory, &GameInput, Dimension.Width, Dimension.Height, GlobalGamePause);
+					DEBUGEndDebugFrameAndRender(&GameMemory, Input, (r32)Dimension.Width, (r32)Dimension.Height);
 
-				END_BLOCK(GameUpdateTime);
+					END_BLOCK(DebugStuffTime);
+	#endif
 
-#if VOXEL_ENGINE_INTERNAL
-				BEGIN_BLOCK(DebugStuffTime);
+					BEGIN_BLOCK(UpdateWindowTime);
 
-				DEBUGEndDebugFrameAndRender(&GameMemory, &GameInput, (r32)Dimension.Width, (r32)Dimension.Height);
+					HDC DeviceContext = GetDC(Window);
+					WinUpdateWindow(DeviceContext, Dimension.Width, Dimension.Height);
+					ReleaseDC(Window, DeviceContext);
 
-				END_BLOCK(DebugStuffTime);
-#endif
+					END_BLOCK(UpdateWindowTime);			
 
-				BEGIN_BLOCK(UpdateWindowTime);
-
-				HDC DeviceContext = GetDC(Window);
-				WinUpdateWindow(DeviceContext, Dimension.Width, Dimension.Height);
-				ReleaseDC(Window, DeviceContext);
-
-				END_BLOCK(UpdateWindowTime);
-				
-
-				BEGIN_BLOCK(SleepTime);
 
 #if 1
-				r32 SecondsElapsedForFrame = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
-				if(SecondsElapsedForFrame < TargetSecondsPerFrame)
-				{
-					if(SleepIsGranular)
-					{
-						DWORD SleepMS = (DWORD)(1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
+					BEGIN_BLOCK(SleepTime);
 
-						if(SleepMS > 0)
+					r32 SecondsElapsedForFrame = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
+
+					
+
+					if(SecondsElapsedForFrame < TargetSecondsPerFrame)
+					{
+						if(SleepIsGranular)
 						{
-							Sleep(SleepMS);
+							DWORD SleepMS = (DWORD)(1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
+
+							if(SleepMS > 0)
+							{
+								Sleep(SleepMS);
+							}
+						}
+
+						while (SecondsElapsedForFrame < TargetSecondsPerFrame)
+						{
+							SecondsElapsedForFrame = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
 						}
 					}
 
-					while (SecondsElapsedForFrame < TargetSecondsPerFrame)
-					{
-						SecondsElapsedForFrame = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
-					}
+					END_BLOCK(SleepTime);
+	#endif
+
+
+					LARGE_INTEGER EndCounter = WinGetPerformanceCounter();
+					r32 MSPerFrame = 1000.0f * WinGetSecondsElapsed(LastCounter, EndCounter);
+					FRAME_MARKER(MSPerFrame);
+					LastCounter = EndCounter;
 				}
-#endif
-
-				END_BLOCK(SleepTime);
-
-
-				LARGE_INTEGER EndCounter = WinGetPerformanceCounter();
-				r32 MSPerFrame = 1000.0f * WinGetSecondsElapsed(LastCounter, EndCounter);
-				FRAME_MARKER(MSPerFrame);
-				LastCounter = EndCounter;
 			}
 		}
 	}

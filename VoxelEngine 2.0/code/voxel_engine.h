@@ -146,6 +146,7 @@ struct camera
 
 	vec3 DEBUGP;
 	vec3 DEBUGFront;
+	r32 DEBUGPitch, DEBUGHead;
 };
 
 #include "voxel_engine_animation.h"

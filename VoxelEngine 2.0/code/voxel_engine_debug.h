@@ -28,7 +28,7 @@ enum debug_event_type
 };
 struct debug_event
 {
-    // STUPID C++ WANTS ME TO DO IT FOR NO REASON IF I INTRODUCE vec3 IN HERE 
+    // STUPID C++ WANTS ME TO DO THIS CONSTRUCTOR FOR NO REASON IF I INTRODUCE vec3 IN HERE 
     debug_event() {}
 
     char *FileName;
@@ -115,6 +115,10 @@ struct debug_frame
     debug_region *Regions;
 
     u32 Index;
+
+    // NOTE(georgy): Saved value events for this frame. 
+    u32 ValuesCount;
+    debug_event *ValuesEvents[64];
 }; 
 
 #define MAX_DEBUG_EVENT_COUNT 1024
@@ -156,8 +160,7 @@ struct debug_state
 
     u32 VariablesCount;
     debug_event *VariablesEvents[64];
-    u32 ValuesCount;
-    debug_event ValuesEvents[64];
+
     debug_event Groups[DebugValueEventGroup_Count];
 
     debug_stored_event *OldestStoredEvent;
@@ -173,8 +176,6 @@ struct debug_state
     u32 TotalFrameCount;
 
     debug_frame FramesSentinel;
-    // debug_frame *OldestFrame;
-    // debug_frame *MostRecentFrame;
     debug_frame *CollationFrame;
     debug_frame *FirstFreeFrame;
 
@@ -252,6 +253,7 @@ struct record_playback_info
 
     bool32 RecordPhase;
     bool32 RefreshNow;
+    bool32 PlaybackPhase;
 
     u32 ChunksModifiedDuringRecordPhaseCount;
     chunk *ChunksModifiedDuringRecordPhase[256];

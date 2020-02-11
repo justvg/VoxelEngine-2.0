@@ -295,10 +295,10 @@ NewFrame(debug_state *DebugState, u64 BeginClock)
 		}
 	}
 	
-	Frame->RegionsCount = 0;
+	debug_region *Temp = Frame->Regions;
+	*Frame = {};
+	Frame->Regions = Temp;
 	Frame->BeginClock = BeginClock;
-	Frame->MSElapsed = 0.0f;
-	Frame->Next = Frame->Prev = 0;
 	Frame->Index = DebugState->TotalFrameCount++;
 
 	return(Frame);
@@ -426,8 +426,9 @@ DEBUGCollateEvents(debug_state *DebugState, u32 EventArrayIndex)
 
 					default:
 					{
-						Assert(DebugState->ValuesCount < ArrayCount(DebugState->ValuesEvents));
-						DebugState->ValuesEvents[DebugState->ValuesCount++] = *Event;
+						Assert(DebugState->CollationFrame->ValuesCount < ArrayCount(DebugState->CollationFrame->ValuesEvents));
+						DebugState->CollationFrame->ValuesEvents[DebugState->CollationFrame->ValuesCount++] = 
+								&StoreEvent(DebugState, Event)->Event;
 					} break;
 				}
 			}
@@ -653,6 +654,8 @@ DEBUGRenderMainMenu(debug_state *DebugState, game_input *Input)
 	vec2 MouseP = vec2(Input->MouseX, Input->MouseY);
 	DebugState->NextHotInteraction = 0;
 
+	debug_frame *MostRecentFrame = DebugState->FramesSentinel.Next;
+
 	for(u32 GroupIndex = 0;
 		GroupIndex < DebugValueEventGroup_Count;
 		GroupIndex++)
@@ -675,10 +678,10 @@ DEBUGRenderMainMenu(debug_state *DebugState, game_input *Input)
 			}
 
 			for(u32 ValueIndex = 0;
-				ValueIndex < DebugState->ValuesCount;
+				ValueIndex < MostRecentFrame->ValuesCount;
 				ValueIndex++)
 			{
-				debug_event *Event = DebugState->ValuesEvents + ValueIndex;
+				debug_event *Event = MostRecentFrame->ValuesEvents[ValueIndex];
 				if(Event->Group == GroupIndex)
 				{
 					char Buffer[64];
@@ -696,7 +699,7 @@ DEBUGRenderMainMenu(debug_state *DebugState, game_input *Input)
 			case DebugEvent_r32:
 			{
 				r32 DisplacementY = MouseP.y - DebugState->LastMouseP.y;
-				DebugState->ActiveInteraction->Value_r32 += 0.00001f*DisplacementY;
+				DebugState->ActiveInteraction->Value_r32 += 0.1f*DisplacementY;
 			} break;
 		}
 
@@ -743,10 +746,10 @@ DEBUGEndDebugFrameAndRender(game_memory *Memory, game_input *Input, r32 BufferWi
 		GlobalDebugTable.EventCount = EventArrayIndex_EventIndex & 0xFFFFFFFF;
 	}
 
-	if(!GlobalDebugTable.ProfilePause)
-	{
-		DebugState->ValuesCount = 0;
-	}
+	// if(!GlobalDebugTable.ProfilePause)
+	// {
+	// 	DebugState->ValuesCount = 0;
+	// }
 	
 	if(DebugState && GameAssets)
 	{

@@ -248,7 +248,8 @@ AddTree(game_state *GameState, world_position P)
 }
 
 internal void
-GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHeight, bool32 GameProfilingPause)
+GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHeight,  
+		   bool32 GameProfilingPause, bool32 DebugCamera, game_input *DebugCameraInput)
 {
 	Platform = Memory->PlatformAPI;
 
@@ -568,7 +569,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 
 	Assert(sizeof(temp_state) <= Memory->TemporaryStorageSize);
 	temp_state *TempState = (temp_state *)Memory->TemporaryStorage;
-	if (!TempState->IsInitialized)
+	if(!TempState->IsInitialized)
 	{
 		InitializeStackAllocator(&TempState->Allocator, Memory->TemporaryStorageSize - sizeof(temp_state),
 														(u8 *)Memory->TemporaryStorage + sizeof(temp_state));
@@ -583,21 +584,14 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	camera *Camera = &GameState->Camera;
 	Camera->AspectRatio = (r32)BufferWidth/(r32)BufferHeight;
 
-	Camera->Pitch -= Input->MouseYDisplacement*Camera->RotSensetivity;
-	Camera->Head += Input->MouseXDisplacement*Camera->RotSensetivity;
-
-	Camera->Pitch = Camera->Pitch > 89.0f ? 89.0f : Camera->Pitch;
-	Camera->Pitch = Camera->Pitch < -89.0f ? -89.0f : Camera->Pitch;
-
-	DEBUG_IF(DebugCamera, DebugTools)
+	if(!DebugCamera || DEBUGGlobalPlaybackInfo.PlaybackPhase)
 	{
-		r32 CameraTargetDirX = Sin(DEG2RAD(Camera->Head))*Cos(DEG2RAD(Camera->Pitch));
-		r32 CameraTargetDirY = Sin(DEG2RAD(Camera->Pitch));
-		r32 CameraTargetDirZ = -Cos(DEG2RAD(Camera->Head))*Cos(DEG2RAD(Camera->Pitch));
-		Camera->DEBUGFront = Normalize(vec3(CameraTargetDirX, CameraTargetDirY, CameraTargetDirZ));
-	}
-	else
-	{
+		Camera->Pitch -= Input->MouseYDisplacement*Camera->RotSensetivity;
+		Camera->Head += Input->MouseXDisplacement*Camera->RotSensetivity;
+
+		Camera->Pitch = Camera->Pitch > 89.0f ? 89.0f : Camera->Pitch;
+		Camera->Pitch = Camera->Pitch < -89.0f ? -89.0f : Camera->Pitch;
+
 		r32 PitchRadians = DEG2RAD(Camera->Pitch);
 		r32 HeadRadians = DEG2RAD(Camera->Head);
 		r32 HorizontalDistanceFromHero = Camera->DistanceFromHero*Cos(-PitchRadians);
@@ -605,94 +599,101 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		r32 YOffsetFromHero = Camera->DistanceFromHero * Sin(-PitchRadians);
 		r32 ZOffsetFromHero = HorizontalDistanceFromHero * Cos(HeadRadians);
 		vec3 NewTargetOffsetFromHero = vec3(XOffsetFromHero, YOffsetFromHero, ZOffsetFromHero);
-		// Camera->LastOffsetFromHero -= vec3(0.0f, Camera->LastHeroMovement.y(), 0.0f);
-		Camera->OffsetFromHero = Camera->DistanceFromHero * Normalize(Lerp(Camera->LastOffsetFromHero, NewTargetOffsetFromHero, 7.0f*Input->dt));
+		Camera->OffsetFromHero = Camera->DistanceFromHero * 
+								 Normalize(Lerp(Camera->LastOffsetFromHero, NewTargetOffsetFromHero, 7.0f*Input->dt));
 		Camera->LastOffsetFromHero = Camera->OffsetFromHero;
 	}
 
-	vec3 Forward;
-	if(!DebugCamera)
-	{
-		Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), 0.0f, -Camera->OffsetFromHero.z()));
-	}
-	else
-	{
-		Forward = Camera->DEBUGFront;
-	}
+	vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), 0.0f, -Camera->OffsetFromHero.z()));
 	vec3 Right = Normalize(Cross(Forward, vec3(0.0f, 1.0f, 0.0f)));
 	r32 Theta = -RAD2DEG(ATan2(Forward.z(), Forward.x())) + 90.0f;
 	GameState->Hero.ddP = vec3(0.0f, 0.0f, 0.0f);
 
-	if(!DebugCamera)
-	{
-		if(!GameProfilingPause)
-		{
-			if (Input->MoveForward.EndedDown)
-			{
-				GameState->Hero.ddP += Forward;
-				GameState->Hero.AdditionalRotation = Theta;
-			}
-			if (Input->MoveBack.EndedDown)
-			{
-				GameState->Hero.ddP -= Forward;
-				GameState->Hero.AdditionalRotation = Theta - 180.0f;
-			}
-			if (Input->MoveRight.EndedDown)
-			{
-				GameState->Hero.ddP += Right;
-				GameState->Hero.AdditionalRotation = Theta - 90.0f;
-			}
-			if (Input->MoveLeft.EndedDown)
-			{
-				GameState->Hero.ddP -= Right;
-				GameState->Hero.AdditionalRotation = Theta + 90.0f;
-			}
-
-			GameState->Hero.dY = 0.0f;
-			if(Input->MoveUp.EndedDown)
-			{
-				GameState->Hero.dY = 3.0f;
-			}
-
-			if (Input->MoveForward.EndedDown && Input->MoveRight.EndedDown)
-			{
-				GameState->Hero.AdditionalRotation = Theta - 45.0f;
-			}
-			if (Input->MoveForward.EndedDown && Input->MoveLeft.EndedDown)
-			{
-				GameState->Hero.AdditionalRotation = Theta + 45.0f;
-			}
-			if (Input->MoveBack.EndedDown && Input->MoveRight.EndedDown)
-			{
-				GameState->Hero.AdditionalRotation = Theta - 135.0f;
-			}
-			if (Input->MoveBack.EndedDown && Input->MoveLeft.EndedDown)
-			{
-				GameState->Hero.AdditionalRotation = Theta + 135.0f;
-			}
-
-			GameState->Hero.Fireball = WasDown(&Input->MouseRight);
-			if(GameState->Hero.Fireball)
-			{
-				GameState->Hero.AdditionalRotation = Theta;
-			}
-		}
-	}
-	else
+	// NOTE(georgy): Hero input stuff
+	if(DEBUGGlobalPlaybackInfo.PlaybackPhase || (!GameProfilingPause && !DebugCamera))
 	{
 		if (Input->MoveForward.EndedDown)
 		{
-			Camera->DEBUGP += Forward;
+			GameState->Hero.ddP += Forward;
+			GameState->Hero.AdditionalRotation = Theta;
 		}
 		if (Input->MoveBack.EndedDown)
 		{
-			Camera->DEBUGP  -= Forward;
+			GameState->Hero.ddP -= Forward;
+			GameState->Hero.AdditionalRotation = Theta - 180.0f;
 		}
 		if (Input->MoveRight.EndedDown)
 		{
-			Camera->DEBUGP  += Right;
+			GameState->Hero.ddP += Right;
+			GameState->Hero.AdditionalRotation = Theta - 90.0f;
 		}
 		if (Input->MoveLeft.EndedDown)
+		{
+			GameState->Hero.ddP -= Right;
+			GameState->Hero.AdditionalRotation = Theta + 90.0f;
+		}
+
+		GameState->Hero.dY = 0.0f;
+		if(Input->MoveUp.EndedDown)
+		{
+			GameState->Hero.dY = 3.0f;
+		}
+
+		if (Input->MoveForward.EndedDown && Input->MoveRight.EndedDown)
+		{
+			GameState->Hero.AdditionalRotation = Theta - 45.0f;
+		}
+		if (Input->MoveForward.EndedDown && Input->MoveLeft.EndedDown)
+		{
+			GameState->Hero.AdditionalRotation = Theta + 45.0f;
+		}
+		if (Input->MoveBack.EndedDown && Input->MoveRight.EndedDown)
+		{
+			GameState->Hero.AdditionalRotation = Theta - 135.0f;
+		}
+		if (Input->MoveBack.EndedDown && Input->MoveLeft.EndedDown)
+		{
+			GameState->Hero.AdditionalRotation = Theta + 135.0f;
+		}
+
+		GameState->Hero.Fireball = WasDown(&Input->MouseRight);
+		if(GameState->Hero.Fireball)
+		{
+			GameState->Hero.AdditionalRotation = Theta;
+		}
+	}
+
+	// NOTE(georgy): Debug camera input stuff
+	if(DebugCamera)
+	{
+		{
+			Camera->DEBUGPitch -= DebugCameraInput->MouseYDisplacement*Camera->RotSensetivity;
+			Camera->DEBUGHead += DebugCameraInput->MouseXDisplacement*Camera->RotSensetivity;
+
+			Camera->DEBUGPitch = Camera->DEBUGPitch > 89.0f ? 89.0f : Camera->DEBUGPitch;
+			Camera->DEBUGPitch = Camera->DEBUGPitch < -89.0f ? -89.0f : Camera->DEBUGPitch;
+
+			r32 CameraTargetDirX = Sin(DEG2RAD(Camera->DEBUGHead))*Cos(DEG2RAD(Camera->DEBUGPitch));
+			r32 CameraTargetDirY = Sin(DEG2RAD(Camera->DEBUGPitch));
+			r32 CameraTargetDirZ = -Cos(DEG2RAD(Camera->DEBUGHead))*Cos(DEG2RAD(Camera->DEBUGPitch));
+			Camera->DEBUGFront = Normalize(vec3(CameraTargetDirX, CameraTargetDirY, CameraTargetDirZ));
+		}
+
+		vec3 Forward = Camera->DEBUGFront;
+		vec3 Right = Normalize(Cross(Forward, vec3(0.0f, 1.0f, 0.0f)));
+		if (DebugCameraInput->MoveForward.EndedDown)
+		{
+			Camera->DEBUGP += Forward;
+		}
+		if (DebugCameraInput->MoveBack.EndedDown)
+		{
+			Camera->DEBUGP  -= Forward;
+		}
+		if (DebugCameraInput->MoveRight.EndedDown)
+		{
+			Camera->DEBUGP  += Right;
+		}
+		if (DebugCameraInput->MoveLeft.EndedDown)
 		{
 			Camera->DEBUGP  -= Right;
 		}
@@ -837,6 +838,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 					}
 
 					Entity->AnimationState.Time += AnimationTimeStep;
+					DEBUG_VALUE(r32, AnimationStateTime, World, Entity->AnimationState.Time);
 				} break;
 
 				case EntityType_Fireball:
@@ -1253,4 +1255,30 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	EndTemporaryMemory(SimulationAndRenderMemory);
 
 	UnloadAssetsIfNecessary(TempState->GameAssets);
+}
+
+internal void
+GameGetSoundSamples(game_memory *Memory, game_sound_output_buffer *SoundBuffer)
+{
+	local_persist r32 tSine;
+	i16 SoundVolume = 3000;
+	i32 WavePeriod = SoundBuffer->SamplesPerSecond / 256;
+
+	i16 *SampleDest = (i16 *)SoundBuffer->Samples;
+	for(DWORD SampleIndex = 0;
+		SampleIndex < SoundBuffer->SampleCount;
+		SampleIndex++)
+	{
+		r32 SineValue = Sin(tSine);
+		i16 SampleValue = (i16)(SineValue*SoundVolume);
+		*SampleDest++ = SampleValue;
+		*SampleDest++ = SampleValue;
+
+		tSine += 2.0f*PI*(1.0f/(r32)WavePeriod);
+
+		if(tSine > 2.0f*PI)
+		{
+			tSine -= 2.0f*PI;
+		}
+	}
 }

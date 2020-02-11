@@ -153,6 +153,13 @@ WasUp(button *Button)
 	return(Result);
 }
 
+struct game_sound_output_buffer
+{
+	i16 *Samples;
+	u32 SamplesPerSecond;
+	u32 SampleCount;
+};
+
 struct platform_api
 {
 	platform_add_entry *AddEntry;
