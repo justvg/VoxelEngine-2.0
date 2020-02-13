@@ -1205,6 +1205,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					END_BLOCK(GameUpdateTime);
 
 					
+					BEGIN_BLOCK(SoundUpdateTime);
+
 					r32 FromBeginToAudioSeconds = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
 
 					DWORD PlayCursor;
@@ -1274,6 +1276,9 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					{
 						SoundIsValid = false;
 					}
+
+					END_BLOCK(SoundUpdateTime);
+
 
 	#if VOXEL_ENGINE_INTERNAL
 					BEGIN_BLOCK(DebugStuffTime);

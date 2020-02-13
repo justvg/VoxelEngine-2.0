@@ -176,6 +176,30 @@ struct pairwise_collision_rule
 	bool32 CanCollide;
 };
 
+struct playing_sound
+{
+	sound_id ID;
+	vec2 Volume;
+	vec2 dVolume;
+	vec2 TargetVolume;
+	u32 SamplesPlayed;
+
+	union
+	{
+		playing_sound *Next;
+		playing_sound *NextFree;
+	};
+};
+
+struct audio_state
+{
+	stack_allocator *Allocator;
+	playing_sound *FirstPlayingSound;
+	playing_sound *FirstFreePlayingSound;
+	
+	r32 GlobalVolume;
+};
+
 struct game_state
 {
 	bool32 IsInitialized;
@@ -221,6 +245,8 @@ struct game_state
 	u32 ShadowMapsWidth, ShadowMapsHeight;
 	GLuint ShadowNoiseTexture;
 	vec2 ShadowSamplesOffsets[16];
+
+	audio_state AudioState;
 
 	u32 StoredEntityCount;
 	stored_entity StoredEntities[10000];

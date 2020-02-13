@@ -25,6 +25,15 @@ struct loaded_texture
 	void *Free;
 };
 
+struct loaded_sound
+{
+	i16 *Samples[2];
+	u32 SampleCount;
+	u32 ChannelsCount;
+
+	void *Free;
+};
+
 struct model_id
 {
 	u32 Value;
@@ -36,6 +45,11 @@ struct texture_id
 };
 
 struct font_id
+{
+	u32 Value;
+};
+
+struct sound_id
 {
 	u32 Value;
 };
@@ -67,6 +81,14 @@ enum asset_type_id
 	AssetType_UIBar,
 
 	// 
+	// NOTE(georgy): Sounds!
+	// 
+
+	AssetType_Music,
+	AssetType_WaterSplash,
+	AssetType_Fireball,
+
+	// 
 	// NOTE(georgy): Fonts!
 	// 
 
@@ -87,6 +109,7 @@ struct asset_memory_header
 	{
 		loaded_model Model;
 		loaded_texture Texture;
+		loaded_sound Sound;
 		loaded_font Font;
 	};
 };
@@ -103,6 +126,7 @@ enum asset_data_type
 
 	AssetDataType_Model,
 	AssetDataType_Texture,
+	AssetDataType_Sound,
 	AssetDataType_Font,
 };
 struct asset
@@ -321,6 +345,15 @@ GetTexture(game_assets *GameAssets, texture_id Index)
 			InitTexture(Result, GL_REPEAT);
 		}
 	}
+
+	return(Result);
+}
+
+inline loaded_sound *
+GetSound(game_assets *GameAssets, sound_id Index)
+{
+	asset_memory_header* Header = GetAsset(GameAssets, Index.Value);
+	loaded_sound *Result = Header ? &Header->Sound : 0;
 
 	return(Result);
 }

@@ -240,6 +240,184 @@ LoadBMP(char *Filename)
 	return(Result);
 }
 
+#pragma pack(push, 1)
+struct wave_header
+{
+	u32 RIFFID;
+	u32 Size;
+	u32 WAVEID;
+};
+
+#define RIFF_CODE(a, b, c, d) (((u32)(a) << 0) | ((u32)(b) << 8) | ((u32)(c) << 16) | ((u32)(d) << 24))
+enum
+{
+	WAVE_ChunkID_fmt = RIFF_CODE('f', 'm', 't', ' '),
+    WAVE_ChunkID_data = RIFF_CODE('d', 'a', 't', 'a'),
+	WAVE_ChunkID_RIFF = RIFF_CODE('R', 'I', 'F', 'F'),
+	WAVE_ChunkID_WAVE = RIFF_CODE('W', 'A', 'V', 'E'),
+};
+
+struct wave_chunk
+{
+    u32 ID;
+    u32 Size;
+};
+
+struct wave_fmt
+{
+	u16 FormatTag;
+	u16 ChannelsCount;
+	u32 SamplesPerSec;
+	u32 AvgBytesPerSec;
+	u16 BlockAlign;
+	u16 BitsPerSample;
+	u16 cbSize;
+    u16 wValidBitsPerSample;
+    u32 dwChannelMask;
+    u8 SubFormat[16];
+};
+
+struct wave_data
+{
+	i16 *Samples;
+};
+#pragma pack(push)
+
+struct wave_chunk_iterator
+{
+	u8 *At;
+	u8 *Stop;
+};
+
+inline wave_chunk_iterator
+StartWaveChunkIterator(void *At, void *Stop)
+{
+	wave_chunk_iterator Iter;
+
+	Iter.At = (u8 *)At;
+	Iter.Stop = (u8 *)Stop;
+
+	return(Iter);
+}
+
+inline bool32 
+IsValid(wave_chunk_iterator Iter)
+{
+	bool32 Result = Iter.At < Iter.Stop;
+
+	return(Result);
+}
+
+inline wave_chunk_iterator
+NextChunk(wave_chunk_iterator Iter)
+{
+	wave_chunk *Chunk = (wave_chunk *)Iter.At;
+	u32 Size = (Chunk->Size + 1) & ~1;
+	Iter.At += sizeof(wave_chunk) + Size;
+
+	return(Iter);
+}
+
+inline u32
+GetType(wave_chunk_iterator Iter)
+{
+	wave_chunk *Chunk = (wave_chunk *)Iter.At;
+	u32 Result = Chunk->ID;
+
+	return(Result);
+}
+
+inline void *
+GetChunkData(wave_chunk_iterator Iter)
+{
+	void *Result = Iter.At + sizeof(wave_chunk);
+
+	return(Result);
+}
+
+inline u32
+GetChunkDataSize(wave_chunk_iterator Iter)
+{
+	wave_chunk *Chunk = (wave_chunk *)Iter.At;
+	u32 Result = Chunk->Size;
+
+	return(Result);
+}
+
+// NOTE(georgy): This supports only PCM format WAV files
+internal loaded_sound
+LoadWAV(char *Filename)
+{
+	loaded_sound Result = {};
+
+	read_entire_file_result FileData = Platform.ReadEntireFile(Filename);
+	if(FileData.Size != 0)
+	{
+		Result.Free = FileData.Memory;
+
+		wave_header *Header = (wave_header *)FileData.Memory;
+		Assert(Header->RIFFID == WAVE_ChunkID_RIFF);
+		Assert(Header->WAVEID == WAVE_ChunkID_WAVE);
+
+		u32 SamplesDataSize = 0;
+		i16 *Samples = 0;
+		for(wave_chunk_iterator Iter = StartWaveChunkIterator(Header + 1, (u8 *)(Header + 1) + Header->Size - 4);
+			IsValid(Iter);
+			Iter = NextChunk(Iter))
+		{
+			switch(GetType(Iter))
+			{
+				case WAVE_ChunkID_fmt:
+				{
+					wave_fmt *FMT = (wave_fmt *)GetChunkData(Iter);
+					Assert(FMT->FormatTag == 1); // NOTE(georgy): PCM
+					Assert(FMT->SamplesPerSec == 44100);
+					Assert(FMT->BitsPerSample == 16);
+					Assert(FMT->BlockAlign == (sizeof(i16)*FMT->ChannelsCount));
+					Result.ChannelsCount = FMT->ChannelsCount;
+				} break;
+
+				case WAVE_ChunkID_data:
+				{
+					Samples = (i16 *)GetChunkData(Iter);
+					SamplesDataSize = GetChunkDataSize(Iter);
+				} break;
+			}
+		}
+
+		Result.SampleCount = SamplesDataSize / (Result.ChannelsCount*sizeof(i16));
+
+		if(Result.ChannelsCount == 1)
+		{
+			Result.Samples[0] = Samples;
+			Result.Samples[1] = 0;
+		}
+		else if(Result.ChannelsCount == 2)
+		{
+			Result.Samples[0] = Samples;
+			Result.Samples[1] = Samples + Result.SampleCount;
+
+			for(u32 SampleIndex = 0;
+				SampleIndex < Result.SampleCount;
+				SampleIndex++)
+			{
+				u16 Temp = Samples[2*SampleIndex];
+				Samples[2*SampleIndex] = Samples[SampleIndex];
+				Samples[SampleIndex] = Temp;
+			}
+		}
+		else
+		{
+			Assert(!"Invalid channel count!");
+		}
+
+		// TODO(georgy): At the moment we use only left channel (the right is the same). Fix this!
+		Result.ChannelsCount = 1;
+	}
+
+	return(Result);
+}
+
 internal loaded_font
 LoadFont(char *Filename, char *FontName, u64 *AssetSize)
 {
@@ -301,7 +479,17 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(LoadAssetJob)
 		case AssetDataType_Texture:
 		{
 			Asset->Header->Texture = LoadBMP(Asset->Filename);
+			// TODO(georgy): This is the size of actual pixels. This doesn't include the size of the header. 
+			// 				 But it is actually in memory too. Do I want to include its size in here?
 			AssetSize = Asset->Header->Texture.Width*Asset->Header->Texture.Height*Asset->Header->Texture.ChannelsCount;
+		} break;
+
+		case AssetDataType_Sound:
+		{
+			Asset->Header->Sound = LoadWAV(Asset->Filename);
+			// TODO(georgy): This is the size of actual samples. This doesn't include the size of the header and other wav chunks. 
+			// 				 But those are actually in memory too. Do I want to include their sizes in here?
+			AssetSize = Asset->Header->Sound.SampleCount*Asset->Header->Sound.ChannelsCount*sizeof(16);
 		} break;
 
 		case AssetDataType_Font:
@@ -331,7 +519,7 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(LoadAssetJob)
     Platform.FreeMemory(Job);
 }
 
-inline void
+internal void
 LoadAsset(game_assets *GameAssets, u32 AssetIndex)
 {
 	if(AssetIndex)
@@ -354,20 +542,26 @@ LoadAsset(game_assets *GameAssets, u32 AssetIndex)
 	}
 }
 
-internal void
+inline void
 LoadModel(game_assets *GameAssets, model_id Index)
 {
 	LoadAsset(GameAssets, Index.Value);
 }
 
-internal void
+inline void
 LoadTexture(game_assets *GameAssets, texture_id Index)
 {
 	LoadAsset(GameAssets, Index.Value);
 }
 
-internal void
+inline void
 LoadFont(game_assets *GameAssets, font_id Index)
+{
+	LoadAsset(GameAssets, Index.Value);
+}
+
+inline void
+LoadSound(game_assets *GameAssets, sound_id Index)
 {
 	LoadAsset(GameAssets, Index.Value);
 }
@@ -390,6 +584,13 @@ inline texture_id
 GetFirstTextureFromType(game_assets *GameAssets, asset_type_id TypeID)
 {
 	texture_id Result = { GetFirstAssetFromType(GameAssets, TypeID) };
+	return(Result);
+}
+
+inline sound_id 
+GetFirstSoundFromType(game_assets *GameAssets, asset_type_id TypeID)
+{
+	sound_id Result = { GetFirstAssetFromType(GameAssets, TypeID) };
 	return(Result);
 }
 
@@ -450,6 +651,13 @@ GetBestMatchTextureFromType(game_assets *GameAssets, asset_type_id TypeID, asset
 	return(Result);
 }
 
+inline sound_id
+GetBestMatchSoundFromType(game_assets *GameAssets, asset_type_id TypeID, asset_tag_vector *MatchVector)
+{
+	sound_id Result = { GetBestMatchAssetFromType(GameAssets, TypeID, MatchVector) };
+	return(Result);
+}
+
 inline font_id
 GetBestMatchFont(game_assets *GameAssets, asset_tag_vector *MatchVector)
 {
@@ -468,25 +676,53 @@ BeginAssetType(game_assets *Assets, asset_type_id ID)
 	Assets->DEBUGAssetType = &Assets->AssetTypes[ID];
 }
 
-internal void
-AddAsset(game_assets *Assets, char *Filename, asset_data_type DataType, 
-		 r32 AdditionalAlignmentY = 0.0f, r32 AdditionalAlignmentX = 0.0f,
-		 char *FontName = 0)
+internal asset *
+AddAsset(game_assets *Assets, char *Filename, asset_data_type DataType)
 {
 	Assert(Assets->DEBUGAssetType);
 
 	asset *Asset = Assets->Assets + Assets->AssetCount++;
 	Asset->State = AssetState_Unloaded;
-	Asset->DataType = DataType;
 	Asset->Filename = Filename;
-	Asset->AdditionalAlignmentY = AdditionalAlignmentY;
-	Asset->AdditionalAlignmentX = AdditionalAlignmentX;
-	Asset->FontName = FontName;
+	Asset->DataType = DataType;
+
 	Asset->FirstTagIndex = Assets->TagCount;
 	Asset->OnePastLastTagIndex = Assets->TagCount;
 	Asset->Header = 0;
 
 	Assets->DEBUGAsset = Asset;
+
+	return(Asset);
+}
+
+inline void
+AddModelAsset(game_assets *Assets, char *Filename, 
+			  r32 AdditionalAlignmentY = 0.0f, r32 AdditionalAlignmentX = 0.0f)
+{
+	asset *Asset = AddAsset(Assets, Filename, AssetDataType_Model);
+
+	Asset->AdditionalAlignmentY = AdditionalAlignmentY;
+	Asset->AdditionalAlignmentX = AdditionalAlignmentX;
+}
+
+inline void
+AddTextureAsset(game_assets *Assets, char *Filename)
+{
+	asset *Asset = AddAsset(Assets, Filename, AssetDataType_Texture);
+}
+
+inline void 
+AddSoundAsset(game_assets *Assets, char *Filename)
+{
+	asset *Asset = AddAsset(Assets, Filename, AssetDataType_Sound);
+}
+
+inline void
+AddFontAsset(game_assets *Assets, char *Filename, char *FontName)
+{
+	asset *Asset = AddAsset(Assets, Filename, AssetDataType_Font);
+	
+	Asset->FontName = FontName;
 }
 
 internal void
@@ -537,58 +773,70 @@ AllocateGameAssets(temp_state *TempState, stack_allocator *Allocator, u64 Size)
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Head);
-	AddAsset(GameAssets, "data/models/head1.cub", AssetDataType_Model, 0.47f);
+	AddModelAsset(GameAssets, "data/models/head1.cub", 0.47f);
 	AddTag(GameAssets, Tag_Color, 1.0f);
-	AddAsset(GameAssets, "data/models/head2.cub", AssetDataType_Model, 0.47f);
+	AddModelAsset(GameAssets, "data/models/head2.cub", 0.47f);
 	AddTag(GameAssets, Tag_Color, 10.0f);
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Shoulders);
-	AddAsset(GameAssets, "data/models/shoulders.cub", AssetDataType_Model, 0.4f);
+	AddModelAsset(GameAssets, "data/models/shoulders.cub", 0.4f);
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Body);
-	AddAsset(GameAssets, "data/models/body.cub", AssetDataType_Model, 0.08f);
+	AddModelAsset(GameAssets, "data/models/body.cub", 0.08f);
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Hand);
-	AddAsset(GameAssets, "data/models/hand.cub", AssetDataType_Model, 0.32f, 0.275f);
+	AddModelAsset(GameAssets, "data/models/hand.cub", 0.32f, 0.275f);
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Foot);
-	AddAsset(GameAssets, "data/models/foot.cub", AssetDataType_Model, 0.0f, 0.15f);
+	AddModelAsset(GameAssets, "data/models/foot.cub", 0.0f, 0.15f);
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Tree);
-	AddAsset(GameAssets, "data/models/tree.cub", AssetDataType_Model, 0.0f, 0.0f);
+	AddModelAsset(GameAssets, "data/models/tree.cub", 0.0f, 0.0f);
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Smoke);
-	AddAsset(GameAssets, "data/textures/smoke.bmp", AssetDataType_Texture);
+	AddTextureAsset(GameAssets, "data/textures/smoke.bmp");
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Fire);
-	AddAsset(GameAssets, "data/textures/particleAtlas.bmp", AssetDataType_Texture);
+	AddTextureAsset(GameAssets, "data/textures/particleAtlas.bmp");
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Cosmic);
-	AddAsset(GameAssets, "data/textures/cosmic.bmp", AssetDataType_Texture);
+	AddTextureAsset(GameAssets, "data/textures/cosmic.bmp");
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_UIBar);
-	AddAsset(GameAssets, "data/textures/hp_bar.bmp", AssetDataType_Texture);
+	AddTextureAsset(GameAssets, "data/textures/hp_bar.bmp");
 	AddTag(GameAssets, Tag_Color, TagColor_Red);
-	AddAsset(GameAssets, "data/textures/mp_bar.bmp", AssetDataType_Texture);
+	AddTextureAsset(GameAssets, "data/textures/mp_bar.bmp");
 	AddTag(GameAssets, Tag_Color, TagColor_Blue);
+	EndAssetType(GameAssets);
+
+	BeginAssetType(GameAssets, AssetType_Music);
+	AddSoundAsset(GameAssets, "data/music/test1.wav");
+	EndAssetType(GameAssets);
+
+	BeginAssetType(GameAssets, AssetType_Fireball);
+	AddSoundAsset(GameAssets, "data/sounds/Fireball.wav");
+	EndAssetType(GameAssets);
+
+	BeginAssetType(GameAssets, AssetType_WaterSplash);
+	AddSoundAsset(GameAssets, "data/sounds/water_splash.wav");
 	EndAssetType(GameAssets);
 
 	// TODO(georgy): It's better to use asset packer I think, because this path may be different on an other machine
 	// 				 so we can pre-pack all textures for font on our machine
 	// 				 Also asset packer allows us to treat character bitmap as any other bitmap (texture)
 	BeginAssetType(GameAssets, AssetType_Font);
-	AddAsset(GameAssets, "C:/Windows/Fonts/Arial.ttf", AssetDataType_Font, 0, 0, "Arial");
+	AddFontAsset(GameAssets, "C:/Windows/Fonts/Arial.ttf", "Arial");
 	AddTag(GameAssets, Tag_FontType, (r32)FontType_DebugFont);
-	AddAsset(GameAssets, "C:/Windows/Fonts/Comic Sans MS.ttf", AssetDataType_Font, 0, 0, "Comic Sans MS");
+	AddFontAsset(GameAssets, "C:/Windows/Fonts/Comic Sans MS.ttf", "Comic Sans MS");
 	AddTag(GameAssets, Tag_FontType, (r32)FontType_GameFont);
 	EndAssetType(GameAssets);
 
@@ -630,6 +878,11 @@ UnloadAssetsIfNecessary(game_assets *GameAssets)
 				case AssetDataType_Texture:
 				{
 					FreeTexture(&LastUsedAsset->Texture);
+				} break;
+
+				case AssetDataType_Sound:
+				{
+					PLATFORM_FREE_MEMORY_AND_ZERO_POINTER(LastUsedAsset->Sound.Free);
 				} break;
 
 				case AssetDataType_Font:

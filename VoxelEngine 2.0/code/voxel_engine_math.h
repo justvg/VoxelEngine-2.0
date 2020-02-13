@@ -3,8 +3,9 @@
 #include <xmmintrin.h>
 
 #define PI 3.14159265358979323846f
-#define INT_MIN (-2147483647 - 1)
-#define INT_MAX 2147483647
+#define I32_MIN (-2147483647 - 1)
+#define I32_MAX 2147483647
+#define U32_MAX 0xFFFFFFFF
 #define FLT_MAX 3.402823466e+38F
 #define DEG2RAD(Deg) ((Deg)/180.0f*PI)
 #define RAD2DEG(Rad) ((Rad)/PI*180.0f)

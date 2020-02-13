@@ -308,11 +308,11 @@ if(DebugEvent##Name) \
 #define BEGIN_BLOCK(...)
 #define END_BLOCK(...)
 
-#define DEBUG_IF(Name) \
+#define DEBUG_IF(Name, ...) \
 bool32 Name = GlobalConstants_##Name; \
 if(Name)
 
-#define DEBUG_VARIABLE(type, Name) \
+#define DEBUG_VARIABLE(type, Name, ...) \
 type Name = GlobalConstants_##Name; 
 
 #endif
