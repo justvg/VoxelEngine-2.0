@@ -253,7 +253,7 @@ struct game_state
 
 	GLuint ParticleVAO, ParticleVBO, ParticlePVBO, ParticleOffsetVBO, ParticleScaleVBO; 
 
-	block_particle_generator BlockParticleGenerator;
+	particle_generator ParticleGenerator;
 
 	// TODO(georgy): Move this to temp state?
 	font_id FontID;
@@ -286,6 +286,8 @@ MakeEntityNonSpatial(sim_entity *Entity)
 	Entity->P = vec3((r32)INVALID_POSITION, (r32)INVALID_POSITION, (r32)INVALID_POSITION);
 	AddFlags(Entity, EntityFlag_NonSpatial);
 
+	// TODO(georgy): Think about this!
+#if 0
 	if(Entity->Particles)
 	{
 		for(u32 ParticleIndex = 0;
@@ -295,4 +297,5 @@ MakeEntityNonSpatial(sim_entity *Entity)
 			Entity->Particles->Particles[ParticleIndex].LifeTime = 0.0f;
 		}
 	}
+#endif
 }

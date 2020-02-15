@@ -871,7 +871,7 @@ HandleCollision(game_state *GameState, sim_region *SimRegion, sim_entity *Entity
 							operation_between_chunks Op = (operation_between_chunks)(OperationBetweenChunks_SetActiveness |
 																					 OperationBetweenChunks_GetColor);
 							OperationBetweenChunks(World, Chunk, X, Y, Z, Op, false, &BlockColor);
-							AddBlockParticle(&GameState->BlockParticleGenerator, WorldBlockP, vec3(BlockColor.m));
+							AddParticle(&GameState->ParticleGenerator, WorldBlockP, DefaultParticleInfoWithColor(vec3(BlockColor.m)));
 						}
 					} 
 				}	
@@ -911,7 +911,7 @@ HandleCollision(game_state *GameState, sim_region *SimRegion, sim_entity *Entity
 		GetBlockIndexFromOffsetInChunk(World, CollisionWorldP.Offset, &X, &Y, &Z);
 		
 		vec4 BlockColor	= GetBlockColorBetweenChunks(World, Chunk, X, Y, Z);
-		AddBlockParticles(&GameState->BlockParticleGenerator, 5, CollisionWorldP, vec3(BlockColor.m));
+		AddParticles(&GameState->ParticleGenerator, 5, CollisionWorldP, DefaultParticleInfoWithColor(vec3(BlockColor.m)));
 	}
 
 	return(Result);
@@ -1268,109 +1268,4 @@ RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegi
 			}
 		}
 	}
-}
-
-internal void
-RenderParticleEffects(game_state *GameState, temp_state *TempState, sim_region *SimRegion, 
-					  shader BillboardShader, vec3 Right)
-{
-	TIME_BLOCK;
-	UseShader(BillboardShader);
-	SetVec3(BillboardShader, "CameraRight", Right);
-	SetVec3(BillboardShader, "CameraUp", vec3(0.0f, 1.0f, 0.0f));
-	SetInt(BillboardShader, "Texture", 0);
-	glEnable(GL_BLEND);
-	glDepthMask(GL_FALSE);
-
-	vec3 ParticlesPositions[MAX_PARTICLES_COUNT];
-	vec2 ParticlesOffsets[MAX_PARTICLES_COUNT];
-	r32 ParticlesScales[MAX_PARTICLES_COUNT];
-
-	for(u32 EntityIndex = 0;
-		EntityIndex < SimRegion->EntityCount;
-		EntityIndex++)
-	{
-		sim_entity *Entity = SimRegion->Entities + EntityIndex;
-		if(Entity->Updatable)
-		{
-			if(Entity->Particles)
-			{
-				particle_emitter *EntityParticles = Entity->Particles;
-				texture_id TextureIndex = GetFirstTextureFromType(TempState->GameAssets, EntityParticles->TextureType);
-				loaded_texture *Texture = GetTexture(TempState->GameAssets, TextureIndex);
-				if(Texture)
-				{
-					SetFloat(BillboardShader, "RowsInAtlas", (r32)EntityParticles->Info.RowsInTextureAtlas);
-					glActiveTexture(GL_TEXTURE0);
-					glBindTexture(GL_TEXTURE_2D, Texture->TextureID);
-					
-					if(EntityParticles->Info.Additive)
-					{
-						glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-					}
-					else
-					{
-						glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-					}
-
-					glBindVertexArray(GameState->ParticleVAO);
-					
-					u32 ParticlesCount = 0;
-					for(u32 ParticleIndex = 0;
-						ParticleIndex < ArrayCount(EntityParticles->Particles);
-						ParticleIndex++)
-					{
-						particle *Particle = EntityParticles->Particles + ParticleIndex;
-
-						if(Particle->LifeTime > 0.0f)
-						{
-							r32 LifeFactor = (EntityParticles->Info.MaxLifeTime - Particle->LifeTime) / EntityParticles->Info.MaxLifeTime;
-							u32 Rows = EntityParticles->Info.RowsInTextureAtlas;
-							u32 StageCount = Rows*Rows;
-							r32 ProgressInTextureAtlas = StageCount*LifeFactor;
-							u32 IndexOfStage = (u32)ProgressInTextureAtlas;
-							u32 Column = IndexOfStage % Rows;
-							u32 Row = IndexOfStage / Rows;
-							vec2 Offset = vec2((r32)Column / Rows, (r32)Row / Rows);
-
-							ParticlesPositions[ParticlesCount] = Particle->P + Entity->P;
-							ParticlesOffsets[ParticlesCount] = Offset;
-							ParticlesScales[ParticlesCount] = Particle->Scale;
-							ParticlesCount++;
-						}
-					}
-
-					glBindBuffer(GL_ARRAY_BUFFER, GameState->ParticlePVBO);
-					glBufferData(GL_ARRAY_BUFFER, sizeof(vec3)*ParticlesCount, ParticlesPositions, GL_STATIC_DRAW);
-					glEnableVertexAttribArray(1);
-					glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
-
-					glBindBuffer(GL_ARRAY_BUFFER, GameState->ParticleOffsetVBO);
-					glBufferData(GL_ARRAY_BUFFER, sizeof(vec2)*ParticlesCount, ParticlesOffsets, GL_STATIC_DRAW);
-					glEnableVertexAttribArray(2);
-					glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(vec2), (void *)0);
-					
-					glBindBuffer(GL_ARRAY_BUFFER, GameState->ParticleScaleVBO);
-					glBufferData(GL_ARRAY_BUFFER, sizeof(r32)*ParticlesCount, ParticlesScales, GL_STATIC_DRAW);
-					glEnableVertexAttribArray(3);
-					glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(r32), (void *)0);
-
-					glVertexAttribDivisor(1, 1);
-					glVertexAttribDivisor(2, 1);
-					glVertexAttribDivisor(3, 1);
-
-					glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, ParticlesCount);
-
-					glBindVertexArray(0);
-				}
-				else
-				{
-					LoadTexture(TempState->GameAssets, TextureIndex);
-				}
-			}
-		}
-	}
-
-	glDepthMask(GL_TRUE);
-	glDisable(GL_BLEND);
 }

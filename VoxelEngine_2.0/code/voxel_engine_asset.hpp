@@ -37,7 +37,7 @@ LoadCub(char *Filename, u64 *ModelSize, r32 AdditionalAlignmentY = 0.0f, r32 Add
 					R = *Voxels++;
 					G = *Voxels++;
 					B = *Voxels++;					
-					if(R != 0 || G != 0 || B != 0)
+					if((R != 0) || (G != 0) || (B != 0))
 					{
 						VoxelsStates[VoxelY*Width*Depth + VoxelZ*Width + VoxelX] = true;
 					}
@@ -224,10 +224,10 @@ LoadBMP(char *Filename)
 			{
 				u32 Color = *SourceDest;
 
-				u8 Red = (Color & RedMask) >> RedShiftRight;
-				u8 Green = (Color & GreenMask) >> GreenShiftRight;
-				u8 Blue = (Color & BlueMask) >> BlueShiftRight;
-				u8 Alpha = (Color & AlphaMask) >> AlphaShiftRight;
+				u8 Red = (u8)((Color & RedMask) >> RedShiftRight);
+				u8 Green = (u8)((Color & GreenMask) >> GreenShiftRight);
+				u8 Blue = (u8)((Color & BlueMask) >> BlueShiftRight);
+				u8 Alpha = (u8)((Color & AlphaMask) >> AlphaShiftRight);
 
 				*SourceDest++ = ((Alpha << 24) |
 								 (Blue << 16) |

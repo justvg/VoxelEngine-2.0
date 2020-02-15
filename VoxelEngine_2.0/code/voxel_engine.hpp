@@ -159,16 +159,24 @@ TESTAddCube(game_state *GameState, world_position P, vec3 Dim, u32 VerticesCount
 	return(StoredEntity);
 }
 
-internal void
-AddParticlesToEntity(game_state *GameState, stored_entity *Entity, particle_emitter_info Info, asset_type_id TextureType)
+inline void
+AddParticlesToEntity(game_state *GameState, stored_entity *Entity, 
+					 r32 MaxLifeTime, u32 SpawnInSecond, r32 Scale,
+					 vec3 StartPRanges, vec3 StartdPRanges, r32 dPY, vec3 StartddP, 
+					 vec3 Color)
 {
 	// TODO(georgy): Allow multiple particle systems for an entity
-	if(!Entity->Sim.Particles)
+	if(!Entity->Sim.ParticlesInfo)
 	{
-		Entity->Sim.Particles = PushStruct(&GameState->FundamentalTypesAllocator, particle_emitter);
-		particle_emitter *EntityParticles = Entity->Sim.Particles;
-		EntityParticles->Info = Info;
-		EntityParticles->TextureType = TextureType;
+		Entity->Sim.ParticlesInfo = PushStruct(&GameState->FundamentalTypesAllocator, particle_emitter_info);
+		Entity->Sim.ParticlesInfo->MaxLifeTime = MaxLifeTime;
+		Entity->Sim.ParticlesInfo->SpawnInSecond = SpawnInSecond;
+		Entity->Sim.ParticlesInfo->Scale = Scale;
+		Entity->Sim.ParticlesInfo->StartPRanges = StartPRanges;
+		Entity->Sim.ParticlesInfo->StartdPRanges = StartdPRanges;
+		Entity->Sim.ParticlesInfo->dPY = dPY;
+		Entity->Sim.ParticlesInfo->StartddP = StartddP;
+		Entity->Sim.ParticlesInfo->Color = Color;
 	}
 }
 
@@ -223,17 +231,9 @@ AddHero(game_state *GameState, world_position P)
 	Entity.StoredEntity->Sim.Collision = GameState->HeroCollision;
 	Entity.StoredEntity->Sim.Fireball.StorageIndex = AddFireball(GameState);
 
-	particle_emitter_info FireballParticleEmitterInfo = {};
-	FireballParticleEmitterInfo.MaxLifeTime = 2.0f;
-	FireballParticleEmitterInfo.RowsInTextureAtlas = 4;
-	FireballParticleEmitterInfo.SpawnInSecond = 60;
-	FireballParticleEmitterInfo.Scale = 0.25f;
-	FireballParticleEmitterInfo.StartPRanges = vec3(0.5f, 0.0f, 0.5f);
-	FireballParticleEmitterInfo.StartdPRanges = vec3(0.5f, 0.0f, 0.5f);
-	FireballParticleEmitterInfo.dPY = 7.0f;
-	FireballParticleEmitterInfo.StartddP = vec3(0.0f, -9.8f, 0.0f);
 	AddParticlesToEntity(GameState, &GameState->StoredEntities[Entity.StoredEntity->Sim.Fireball.StorageIndex], 
-						 FireballParticleEmitterInfo, AssetType_Fire);
+						 1.0f, 40, 1.0f, vec3(1.0f, 0.0f, 1.0f), vec3(1.0f, 0.0f, 1.0f), 4.0f, vec3(0.0f, -9.8f, 0.0f),
+						 vec3(1.0f, 0.078f, 0.098f));
 
 	return(Entity.StoredEntity);
 }
@@ -341,7 +341,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		CompileShader(&GameState->UIGlyphShader, "data/shaders/GlyphVS.glsl", "data/shaders/GlyphFS.glsl");
 		CompileShader(&GameState->FramebufferScreenShader, "data/shaders/FramebufferScreenVS.glsl", "data/shaders/FramebufferScreenFS.glsl");
 
-		block_particle_generator *BlockParticleGenerator = &GameState->BlockParticleGenerator;
+		particle_generator *ParticleGenerator = &GameState->ParticleGenerator;
 		r32 BlockParticleVertices[] = 
 		{
 			0.1f, -0.1f, -0.1f,  0.0f,  0.0f, -1.0f,
@@ -386,12 +386,13 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 			0.1f,  0.1f,  0.1f,  0.0f,  1.0f,  0.0f,
 			-0.1f,  0.1f, -0.1f,  0.0f,  1.0f,  0.0f
 		};
-		glGenVertexArrays(1, &BlockParticleGenerator->VAO);
-		glGenBuffers(1, &BlockParticleGenerator->VBO);
-		glGenBuffers(1, &BlockParticleGenerator->SimPVBO);
-		glGenBuffers(1, &BlockParticleGenerator->ColorVBO);
-		glBindVertexArray(BlockParticleGenerator->VAO);
-		glBindBuffer(GL_ARRAY_BUFFER, BlockParticleGenerator->VBO);
+		glGenVertexArrays(1, &ParticleGenerator->VAO);
+		glGenBuffers(1, &ParticleGenerator->VBO);
+		glGenBuffers(1, &ParticleGenerator->SimPVBO);
+		glGenBuffers(1, &ParticleGenerator->ColorVBO);
+		glGenBuffers(1, &ParticleGenerator->ScaleVBO);
+		glBindVertexArray(ParticleGenerator->VAO);
+		glBindBuffer(GL_ARRAY_BUFFER, ParticleGenerator->VBO);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(BlockParticleVertices), BlockParticleVertices, GL_STATIC_DRAW);
 		glEnableVertexAttribArray(0);
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6*sizeof(r32), (void *)0);
@@ -518,33 +519,18 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 
 		world_position TestP = {};
 		TestP.Offset = vec3(0.0f, 8.0f, 3.0f);
-		particle_emitter_info CubeParticleEmitterInfo = {};
-		CubeParticleEmitterInfo.Additive = true;
-		CubeParticleEmitterInfo.MaxLifeTime = 2.0f;
-		CubeParticleEmitterInfo.RowsInTextureAtlas = 4;
-		CubeParticleEmitterInfo.SpawnInSecond = 120;
-		CubeParticleEmitterInfo.Scale = 0.3f;
-		CubeParticleEmitterInfo.StartPRanges = vec3(0.12f, 0.0f, 0.12f);
-		CubeParticleEmitterInfo.StartdPRanges = vec3(0.5f, 0.0f, 0.5f);
-		CubeParticleEmitterInfo.dPY = 7.0f;
-		CubeParticleEmitterInfo.StartddP = vec3(0.0f, -9.8f, 0.0f);
-		AddParticlesToEntity(GameState, TESTAddCube(GameState, TestP, vec3(1.0f, 1.0f, 1.0f), 36, CubeVertices),
-							 CubeParticleEmitterInfo, AssetType_Cosmic);
+		// AddParticlesToEntity(GameState, TESTAddCube(GameState, TestP, vec3(1.0f, 1.0f, 1.0f), 36, CubeVertices),
+		// 					 2.0f, 10, 0.3f, vec3(0.5f, 0.0f, 0.5f), vec3(0.5f, 0.0f, 0.5f), 4.0f, vec3(0.0f, -9.8f, 0.0f),
+		// 					 vec3(0.0f, 0.0f, 0.7f));
 
 		world_position HeroP = {};
 		HeroP.ChunkY = MAX_CHUNKS_Y;
 		HeroP.Offset = vec3(0.3f, 5.0f, 3.0f);
 		GameState->Hero.Entity = AddHero(GameState, HeroP);
 		GameState->LastHeroWorldP = HeroP;
-		particle_emitter_info ParticleEmitterInfo = {};
-		ParticleEmitterInfo.MaxLifeTime = 2.0f;
-		ParticleEmitterInfo.RowsInTextureAtlas = 8;
-		ParticleEmitterInfo.SpawnInSecond = 120;
-		ParticleEmitterInfo.Scale = 1.0f;
-		ParticleEmitterInfo.StartPRanges = vec3(0.0f, 0.0f, 0.0f);
-		ParticleEmitterInfo.StartdPRanges = vec3(0.5f, 0.0f, 0.5f);
-		ParticleEmitterInfo.dPY = 2.0f;
-		// AddParticlesToEntity(GameState, GameState->Hero.Entity, ParticleEmitterInfo, AssetType_Smoke);
+		// AddParticlesToEntity(GameState, GameState->Hero.Entity,
+		// 					 1.5f, 30, 0.2f, vec3(0.0f, 0.0f, 0.0f), vec3(0.65f, 0.0f, 0.65f), 2.0f, vec3(0.0f, 0.0f, 0.0f),
+		// 					 vec3(0.25f, 0.25f, 0.25f));
 
 		world_position TestTreeP = {};
 		TestTreeP.ChunkY = MAX_CHUNKS_Y;
@@ -638,7 +624,9 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	camera *Camera = &GameState->Camera;
 	Camera->AspectRatio = (r32)BufferWidth/(r32)BufferHeight;
 
+#if VOXEL_ENGINE_INTERNAL
 	if(!DebugCamera || DEBUGGlobalPlaybackInfo.PlaybackPhase)
+#endif
 	{
 		Camera->Pitch -= Input->MouseYDisplacement*Camera->RotSensetivity;
 		Camera->Head += Input->MouseXDisplacement*Camera->RotSensetivity;
@@ -664,7 +652,9 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	GameState->Hero.ddP = vec3(0.0f, 0.0f, 0.0f);
 
 	// NOTE(georgy): Hero input stuff
+#if VOXEL_ENGINE_INTERNAl
 	if(DEBUGGlobalPlaybackInfo.PlaybackPhase || (!GameProfilingPause && !DebugCamera))
+#endif
 	{
 		if (Input->MoveForward.EndedDown)
 		{
@@ -919,15 +909,11 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 				} break;
 			}
 
-			if(Entity->Particles)
+			if(Entity->ParticlesInfo)
 			{
-				particle_emitter *EntityParticles = Entity->Particles;
-				UpdateParticles(EntityParticles, Camera, Entity->P, dt);
-				SpawnParticles(EntityParticles, Camera, Entity->P, dt);
-				if(!EntityParticles->Info.Additive)
-				{
-					SortParticles(EntityParticles->Particles, ArrayCount(EntityParticles->Particles));
-				}
+				particle_emitter_info *EntityParticlesInfo = Entity->ParticlesInfo;
+				world_position EntityWorldPosition = GameState->StoredEntities[Entity->StorageIndex].P;
+				SpawnParticles(&GameState->ParticleGenerator, EntityWorldPosition, *Entity->ParticlesInfo, dt);
 			}
 
 			if(IsSet(Entity, EntityFlag_Moveable))
@@ -937,7 +923,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 			}
 		}
 	}
-	BlockParticlesUpdate(&GameState->BlockParticleGenerator, Input->dt);
+	ParticlesUpdate(&GameState->ParticleGenerator, Input->dt);
 
 	DEBUG_VARIABLE(bool32, ShowDebugDrawings, Rendering);
 
@@ -951,7 +937,10 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	{
 		GameState->t = 0.0f;
 	} 
-	if(ShowDebugDrawings) DEBUGRenderLine(vec3(0.0f, 0.0f, 0.0f), -GameState->DirectionalLightDir, vec3(1.0f, 1.0f, 0.0f));
+	if (ShowDebugDrawings)
+	{
+		DEBUGRenderLine(vec3(0.0f, 0.0f, 0.0f), -GameState->DirectionalLightDir, vec3(1.0f, 1.0f, 0.0f));
+	}
 
 
 	// NOTE(georgy): Directional shadow map rendering
@@ -999,7 +988,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 			vec3 SphereP;
 			r32 Radius;
 			r32 MinX = FLT_MAX, MinY = FLT_MAX, MinZ = FLT_MAX, MaxX = -FLT_MAX, MaxY = -FLT_MAX, MaxZ = -FLT_MAX;
-			u32 MinXIndex, MinYIndex, MinZIndex, MaxXIndex, MaxYIndex, MaxZIndex;
+			u32 MinXIndex = ArrayCount(Cascade) - 1, MinYIndex = ArrayCount(Cascade) - 1, MinZIndex = ArrayCount(Cascade) - 1, MaxXIndex = 0, MaxYIndex = 0, MaxZIndex = 0;
 			for(u32 PointIndex = 0;
 				PointIndex < ArrayCount(Cascade);
 				PointIndex++)
@@ -1089,8 +1078,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 			RenderEntities(GameState, TempState, SimRegion, GameState->WorldDepthShader, 
 						   GameState->CharacterDepthShader, GameState->HitpointsShader, Right);
 			RenderChunks(&GameState->World, GameState->WorldDepthShader, GameState->WaterShader, LightSpaceMatrices[CascadeIndex], Camera->OffsetFromHero);
-			RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, &TempState->Allocator, 
-								 GameState->BlockParticleDepthShader, GameState->Hero.Entity->P);
+			RenderParticles(&GameState->ParticleGenerator, &GameState->World, &TempState->Allocator, 
+						    GameState->BlockParticleDepthShader, GameState->Hero.Entity->P);
 		}
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -1200,9 +1189,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 				   GameState->WorldShader, GameState->CharacterShader, GameState->HitpointsShader,
 				   Right, ShowDebugDrawings);
 	RenderChunks(&GameState->World, GameState->WorldShader, GameState->WaterShader, ViewProjection, Camera->OffsetFromHero);
-	RenderBlockParticles(&GameState->BlockParticleGenerator, &GameState->World, &TempState->Allocator, 
-						 GameState->BlockParticleShader, GameState->Hero.Entity->P);
-	RenderParticleEffects(GameState, TempState, SimRegion, GameState->BillboardShader, Right);
+	RenderParticles(&GameState->ParticleGenerator, &GameState->World, &TempState->Allocator, 
+					GameState->BlockParticleShader, GameState->Hero.Entity->P);
 
 	// NOTE(georgy): Render UI
 	mat4 Orthographic = Ortho(-0.5f*BufferHeight, 0.5f*BufferHeight, 

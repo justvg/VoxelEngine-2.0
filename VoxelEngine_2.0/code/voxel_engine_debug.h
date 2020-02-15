@@ -205,8 +205,8 @@ RecordDebugEvent(debug_event_type Type, char *FileName, char *Name, u32 LineNumb
         Event->Name = Name;
         Event->LineNumber = LineNumber;
         Event->Clock = __rdtsc();
-        Event->ThreadID = GetThreadID();
-        Event->Type = Type;
+        Event->ThreadID = (u16)GetThreadID();
+        Event->Type = (u8)Type;
 	}
 
 	return(Event);
@@ -274,8 +274,8 @@ inline debug_event DEBUGInitializeValue(debug_event *SubEvent, debug_event_type 
     SubEvent->Name = Name;
     SubEvent->LineNumber = LineNumber;
     SubEvent->Clock = 0;
-    SubEvent->Type = Type;
-    SubEvent->Group = Group;
+    SubEvent->Type = (u8)Type;
+    SubEvent->Group = (u8)Group;
 
 	return(*SubEvent);
 }
@@ -314,5 +314,7 @@ if(Name)
 
 #define DEBUG_VARIABLE(type, Name, ...) \
 type Name = GlobalConstants_##Name; 
+
+#define DEBUG_VALUE(...)
 
 #endif

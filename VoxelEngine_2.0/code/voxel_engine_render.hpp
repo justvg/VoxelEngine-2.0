@@ -272,151 +272,93 @@ DrawModel(shader Shader, game_assets *GameAssets, model_id ModelIndex, r32 Rotat
 
 
 internal void
-UpdateParticles(particle_emitter *Particles, camera *Camera, vec3 BaseP, r32 dt)
+AddParticle(particle_generator *Generator, world_position BaseP, particle_emitter_info Info)
+{
+	particle *Particle = Generator->Particles + Generator->NextParticle++;
+	if(Generator->NextParticle >= ArrayCount(Generator->Particles))
+	{
+		Generator->NextParticle = 0;
+	}
+	Particle->BaseP = BaseP;
+	Particle->P = Hadamard(vec3((((rand() % 100) - 50) / 50.0f), (((rand() % 100) - 50) / 50.0f), (((rand() % 100) - 50) / 50.0f)),
+							Info.StartPRanges);
+
+	Particle->dP = Hadamard(vec3((((rand() % 100) - 50) / 50.0f), (((rand() % 100) - 50) / 50.0f), (((rand() % 100) - 50) / 50.0f)),
+							Info.StartdPRanges);
+	if(Info.dPY != 0.0f)
+	{
+		Particle->dP.SetY(Info.dPY);
+	}
+
+	Particle->ddP = Info.StartddP;
+
+	Particle->Color = Info.Color;
+	Particle->LifeTime = Info.MaxLifeTime;
+	Particle->Scale = Info.Scale;
+}
+
+internal void
+SpawnParticles(particle_generator *Generator, world_position BaseP, particle_emitter_info Info, r32 dt)
+{
+	u32 ParticlesToSpawnCount = (u32)Round(Info.SpawnInSecond * dt);
+	for(u32 ParticleSpawnIndex = 0;
+		ParticleSpawnIndex < ParticlesToSpawnCount;
+		ParticleSpawnIndex++)
+	{
+		AddParticle(Generator, BaseP, Info);
+	}
+}
+
+internal void
+AddParticles(particle_generator *Generator, u32 Count, world_position BaseP, particle_emitter_info Info)
+{
+	for(u32 ParticleIndex = 0;
+		ParticleIndex < Count;
+		ParticleIndex++)
+	{
+		AddParticle(Generator, BaseP, Info);
+	}
+}
+
+internal void
+ParticlesUpdate(particle_generator *Generator, r32 dt)
 {
 	TIME_BLOCK;
 	for(u32 ParticleIndex = 0;
-		ParticleIndex < ArrayCount(Particles->Particles);
+		ParticleIndex < ArrayCount(Generator->Particles);
 		ParticleIndex++)
 	{
-		particle *Particle = Particles->Particles + ParticleIndex;
+		particle *Particle = Generator->Particles + ParticleIndex;
 		if(Particle->LifeTime > 0.0f)
 		{
 			Particle->P += 0.5f*Particle->ddP*dt*dt + Particle->dP*dt;
 			Particle->dP += Particle->ddP*dt;
 			Particle->LifeTime -= dt;
-			vec3 VecToCamera = (BaseP + Particle->P) - 
-							   (Camera->OffsetFromHero + Camera->TargetOffset);
-			VecToCamera.SetY(0.0f);
-			Particle->DistanceFromCameraSq = LengthSq(VecToCamera);
 		}
 	}
 }
 
 internal void
-SpawnParticles(particle_emitter *Particles, camera *Camera, vec3 BaseP, r32 dt)
-{
-	u32 ParticlesToSpawnCount = (u32)(Particles->Info.SpawnInSecond * dt);
-	for(u32 ParticleSpawnIndex = 0;
-		ParticleSpawnIndex < ParticlesToSpawnCount;
-		ParticleSpawnIndex++)
-	{
-		particle *Particle = Particles->Particles + Particles->NextParticle++;
-		if(Particles->NextParticle >= ArrayCount(Particles->Particles))
-		{
-			Particles->NextParticle = 0;
-		}
-
-		Particle->P = Hadamard(vec3((((rand() % 100) - 50) / 50.0f), (((rand() % 100) - 50) / 50.0f), (((rand() % 100) - 50) / 50.0f)),
-							   Particles->Info.StartPRanges);
-		Particle->dP = Hadamard(vec3((((rand() % 100) - 50) / 50.0f), (((rand() % 100) - 50) / 50.0f), (((rand() % 100) - 50) / 50.0f)),
-							   Particles->Info.StartdPRanges);
-		if(Particles->Info.dPY != 0.0f)
-		{
-			Particle->dP.SetY(Particles->Info.dPY);
-		}
-		Particle->ddP = Particles->Info.StartddP;
-		Particle->Scale = Particles->Info.Scale;
-		Particle->LifeTime = Particles->Info.MaxLifeTime;
-		vec3 VecToCamera = (BaseP + Particle->P) - 
-   						   (Camera->OffsetFromHero + Camera->TargetOffset);
-		VecToCamera.SetY(0.0f);
-		Particle->DistanceFromCameraSq = LengthSq(VecToCamera);
-	}
-}
-
-internal void
-SortParticles(particle *Particles, u32 ParticlesCount)
-{
-	TIME_BLOCK;
-	for(u32 StartIndex = 0;
-		StartIndex < ParticlesCount - 1;
-		StartIndex++)
-	{
-		u32 MaxDistanceIndex = StartIndex;
-		for(u32 ParticleIndex = StartIndex + 1;
-			ParticleIndex < ParticlesCount;
-			ParticleIndex++)
-		{
-			if(Particles[MaxDistanceIndex].DistanceFromCameraSq < Particles[ParticleIndex].DistanceFromCameraSq)
-			{
-				MaxDistanceIndex = ParticleIndex;
-			}
-		}
-
-		particle Temp = Particles[StartIndex];
-		Particles[StartIndex] = Particles[MaxDistanceIndex];
-		Particles[MaxDistanceIndex] = Temp;
-	}
-}
-
-
-internal void
-AddBlockParticle(block_particle_generator *Generator, world_position BaseP, vec3 Color)
-{
-	block_particle *BlockParticle = Generator->Particles + Generator->NextParticle++;
-	if(Generator->NextParticle >= ArrayCount(Generator->Particles))
-	{
-		Generator->NextParticle = 0;
-	}
-	BlockParticle->BaseP = BaseP;
-	BlockParticle->P = vec3((((rand() % 100) - 50) / 50.0f), (((rand() % 100) - 50) / 150.0f), (((rand() % 100) - 50) / 50.0f));
-	BlockParticle->dP = vec3((((rand() % 100) - 50) / 50.0f), 6.0f, (((rand() % 100) - 50) / 50.0f));
-	BlockParticle->ddP = vec3(0.0f, -9.8f, 0.0f);
-
-	BlockParticle->Color = Color;
-
-	BlockParticle->LifeTime = 1.5f;
-}
-
-internal void
-AddBlockParticles(block_particle_generator *Generator, u32 Count, world_position BaseP, vec3 Color)
-{
-	for(u32 BlockParticleIndex = 0;
-		BlockParticleIndex < Count;
-		BlockParticleIndex++)
-	{
-		AddBlockParticle(Generator, BaseP, Color);
-	}
-}
-
-internal void
-BlockParticlesUpdate(block_particle_generator *Generator, r32 dt)
-{
-	TIME_BLOCK;
-	for(u32 BlockParticleIndex = 0;
-		BlockParticleIndex < ArrayCount(Generator->Particles);
-		BlockParticleIndex++)
-	{
-		block_particle *BlockParticle = Generator->Particles + BlockParticleIndex;
-		if(BlockParticle->LifeTime > 0.0f)
-		{
-			BlockParticle->P += 0.5f*BlockParticle->ddP*dt*dt + BlockParticle->dP*dt;
-			BlockParticle->dP += BlockParticle->ddP*dt;
-			BlockParticle->LifeTime -= dt;
-		}
-	}
-}
-
-internal void
-RenderBlockParticles(block_particle_generator *Generator, world *World, stack_allocator *Allocator, 
+RenderParticles(particle_generator *Generator, world *World, stack_allocator *Allocator, 
 					 shader Shader, world_position Origin)
 {
 	TIME_BLOCK;
-	u32 BlockParticlesCount = 0;
-	vec3 *BlockParticlesPositions = PushArray(Allocator, MAX_BLOCK_PARTICLES_COUNT, vec3);
-	vec3 *BlockParticlesColors = PushArray(Allocator, MAX_BLOCK_PARTICLES_COUNT, vec3);
+	u32 ParticlesCount = 0;
+	vec3 *ParticlesPositions = PushArray(Allocator, MAX_PARTICLES_COUNT, vec3);
+	vec3 *ParticlesColors = PushArray(Allocator, MAX_PARTICLES_COUNT, vec3);
+	r32 *ParticlesScales = PushArray(Allocator, MAX_PARTICLES_COUNT, r32);
 
-	for(u32 BlockParticleIndex = 0;
-		BlockParticleIndex < ArrayCount(Generator->Particles);
-		BlockParticleIndex++)
+	for(u32 ParticleIndex = 0;
+		ParticleIndex < ArrayCount(Generator->Particles);
+		ParticleIndex++)
 	{
-		block_particle *BlockParticle = Generator->Particles + BlockParticleIndex;
-		if(BlockParticle->LifeTime > 0.0f)
+		particle *Particle = Generator->Particles + ParticleIndex;
+		if(Particle->LifeTime > 0.0f)
 		{
-			BlockParticlesPositions[BlockParticlesCount] = Substract(World, &BlockParticle->BaseP, &Origin) + BlockParticle->P;
-			BlockParticlesColors[BlockParticlesCount] = BlockParticle->Color;
-			BlockParticlesCount++;
+			ParticlesPositions[ParticlesCount] = Substract(World, &Particle->BaseP, &Origin) + Particle->P;
+			ParticlesColors[ParticlesCount] = Particle->Color;
+			ParticlesScales[ParticlesCount] = Particle->Scale;
+			ParticlesCount++;
 		}
 	}
 
@@ -424,19 +366,25 @@ RenderBlockParticles(block_particle_generator *Generator, world *World, stack_al
 	glBindVertexArray(Generator->VAO);
 
 	glBindBuffer(GL_ARRAY_BUFFER, Generator->SimPVBO);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vec3)*BlockParticlesCount, BlockParticlesPositions, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vec3)*ParticlesCount, ParticlesPositions, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(2);
 	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
 
 	glBindBuffer(GL_ARRAY_BUFFER, Generator->ColorVBO);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vec3)*BlockParticlesCount, BlockParticlesColors, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vec3)*ParticlesCount, ParticlesColors, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(3);
 	glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
 
+	glBindBuffer(GL_ARRAY_BUFFER, Generator->ScaleVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(r32)*ParticlesCount, ParticlesScales, GL_STATIC_DRAW);
+	glEnableVertexAttribArray(4);
+	glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(r32), (void *)0);
+
 	glVertexAttribDivisor(2, 1);
 	glVertexAttribDivisor(3, 1);
+	glVertexAttribDivisor(4, 1);
 
-	glDrawArraysInstanced(GL_TRIANGLES, 0, 36, BlockParticlesCount);
+	glDrawArraysInstanced(GL_TRIANGLES, 0, 36, ParticlesCount);
 
 	glBindVertexArray(0);
 }
@@ -444,6 +392,8 @@ RenderBlockParticles(block_particle_generator *Generator, world *World, stack_al
 // 
 // 
 // 
+
+#if VOXEL_ENGINE_INTERNAL
 
 global_variable debug_draw_info GlobalDebugDrawInfo;
 
@@ -695,3 +645,16 @@ DEBUGRenderPoint(vec3 P, vec3 Color = vec3(1.0, 0.0, 0.0))
 {
 	DEBUGRenderSphere(P, vec3(0.1f, 0.1f, 0.1f), 0.0f, Color);
 }
+
+#else
+
+#define InitializeGlobalDrawInfo(...)
+#define DEBUGBeginRenderDebugObject(...)
+#define DEBUGEndRenderDebugObject(...)
+#define DEBUGRenderCube(...)
+#define DEBUGRenderSphere(...)
+#define DEBUGRenderLine(...)
+#define DEBUGRenderAxes(...)
+#define DEBUGRenderPoint(...)
+
+#endif

@@ -1,8 +1,6 @@
-#define VOXEL_ENGINE_INTERNAL 1
-
 // TODO(georgy): Replace glew lib with my code
-#include <gl\glew.h>
-#include <gl\wglew.h>
+#include "gl\glew.h"
+#include "gl\wglew.h"
 
 // TOOD(georgy): Get rid of this
 #include <stdio.h>

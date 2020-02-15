@@ -9,4 +9,4 @@
 
 #define GlobalConstants_DebugCamera false
 #define GlobalConstants_Profiling false
-#define GlobalConstants_GlobalVolume 1.0f
+#define GlobalConstants_GlobalVolume 0.1f

@@ -121,7 +121,7 @@ OperationBetweenChunks(world *World, chunk *Chunk, i32 X, i32 Y, i32 Z, operatio
 		if(Op & OperationBetweenChunks_SetActiveness)
 		{
 			// NOTE(georgy): This assumes to only set Activeness to false!
-			SetActiveness(Chunk->BlocksInfo->Blocks, X, Y, Z, Activeness);
+			SetActiveness(Chunk->BlocksInfo->Blocks, X, Y, Z, (bool8)Activeness);
 			Chunk->IsModified = true;
 		}
 
