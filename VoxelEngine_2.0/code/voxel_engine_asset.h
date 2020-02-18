@@ -1,28 +1,33 @@
 #pragma once
+#include "voxel_engine_file_formats.h"
 
 struct loaded_model
 {
 	GLuint VAO, PVBO, NormalsVBO, ColorsVBO;
+
 	u32 VerticesCount;
+	vec3 *Positions;
+	vec3 *Normals;
+	vec3 *Colors;
 
 	vec3 Alignment;
 	r32 AlignmentX; // NOTE(georgy): This is for models like hands, where we need to multiply this by EntityRight vec
-
-	dynamic_array_vec3 VerticesP;
-	dynamic_array_vec3 Normals;
-	dynamic_array_vec3 VertexColors;
 };
 
 struct loaded_texture
 {
 	GLuint TextureID;
+
 	i32 Width, Height, ChannelsCount;
 
 	// NOTE(georgy): For glyphs (to count descent)
 	r32 AlignPercentageY;
 
-	u8 *Data;
-	void *Free;
+	union
+	{
+		u8 *Data;
+		void *Free;
+	};
 };
 
 struct loaded_sound
@@ -32,6 +37,19 @@ struct loaded_sound
 	u32 ChannelsCount;
 
 	void *Free;
+};
+
+struct loaded_font
+{
+	loaded_texture *Glyphs;
+	r32 *HorizontalAdvances;
+	
+	u32 LineAdvance;
+	u32 AscenderHeight;
+
+	u32 GlyphsCount;
+	u32 FirstCodepoint;
+	u32 LastCodepoint;
 };
 
 struct model_id
@@ -52,50 +70,6 @@ struct font_id
 struct sound_id
 {
 	u32 Value;
-};
-
-enum asset_type_id
-{
-	AssetType_Null,
-	
-	// 
-	// NOTE(georgy): Models! 
-	// 
-
-	AssetType_Head,
-	AssetType_Shoulders,
-	AssetType_Body,
-	AssetType_Hand,
-	AssetType_Foot,
-
-	AssetType_Tree,
-
-	// 
-	// NOTE(georgy): Textures! 
-	// 
-
-	AssetType_Smoke,
-	AssetType_Fire,
-	AssetType_Cosmic,
-
-	AssetType_UIBar,
-
-	// 
-	// NOTE(georgy): Sounds!
-	// 
-
-	AssetType_Music,
-	AssetType_WaterSplash,
-	AssetType_Fireball,
-
-	// 
-	// NOTE(georgy): Fonts!
-	// 
-
-	AssetType_Font,
-	AssetType_FontGlyph,
-
-	AssetType_Count
 };
 
 struct asset_memory_header
@@ -120,61 +94,14 @@ enum asset_state
 	AssetState_Queued,
 	AssetState_Loaded
 };
-enum asset_data_type
-{
-	AssetDataType_Null,
 
-	AssetDataType_Model,
-	AssetDataType_Texture,
-	AssetDataType_Sound,
-	AssetDataType_Font,
-};
 struct asset
 {
 	asset_state State;
 	asset_data_type DataType;
-
-	char *Filename;
-
-	r32 AdditionalAlignmentY;
-	r32 AdditionalAlignmentX;	
-
-	char *FontName;
-
-	u32 FirstTagIndex;
-	u32 OnePastLastTagIndex;
 	asset_memory_header *Header;
-};
 
-struct asset_type 
-{
-	u32 FirstAssetIndex;
-	u32 OnePastLastAssetIndex;
-};
-
-enum tag_color
-{
-	TagColor_Red = 1,
-	TagColor_Green = 2,
-	TagColor_Blue = 3,
-};
-enum asset_font_type
-{
-	FontType_DebugFont = 1,
-	FontType_GameFont = 5,
-};
-enum asset_tag_id
-{
-	Tag_Color,
-	Tag_FontType,
-
-	Tag_Count
-};
-
-struct asset_tag
-{
-	asset_tag_id ID;
-	r32 Value;
+	vea_asset VEAAsset;
 };
 
 struct asset_tag_vector
@@ -184,25 +111,24 @@ struct asset_tag_vector
 
 struct game_assets
 {
-	asset_type AssetTypes[AssetType_Count];
+	u32 TagCount;
+	vea_asset_tag *Tags;
 
 	u32 AssetCount;
-	asset Assets[256];
+	asset *Assets;
 
-	u32 TagCount;
-	asset_tag Tags[256];
+	vea_asset_type AssetTypes[AssetType_Count];
 
 	asset_memory_header MemoryHeaderSentinel;
 
 	u64 MemorySizeRestriction;
 	u64 UsedMemory;
 
+	platform_file_handle File;
+
 	u32 Lock;
 
 	struct temp_state *TempState;
-
-	asset_type *DEBUGAssetType; 
-	asset *DEBUGAsset;
 };
 
 inline void
@@ -280,22 +206,18 @@ GetModel(game_assets *GameAssets, model_id Index)
 			glGenBuffers(1, &Result->ColorsVBO);
 			glBindVertexArray(Result->VAO);
 			glBindBuffer(GL_ARRAY_BUFFER, Result->PVBO);
-			glBufferData(GL_ARRAY_BUFFER, Result->VerticesP.EntriesCount*sizeof(vec3), Result->VerticesP.Entries, GL_STATIC_DRAW);
+			glBufferData(GL_ARRAY_BUFFER, Result->VerticesCount*sizeof(vec3), Result->Positions, GL_STATIC_DRAW);
 			glEnableVertexAttribArray(0);
 			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
 			glBindBuffer(GL_ARRAY_BUFFER, Result->NormalsVBO);
-			glBufferData(GL_ARRAY_BUFFER, Result->Normals.EntriesCount*sizeof(vec3), Result->Normals.Entries, GL_STATIC_DRAW);
+			glBufferData(GL_ARRAY_BUFFER, Result->VerticesCount*sizeof(vec3), Result->Normals, GL_STATIC_DRAW);
 			glEnableVertexAttribArray(1);
 			glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
 			glBindBuffer(GL_ARRAY_BUFFER, Result->ColorsVBO);
-			glBufferData(GL_ARRAY_BUFFER, Result->VertexColors.EntriesCount*sizeof(vec3), Result->VertexColors.Entries, GL_STATIC_DRAW);
+			glBufferData(GL_ARRAY_BUFFER, Result->VerticesCount*sizeof(vec3), Result->Colors, GL_STATIC_DRAW);
 			glEnableVertexAttribArray(2);
 			glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void *)0);
 			glBindVertexArray(0);
-
-			FreeDynamicArray(&Result->VerticesP);
-			FreeDynamicArray(&Result->Normals);
-			FreeDynamicArray(&Result->VertexColors);
 		}
 	}
 

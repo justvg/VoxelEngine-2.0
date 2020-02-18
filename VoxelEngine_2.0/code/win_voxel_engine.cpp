@@ -22,13 +22,13 @@ global_variable WINDOWPLACEMENT GlobalWindowPosition = { sizeof(GlobalWindowPosi
 
 global_variable bool8 GlobalDEBUGCursor;
 
-ALLOCATE_MEMORY(WinAllocateMemory)
+internal ALLOCATE_MEMORY(WinAllocateMemory)
 {
 	void *Result = VirtualAlloc(0, Size, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
 	return(Result);
 }
 
-FREE_MEMORY(WinFreeMemory)
+internal FREE_MEMORY(WinFreeMemory)
 {
 	if(Memory)
 	{
@@ -36,12 +36,12 @@ FREE_MEMORY(WinFreeMemory)
 	}
 }
 
-OUTPUT_DEBUG_STRING(WinOutputDebugString)
+internal OUTPUT_DEBUG_STRING(WinOutputDebugString)
 {
 	OutputDebugString(String);
 }
 
-READ_ENTIRE_FILE(WinReadEntireFile)
+internal READ_ENTIRE_FILE(WinReadEntireFile)
 {
 	read_entire_file_result Result = {};
 
@@ -74,201 +74,42 @@ READ_ENTIRE_FILE(WinReadEntireFile)
 	return(Result);
 }
 
-internal void
-WinWriteEntireFile(HANDLE FileHandle, void *Memory, u64 MemorySize)
+struct win_file_handle
 {
-	if(FileHandle != INVALID_HANDLE_VALUE)
+	HANDLE WinHandle;
+};
+
+internal OPEN_FILE(WinOpenFile)
+{
+	platform_file_handle Result = {};
+	HANDLE *FileHandle = (HANDLE *)VirtualAlloc(0, sizeof(win_file_handle), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+	Result.Platform = FileHandle;
+
+	*FileHandle = CreateFile(Filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+
+	return(Result);
+}	
+
+internal READ_DATA_FROM_FILE(WinReadDataFromFile)
+{
+	win_file_handle *FileHandle = (win_file_handle *)Source.Platform;
+	if (FileHandle->WinHandle != INVALID_HANDLE_VALUE)
 	{
-		DWORD BytesWritten;
-		if(WriteFile(FileHandle, Memory, (DWORD)MemorySize, &BytesWritten, 0))
+		OVERLAPPED Overlapped = {};
+		Overlapped.Offset = (DWORD)(DataOffset & 0xFFFFFFFF);
+		Overlapped.OffsetHigh = (DWORD)((DataOffset >> 32) & 0xFFFFFFFF);
+
+		DWORD BytesRead;
+		if(ReadFile(FileHandle->WinHandle, Dest, Size, &BytesRead, &Overlapped) &&
+		   (BytesRead == Size))
 		{
-			Assert(MemorySize == BytesWritten);
+			// NOTE(georgy): Successful read!
 		}
 		else
 		{
-			// TODO(georgy): Logging
+			InvalidCodePath;
 		}
 	}
-}
-
-
-global_variable bool32 GlobalIsFontRenderTargetInitialized;
-global_variable HDC GlobalFontDeviceContext;
-global_variable HBITMAP GlobalFontBitmap;
-global_variable void *GlobalFontBits;
-global_variable HFONT GlobalFont;
-global_variable TEXTMETRIC GlobalTextMetric;
-#define MAX_GLYPH_WIDTH 300
-#define MAX_GLYPH_HEIGHT 300
-PLATFORM_BEGIN_FONT(WinBeginFont)
-{
-	if(!GlobalIsFontRenderTargetInitialized)
-	{
-		GlobalFontDeviceContext = CreateCompatibleDC(GetDC(0));
-
-		BITMAPINFO Info = {};
-		Info.bmiHeader.biSize = sizeof(Info.bmiHeader);
-		Info.bmiHeader.biWidth = MAX_GLYPH_WIDTH;
-		Info.bmiHeader.biHeight = MAX_GLYPH_HEIGHT;
-		Info.bmiHeader.biPlanes = 1;
-		Info.bmiHeader.biBitCount = 32;
-		Info.bmiHeader.biCompression = BI_RGB;
-		GlobalFontBitmap = CreateDIBSection(GlobalFontDeviceContext, &Info, DIB_RGB_COLORS, &GlobalFontBits, 0 , 0);
-		SelectObject(GlobalFontDeviceContext, GlobalFontBitmap);
-		SetBkColor(GlobalFontDeviceContext, RGB(0, 0, 0));
-
-		GlobalIsFontRenderTargetInitialized = true;
-	}
-	
-	AddFontResourceEx(Filename, FR_PRIVATE, 0);
-	int PixelHeight = 128;
-	GlobalFont = CreateFontA(PixelHeight, 0, 0, 0,
-							 FW_NORMAL,
-							 FALSE, // NOTE(georgy): Italic
-							 FALSE, // NOTE(georgy): Underline,
-							 FALSE, // NOTE(georgy): StrikeOut,
-							 DEFAULT_CHARSET,
-							 OUT_DEFAULT_PRECIS,
-							 CLIP_DEFAULT_PRECIS,
-							 ANTIALIASED_QUALITY,
-							 DEFAULT_PITCH|FF_DONTCARE,
-							 FontName);
-
-	SelectObject(GlobalFontDeviceContext, GlobalFont);
-	GetTextMetrics(GlobalFontDeviceContext, &GlobalTextMetric);
-
-	Font->HorizontalAdvances = (r32 *)WinAllocateMemory(Font->GlyphsCount*Font->GlyphsCount*sizeof(r32));
-	Font->LineAdvance = GlobalTextMetric.tmAscent + GlobalTextMetric.tmDescent + GlobalTextMetric.tmExternalLeading;
-	Font->AscenderHeight = GlobalTextMetric.tmAscent;
-}
-
-PLATFORM_END_FONT(WinEndFont)
-{
-	DWORD KerningPairsCount = GetKerningPairsW(GlobalFontDeviceContext, 0, 0);
-	KERNINGPAIR *KerningPairs = (KERNINGPAIR *)WinAllocateMemory(KerningPairsCount*sizeof(KERNINGPAIR));
-	GetKerningPairsW(GlobalFontDeviceContext, KerningPairsCount, KerningPairs);
-	for(u32 KerningPairIndex = 0;
-		KerningPairIndex < KerningPairsCount;
-		KerningPairIndex++)
-	{
-		KERNINGPAIR *Pair = KerningPairs + KerningPairIndex;
-		if((Pair->wFirst >= Font->FirstCodepoint) && (Pair->wFirst <= Font->LastCodepoint) &&
-		   (Pair->wSecond >= Font->FirstCodepoint) && (Pair->wSecond <= Font->LastCodepoint))
-		{
-			u32 FirstGlyphIndex = Pair->wFirst - Font->FirstCodepoint;
-			u32 SecondGlyphIndex = Pair->wSecond - Font->FirstCodepoint;
-			Font->HorizontalAdvances[FirstGlyphIndex*Font->GlyphsCount + SecondGlyphIndex] += (r32)Pair->iKernAmount;
-		}
-	}
-	WinFreeMemory(KerningPairs);
-
-	DeleteObject(GlobalFont);
-	GlobalFont = 0;
-	GlobalTextMetric = {};
-}
-
-PLATFORM_LOAD_CODEPOINT_BITMAP(WinLoadCodepointBitmap)
-{
-	SelectObject(GlobalFontDeviceContext, GlobalFont);
-
-	wchar_t WPoint = (wchar_t) Codepoint;
-
-	SIZE Size;
-	GetTextExtentPoint32W(GlobalFontDeviceContext, &WPoint, 1, &Size);
-
-	PatBlt(GlobalFontDeviceContext, 0, 0, MAX_GLYPH_WIDTH, MAX_GLYPH_HEIGHT, BLACKNESS);
-	SetTextColor(GlobalFontDeviceContext, RGB(255, 255, 255));
-	int PreStepX = 128; 
-	TextOutW(GlobalFontDeviceContext, PreStepX, 0, &WPoint, 1);
-
-	i32 MinX = 10000;
-	i32 MinY = 10000;
-	i32 MaxX = -10000;
-	i32 MaxY = -10000;
-	u32 *Row = (u32 *)GlobalFontBits;
-	for(i32 Y = 0;
-		Y < MAX_GLYPH_HEIGHT;
-		Y++)
-	{
-		u32 *Pixel = Row;
-		for(i32 X = 0;
-			X < MAX_GLYPH_WIDTH;
-			X++)
-		{
-			if (*Pixel != 0)
-			{
-				if(MinX > X)
-				{
-					MinX = X;
-				}
-				if(MinY > Y)
-				{
-					MinY = Y;
-				}
-				if(MaxX < X)
-				{
-					MaxX = X;
-				}
-				if(MaxY < Y)
-				{
-					MaxY = Y;
-				}
-			}
-
-			Pixel++;
-		}
-
-		Row += MAX_GLYPH_WIDTH;
-	}
-
-	u8* Result = 0;
-	r32 KerningChange = 0.0f;
-	if(MinX <= MaxX)
-	{
-		*Width = (MaxX + 1) - MinX;
-		*Height = (MaxY + 1) - MinY;
-
-		Result = (u8 *)WinAllocateMemory(*Width * *Height * 1);
-
-		u8 *DestRow = Result;
-		u32 *SourceRow = (u32 *)GlobalFontBits + MinY*MAX_GLYPH_WIDTH;
-		for(i32 Y = MinY;
-			Y <= MaxY;
-			Y++)
-		{
-			u8 *Dest = (u8 *)DestRow;
-			u32 *Source = SourceRow + MinX;
-			for(i32 X = MinX;
-				X <= MaxX;
-				X++)
-			{
-				*Dest = *(u8 *)Source;
-				Dest++;
-				Source++;
-			}
-			
-			DestRow += *Width*1;
-			SourceRow += MAX_GLYPH_WIDTH;
-		}
-
-		*AlignPercentageY = ((MAX_GLYPH_HEIGHT - MinY) - (Size.cy - GlobalTextMetric.tmDescent)) / (r32)*Height;
-
-		KerningChange = (r32)(MinX - PreStepX);
-	}
-
-	INT ThisCharWidth;
-	GetCharWidth32W(GlobalFontDeviceContext, Codepoint, Codepoint, &ThisCharWidth);
-	
-	u32 ThisGlyphIndex = Codepoint - Font->FirstCodepoint;
-	for(u32 OtherGlyphIndex = 0;
-		OtherGlyphIndex < Font->GlyphsCount;
-		OtherGlyphIndex++)
-	{
-		Font->HorizontalAdvances[ThisGlyphIndex*Font->GlyphsCount + OtherGlyphIndex] += ThisCharWidth - KerningChange;
-		Font->HorizontalAdvances[OtherGlyphIndex*Font->GlyphsCount + ThisGlyphIndex] += KerningChange;
-	}
-
-	return(Result);
 }
 
 inline LARGE_INTEGER
@@ -641,7 +482,7 @@ struct platform_job_system_queue
 	platform_job_system_entry Entries[128];
 };
 
-PLATFORM_ADD_ENTRY(WinAddEntry)
+internal PLATFORM_ADD_ENTRY(WinAddEntry)
 {
 	u32 NewEntryToWrite = (JobSystem->EntryToWrite + 1) % ArrayCount(JobSystem->Entries);
 	Assert(NewEntryToWrite != JobSystem->EntryToRead);
@@ -683,7 +524,7 @@ WinDoNextJobQueueEntry(platform_job_system_queue *JobSystem)
 	return(Sleep);
 }
 
-PLATFORM_COMPLETE_ALL_WORK(WinCompleteAllWork)
+internal PLATFORM_COMPLETE_ALL_WORK(WinCompleteAllWork)
 {
 	while(JobSystem->JobsToCompleteCount != JobSystem->JobsToCompleteGoal) 
     { 
@@ -949,14 +790,11 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				GameMemory.PlatformAPI.AddEntry = WinAddEntry;
 				GameMemory.PlatformAPI.CompleteAllWork = WinCompleteAllWork;
 				GameMemory.PlatformAPI.ReadEntireFile = WinReadEntireFile;
+				GameMemory.PlatformAPI.OpenFile = WinOpenFile;
+				GameMemory.PlatformAPI.ReadDataFromFile = WinReadDataFromFile;
 				GameMemory.PlatformAPI.AllocateMemory = WinAllocateMemory;
 				GameMemory.PlatformAPI.FreeMemory = WinFreeMemory;
 				GameMemory.PlatformAPI.OutputDebugString = WinOutputDebugString;
-
-				GameMemory.PlatformAPI.LoadCodepointBitmap = WinLoadCodepointBitmap;
-				GameMemory.PlatformAPI.BeginFont = WinBeginFont;
-				GameMemory.PlatformAPI.LoadCodepointBitmap = WinLoadCodepointBitmap;
-				GameMemory.PlatformAPI.EndFont = WinEndFont;
 
 				// TODO(georgy): Make the path to be created automatically in .exe directory
 				WinState.RecordStateFile = 

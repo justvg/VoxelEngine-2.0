@@ -65,6 +65,16 @@ struct read_entire_file_result
 #define READ_ENTIRE_FILE(name) read_entire_file_result name(char *Filename)
 typedef READ_ENTIRE_FILE(platform_read_entire_file);
 
+struct platform_file_handle
+{
+	void *Platform;
+};
+
+#define OPEN_FILE(name) platform_file_handle name(char *Filename)
+typedef OPEN_FILE(platform_open_file);
+
+#define READ_DATA_FROM_FILE(name) void name(platform_file_handle Source, void *Dest, u32 Size, u64 DataOffset)
+typedef READ_DATA_FROM_FILE(platform_read_data_from_file);
 
 #define ALLOCATE_MEMORY(name) void *name(u64 Size)
 typedef ALLOCATE_MEMORY(platform_allocate_memory);
@@ -81,30 +91,6 @@ typedef PLATFORM_ADD_ENTRY(platform_add_entry);
 
 #define PLATFORM_COMPLETE_ALL_WORK(name) void name(platform_job_system_queue *JobSystem)
 typedef PLATFORM_COMPLETE_ALL_WORK(platform_complete_all_work);
-
-struct loaded_texture;
-struct loaded_font
-{
-	loaded_texture *Glyphs;
-	r32 *HorizontalAdvances;
-	
-	u32 LineAdvance;
-	u32 AscenderHeight;
-
-	u32 GlyphsCount;
-	u32 FirstCodepoint;
-	u32 LastCodepoint;
-};
-
-#define PLATFORM_BEGIN_FONT(name) void name(loaded_font *Font, char *Filename, char *FontName)
-typedef PLATFORM_BEGIN_FONT(platform_begin_font);
-
-#define PLATFORM_END_FONT(name) void name(loaded_font *Font)
-typedef PLATFORM_END_FONT(platform_end_font);
-
-#define PLATFORM_LOAD_CODEPOINT_BITMAP(name) u8 *name(loaded_font *Font, u32 Codepoint, u32 *Width, u32 *Height, r32 *AlignPercentageY)
-typedef PLATFORM_LOAD_CODEPOINT_BITMAP(platform_load_codepoint_bitmap);
-
 
 struct button
 {
@@ -164,14 +150,13 @@ struct platform_api
 {
 	platform_add_entry *AddEntry;
 	platform_complete_all_work *CompleteAllWork;
-	platform_read_entire_file *ReadEntireFile;
+	platform_open_file *OpenFile;
+	platform_read_data_from_file *ReadDataFromFile;
 	platform_allocate_memory *AllocateMemory;
 	platform_free_memory *FreeMemory;
 	platform_output_debug_string *OutputDebugString;
 
-	platform_begin_font *BeginFont;
-	platform_load_codepoint_bitmap *LoadCodepointBitmap;
-	platform_end_font *EndFont;
+	platform_read_entire_file *ReadEntireFile;
 };
 
 struct game_memory
