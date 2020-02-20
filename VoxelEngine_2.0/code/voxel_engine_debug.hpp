@@ -148,8 +148,8 @@ DEBUGReset(debug_state *DebugState, game_memory *Memory, game_assets *GameAssets
 
 		DebugState->FontScale = 0.2f;
 
-		CompileShader(&DebugState->GlyphShader, "data/shaders/GlyphVS.glsl", "data/shaders/GlyphFS.glsl");
-		CompileShader(&DebugState->QuadShader, "data/shaders/2DQuadDebugVS.glsl", "data/shaders/2DQuadDebugFS.glsl");
+		CompileShader(&DebugState->GlyphShader, GlyphVS, GlyphFS);
+		CompileShader(&DebugState->QuadShader, QuadDebug2DVS, QuadDebug2DFS);
 
 		DebugState->GlyphVertices[0] = { 0.0f, 1.0f };
 		DebugState->GlyphVertices[1] = { 0.0f, 0.0f };

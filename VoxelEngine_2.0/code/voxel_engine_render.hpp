@@ -1,22 +1,19 @@
 #include "voxel_engine_render.h"
 
 internal void
-CompileShader(shader *Shader, char *VertexPath, char *FragmentPath)
+CompileShader(shader *Shader, char *VSSourceCode, char *FSSourceCode)
 {
-	u32 VS = glCreateShader(GL_VERTEX_SHADER);
-	u32 FS = glCreateShader(GL_FRAGMENT_SHADER);
+	GLuint VS = glCreateShader(GL_VERTEX_SHADER);
+	GLuint FS = glCreateShader(GL_FRAGMENT_SHADER);
 	Shader->ID = glCreateProgram();
-
-	read_entire_file_result VSSourceCode = Platform.ReadEntireFile(VertexPath);
-	read_entire_file_result FSSourceCode = Platform.ReadEntireFile(FragmentPath);
 
 	i32 Success;
 	char InfoLog[1024];
-
-	glShaderSource(VS, 1, (char **)&VSSourceCode.Memory, (GLint *)&VSSourceCode.Size);
+	
+	glShaderSource(VS, 1, (char **)&VSSourceCode, 0);
 	glCompileShader(VS);
 	glGetShaderiv(VS, GL_COMPILE_STATUS, &Success);
-	if (!Success)
+	if(!Success)
 	{
 		glGetShaderInfoLog(VS, sizeof(InfoLog), 0, InfoLog);
 		Platform.OutputDebugString("ERROR::SHADER_COMPILATION_ERROR of type: VS\n");
@@ -24,7 +21,7 @@ CompileShader(shader *Shader, char *VertexPath, char *FragmentPath)
 		Platform.OutputDebugString("\n");
 	}
 
-	glShaderSource(FS, 1, (char **)&FSSourceCode.Memory, (GLint *)&FSSourceCode.Size);
+	glShaderSource(FS, 1, (char **)&FSSourceCode, 0);
 	glCompileShader(FS);
 	glGetShaderiv(FS, GL_COMPILE_STATUS, &Success);
 	if (!Success)
@@ -39,7 +36,7 @@ CompileShader(shader *Shader, char *VertexPath, char *FragmentPath)
 	glAttachShader(Shader->ID, FS);
 	glLinkProgram(Shader->ID);
 	glGetProgramiv(Shader->ID, GL_LINK_STATUS, &Success);
-	if (!Success)
+	if(!Success)
 	{
 		glGetProgramInfoLog(Shader->ID, sizeof(InfoLog), 0, InfoLog);
 		Platform.OutputDebugString("ERROR::PROGRAM_LINKING_ERROR of type:: PROGRAM\n");
@@ -47,8 +44,6 @@ CompileShader(shader *Shader, char *VertexPath, char *FragmentPath)
 		Platform.OutputDebugString("\n");
 	}
 
-	Platform.FreeMemory(VSSourceCode.Memory);
-	Platform.FreeMemory(FSSourceCode.Memory);
 	glDeleteShader(VS);
 	glDeleteShader(FS);
 }
@@ -400,7 +395,7 @@ global_variable debug_draw_info GlobalDebugDrawInfo;
 internal void
 InitializeGlobalDrawInfo(void)
 {
-	CompileShader(&GlobalDebugDrawInfo.Shader, "data/shaders/DebugDrawingVS.glsl", "data/shaders/DebugDrawingFS.glsl");
+	CompileShader(&GlobalDebugDrawInfo.Shader, DebugDrawingVS, DebugDrawingFS);
 
 	// NOTE(georgy): Cube data
 	{

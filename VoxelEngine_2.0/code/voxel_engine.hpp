@@ -327,19 +327,20 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		GameState->FireballCollision = MakeSimpleCollision(GameState, vec3(0.25f, 0.25f, 0.25f));
 		GameState->TreeCollision = MakeSimpleCollision(GameState, vec3(0.5f, 0.5f, 0.5f));
 		GameState->TESTCubeCollision = MakeSimpleCollision(GameState, vec3(1.0f, 1.0f, 1.0f));
+		
 
-		CompileShader(&GameState->CharacterShader, "data/shaders/CharacterVS.glsl", "data/shaders/CharacterFS.glsl");
-		CompileShader(&GameState->WorldShader, "data/shaders/WorldVS.glsl", "data/shaders/WorldFS.glsl");
-		CompileShader(&GameState->WaterShader, "data/shaders/WaterVS.glsl", "data/shaders/WaterFS.glsl");
-		CompileShader(&GameState->HitpointsShader, "data/shaders/HitpointsVS.glsl", "data/shaders/HitpointsFS.glsl");
-		CompileShader(&GameState->BillboardShader, "data/shaders/BillboardVS.glsl", "data/shaders/BillboardFS.glsl");
-		CompileShader(&GameState->BlockParticleShader, "data/shaders/BlockParticleVS.glsl", "data/shaders/BlockParticleFS.glsl");
-		CompileShader(&GameState->CharacterDepthShader, "data/shaders/CharacterDepthVS.glsl", "data/shaders/EmptyFS.glsl");
-		CompileShader(&GameState->WorldDepthShader, "data/shaders/WorldDepthVS.glsl", "data/shaders/EmptyFS.glsl");
-		CompileShader(&GameState->BlockParticleDepthShader, "data/shaders/BlockParticleDepthVS.glsl", "data/shaders/EmptyFS.glsl");
-		CompileShader(&GameState->UIQuadShader, "data/shaders/UI_VS.glsl", "data/shaders/UI_FS.glsl");
-		CompileShader(&GameState->UIGlyphShader, "data/shaders/GlyphVS.glsl", "data/shaders/GlyphFS.glsl");
-		CompileShader(&GameState->FramebufferScreenShader, "data/shaders/FramebufferScreenVS.glsl", "data/shaders/FramebufferScreenFS.glsl");
+		CompileShader(&GameState->CharacterShader, CharacterVS, CharacterFS);
+		CompileShader(&GameState->WorldShader, WorldVS, WorldFS);
+		CompileShader(&GameState->WaterShader, WaterVS, WaterFS);
+		CompileShader(&GameState->HitpointsShader, HitpointsVS, HitpointsFS);
+		CompileShader(&GameState->BillboardShader, BillboardVS, BillboardFS);
+		CompileShader(&GameState->BlockParticleShader, BlockParticleVS, BlockParticleFS);
+		CompileShader(&GameState->CharacterDepthShader, CharacterDepthVS, EmptyFS);
+		CompileShader(&GameState->WorldDepthShader, WorldDepthVS, EmptyFS);
+		CompileShader(&GameState->BlockParticleDepthShader, BlockParticleDepthVS, EmptyFS);
+		CompileShader(&GameState->UIQuadShader, UI_VS, UI_FS);
+		CompileShader(&GameState->UIGlyphShader, GlyphVS, GlyphFS);
+		CompileShader(&GameState->FramebufferScreenShader, FramebufferScreenVS, FramebufferScreenFS);
 
 		particle_generator *ParticleGenerator = &GameState->ParticleGenerator;
 		r32 BlockParticleVertices[] = 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "voxel_engine_preprocessor_generated.h"
+
 global_variable platform_api Platform;
 
 #define PLATFORM_FREE_MEMORY_AND_ZERO_POINTER(Memory) \
