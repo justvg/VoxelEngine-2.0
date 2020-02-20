@@ -725,7 +725,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			{
 				RefreshRate = WinRefreshRate;
 			}
-			int GameRefreshRate = RefreshRate / 2;
+			int GameRefreshRate = RefreshRate;
+			// int GameRefreshRate = RefreshRate / 2;
 			r32 TargetSecondsPerFrame = 1.0f / GameRefreshRate;
 			ReleaseDC(Window, WindowDC);
 

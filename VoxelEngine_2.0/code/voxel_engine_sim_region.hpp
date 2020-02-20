@@ -559,17 +559,18 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 	{
 		chunk *Chunk = CollideChunks[ChunkIndex].Chunk;
 		vec3 *Vertices = Chunk->VerticesP.Entries;
+		u32 *Indices = Chunk->IndexBuffer.Entries;
 		r32 BlockDimInMeters = World->BlockDimInMeters;
 		vec3 MinChunkP = CollideChunks[ChunkIndex].Min - vec3(BlockDimInMeters, BlockDimInMeters, BlockDimInMeters);
 		vec3 MaxChunkP = CollideChunks[ChunkIndex].Max + vec3(BlockDimInMeters, BlockDimInMeters, BlockDimInMeters);
 		for(u32 TriangleIndex = 0;
-			TriangleIndex < (Chunk->VerticesP.EntriesCount / 3);
+			TriangleIndex < (Chunk->IndexBuffer.EntriesCount / 3);
 			TriangleIndex++)
 		{
 			u32 FirstVertexIndex = TriangleIndex * 3;
-			vec3 P1 = Vertices[FirstVertexIndex];
-			vec3 P2 = Vertices[FirstVertexIndex + 1];
-			vec3 P3 = Vertices[FirstVertexIndex + 2];
+			vec3 P1 = Vertices[Indices[FirstVertexIndex]];
+			vec3 P2 = Vertices[Indices[FirstVertexIndex + 1]];
+			vec3 P3 = Vertices[Indices[FirstVertexIndex + 2]];
 
 			vec3 MinP = Min(Min(P1, P2), P3);
 			vec3 MaxP = Max(Max(P1, P2), P3);
@@ -619,14 +620,15 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 			if((Chunk->WaterVerticesP.EntriesCount > 0))
 			{
 				vec3 *WaterVertices = Chunk->WaterVerticesP.Entries;
+				u32 *WaterIndices = Chunk->WaterIndexBuffer.Entries;
 				for(u32 TriangleIndex = 0;
-					TriangleIndex < (Chunk->WaterVerticesP.EntriesCount / 3);
+					TriangleIndex < (Chunk->WaterIndexBuffer.EntriesCount / 3);
 					TriangleIndex++)
 				{
 					u32 FirstVertexIndex = TriangleIndex * 3;
-					vec3 P1 = WaterVertices[FirstVertexIndex];
-					vec3 P2 = WaterVertices[FirstVertexIndex + 1];
-					vec3 P3 = WaterVertices[FirstVertexIndex + 2];
+					vec3 P1 = WaterVertices[WaterIndices[FirstVertexIndex]];
+					vec3 P2 = WaterVertices[WaterIndices[FirstVertexIndex + 1]];
+					vec3 P3 = WaterVertices[WaterIndices[FirstVertexIndex + 2]];
 
 					vec3 MinP = Min(Min(P1, P2), P3);
 					vec3 MaxP = Max(Max(P1, P2), P3);

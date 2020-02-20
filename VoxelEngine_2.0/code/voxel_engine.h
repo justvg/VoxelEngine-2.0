@@ -186,6 +186,8 @@ struct playing_sound
 	vec2 TargetVolume;
 	u32 SamplesPlayed;
 
+	world_position P;
+
 	union
 	{
 		playing_sound *Next;

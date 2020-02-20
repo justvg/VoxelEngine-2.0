@@ -258,7 +258,7 @@ InitializeAudioState(audio_state *AudioState, stack_allocator *Allocator)
 }
 
 internal playing_sound *
-PlaySound(audio_state *AudioState, sound_id SoundID)
+PlaySound(audio_state *AudioState, sound_id SoundID, world_position WorldP = InvalidPosition())
 {
 	if(!AudioState->FirstFreePlayingSound)
 	{
@@ -275,6 +275,8 @@ PlaySound(audio_state *AudioState, sound_id SoundID)
 	PlayingSound->ID = SoundID;
 	PlayingSound->Volume = { 1.0f, 1.0f };
 	PlayingSound->SamplesPlayed = 0;
+
+	PlayingSound->P = WorldP;
 
 	return(PlayingSound);
 }
@@ -613,6 +615,9 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		// TempState->GameAssets = AllocateGameAssets(TempState, &TempState->Allocator, 60000);
 		TempState->GameAssets = AllocateGameAssets(TempState, &TempState->Allocator, Megabytes(64));
 
+		world_position TESTSOUNDP = {};
+		TESTSOUNDP.ChunkY = 1;
+		TESTSOUNDP.Offset = vec3(0.3f, 5.0f, 3.0f);
 		playing_sound *Music = PlaySound(&GameState->AudioState, GetFirstSoundFromType(TempState->GameAssets, AssetType_Music));
 		// ChangeVolume(Music, vec2(0.5f, 0.5f), 10.0f);
 
@@ -1390,14 +1395,25 @@ GameGetSoundSamples(game_memory *Memory, game_sound_output_buffer *SoundBuffer)
 						}
 					}
 				}
+				
+				// TODO(georgy): This is not "real" 3D audio and it is not physically correct
+				r32 DistanceVolume = 1.0f;
+				if(IsValid(PlayingSound->P))
+				{
+					r32 Distance = Length(Substract(& GameState->World, &GameState->Hero.Entity->P, &PlayingSound->P));
+					r32 ConstantTerm = 1.0f;
+					r32 LinearTerm = 0.09f;
+					r32 QuadraticTerm = 0.032f;
+					DistanceVolume = 1.0f / (ConstantTerm + LinearTerm*Distance + QuadraticTerm*Distance*Distance);;
+				}
 
 				for(u32 SampleIndex = 0;
 					SampleIndex < SamplesToMix;
 					SampleIndex++)
 				{
 					r32 SampleValue = LoadedSound->Samples[0][PlayingSound->SamplesPlayed + SampleIndex];
-					*Dest0++ += AudioState->GlobalVolume*Volume.E[0]*SampleValue;
-					*Dest1++ += AudioState->GlobalVolume*Volume.E[1]*SampleValue;
+					*Dest0++ += DistanceVolume*AudioState->GlobalVolume*Volume.E[0]*SampleValue;
+					*Dest1++ += DistanceVolume*AudioState->GlobalVolume*Volume.E[1]*SampleValue;
 
 					Volume += dVolume;
 				}

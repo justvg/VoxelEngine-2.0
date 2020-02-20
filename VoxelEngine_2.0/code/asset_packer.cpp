@@ -536,6 +536,7 @@ BeginFont(packer_loaded_font *Font, char *Filename, char *FontName)
 	GetTextMetrics(GlobalFontDeviceContext, &GlobalTextMetric);
 
 	Font->HorizontalAdvances = (r32 *)malloc(Font->GlyphsCount*Font->GlyphsCount*sizeof(r32));
+	memset(Font->HorizontalAdvances, 0, Font->GlyphsCount*Font->GlyphsCount*sizeof(r32));
 	Font->LineAdvance = GlobalTextMetric.tmAscent + GlobalTextMetric.tmDescent + GlobalTextMetric.tmExternalLeading;
 	Font->AscenderHeight = GlobalTextMetric.tmAscent;
 }

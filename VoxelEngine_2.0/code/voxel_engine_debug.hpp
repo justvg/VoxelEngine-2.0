@@ -454,8 +454,8 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 		vec3(0.0f, 1.0f, 1.0f),
 	};
 
-	// r32 CyclesPerFrame = 0.5f*86666666.0f;
-	r32 CyclesPerFrame = 86666666.0f;
+	r32 CyclesPerFrame = 0.5f*86666666.0f;
+	// r32 CyclesPerFrame = 86666666.0f;
 	r32 TableWidth = 300.0f;
 	r32 BarSpacing = 5.0f;
 	u32 LaneCount = DebugState->LaneCount;

@@ -296,6 +296,8 @@ ParseCompileShader(tokenizer *Tokenizer)
     token NameVS = GetToken(Tokenizer);
     token Comma = GetToken(Tokenizer);
     token NameFS = GetToken(Tokenizer);
+
+    // NOTE(georgy): Checks if this CompileShader token is CompileShader function definition
     if(!TokenStringEquals(NameVS, "char"))
     {
         ParseAndWriteShader(NameVS);
