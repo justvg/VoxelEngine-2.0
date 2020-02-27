@@ -335,7 +335,6 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		CompileShader(&GameState->WorldShader, WorldVS, WorldFS);
 		CompileShader(&GameState->WaterShader, WaterVS, WaterFS);
 		CompileShader(&GameState->HitpointsShader, HitpointsVS, HitpointsFS);
-		CompileShader(&GameState->BillboardShader, BillboardVS, BillboardFS);
 		CompileShader(&GameState->BlockParticleShader, BlockParticleVS, BlockParticleFS);
 		CompileShader(&GameState->CharacterDepthShader, CharacterDepthVS, EmptyFS);
 		CompileShader(&GameState->WorldDepthShader, WorldDepthVS, EmptyFS);
@@ -343,6 +342,35 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		CompileShader(&GameState->UIQuadShader, UI_VS, UI_FS);
 		CompileShader(&GameState->UIGlyphShader, GlyphVS, GlyphFS);
 		CompileShader(&GameState->FramebufferScreenShader, FramebufferScreenVS, FramebufferScreenFS);
+
+		GenerateUBO(&GameState->UBOs[BindingPoint_Matrices], 5*sizeof(mat4), BindingPoint_Matrices);
+		GenerateUBO(&GameState->UBOs[BindingPoint_UIMatrices], sizeof(mat4), BindingPoint_UIMatrices);
+		GenerateUBO(&GameState->UBOs[BindingPoint_DirectionalLightInfo], 2*sizeof(vec3), BindingPoint_DirectionalLightInfo);
+		GenerateUBO(&GameState->UBOs[BindingPoint_PointLightInfo], sizeof(point_lights_info), BindingPoint_PointLightInfo);
+		GenerateUBO(&GameState->UBOs[BindingPoint_ShadowsInfo], 352, BindingPoint_ShadowsInfo);
+
+		BindUniformBlockToBindingPoint(GameState->WorldShader, "Matrices", BindingPoint_Matrices);
+		BindUniformBlockToBindingPoint(GameState->WaterShader, "Matrices", BindingPoint_Matrices);
+		BindUniformBlockToBindingPoint(GameState->CharacterShader, "Matrices", BindingPoint_Matrices);
+		BindUniformBlockToBindingPoint(GameState->BlockParticleShader, "Matrices", BindingPoint_Matrices);
+
+		BindUniformBlockToBindingPoint(GameState->UIQuadShader, "Matrices", BindingPoint_UIMatrices);
+		BindUniformBlockToBindingPoint(GameState->UIGlyphShader, "Matrices", BindingPoint_UIMatrices);
+
+		BindUniformBlockToBindingPoint(GameState->WorldShader, "DirectionalLightInfo", BindingPoint_DirectionalLightInfo);
+		BindUniformBlockToBindingPoint(GameState->WaterShader, "DirectionalLightInfo", BindingPoint_DirectionalLightInfo);
+		BindUniformBlockToBindingPoint(GameState->CharacterShader, "DirectionalLightInfo", BindingPoint_DirectionalLightInfo);
+		BindUniformBlockToBindingPoint(GameState->BlockParticleShader, "DirectionalLightInfo", BindingPoint_DirectionalLightInfo);
+
+		BindUniformBlockToBindingPoint(GameState->WorldShader, "PointLightsInfo", BindingPoint_PointLightInfo);
+		BindUniformBlockToBindingPoint(GameState->WaterShader, "PointLightsInfo", BindingPoint_PointLightInfo);
+		BindUniformBlockToBindingPoint(GameState->CharacterShader, "PointLightsInfo", BindingPoint_PointLightInfo);
+		BindUniformBlockToBindingPoint(GameState->BlockParticleShader, "PointLightsInfo", BindingPoint_PointLightInfo);
+
+		BindUniformBlockToBindingPoint(GameState->WorldShader, "ShadowsInfo", BindingPoint_ShadowsInfo);
+		BindUniformBlockToBindingPoint(GameState->WaterShader, "ShadowsInfo", BindingPoint_ShadowsInfo);
+		BindUniformBlockToBindingPoint(GameState->CharacterShader, "ShadowsInfo", BindingPoint_ShadowsInfo);
+		BindUniformBlockToBindingPoint(GameState->BlockParticleShader, "ShadowsInfo", BindingPoint_ShadowsInfo);
 
 		particle_generator *ParticleGenerator = &GameState->ParticleGenerator;
 		r32 BlockParticleVertices[] = 
@@ -598,6 +626,44 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+		UseShader(GameState->WorldShader);
+		SetInt(GameState->WorldShader, "ShadowMaps", 0);
+		SetInt(GameState->WorldShader, "ShadowNoiseTexture", 1);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, GameState->ShadowNoiseTexture);
+	
+		UseShader(GameState->WaterShader);
+		SetInt(GameState->WaterShader, "ShadowMaps", 0);
+		SetInt(GameState->WaterShader, "ShadowNoiseTexture", 1);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, GameState->ShadowNoiseTexture);
+		
+		UseShader(GameState->CharacterShader);
+		SetInt(GameState->CharacterShader, "ShadowMaps", 0);
+		SetInt(GameState->CharacterShader, "ShadowNoiseTexture", 1);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, GameState->ShadowNoiseTexture);
+		
+		UseShader(GameState->BlockParticleShader);
+		SetInt(GameState->BlockParticleShader, "ShadowMaps", 0);
+		SetInt(GameState->BlockParticleShader, "ShadowNoiseTexture", 1);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, GameState->ShadowNoiseTexture);
+			
+		UseShader(GameState->UIQuadShader);
+		SetInt(GameState->UIQuadShader, "Texture", 0);
+
+		UseShader(GameState->UIGlyphShader);
+		SetInt(GameState->UIGlyphShader, "Texture", 0);
 
 		InitializeDefaultAnimations(GameState->CharacterAnimations);
 
@@ -947,7 +1013,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	{
 		DEBUGRenderLine(vec3(0.0f, 0.0f, 0.0f), -GameState->DirectionalLightDir, vec3(1.0f, 1.0f, 0.0f));
 	}
-
+	GameState->DirectionalLightColor = vec3(0.666666, 0.788235, 0.79215);
 
 	// NOTE(georgy): Directional shadow map rendering
 	r32 CascadesDistances[CASCADES_COUNT + 1] = {Camera->NearDistance, 25.0f, 50.0f, 75.0f};
@@ -1099,97 +1165,59 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 				Translate(-Camera->OffsetFromHero - Camera->TargetOffset);
 	mat4 Projection = Perspective(Camera->FoV, Camera->AspectRatio, Camera->NearDistance, Camera->FarDistance);
 	mat4 ViewProjection = Projection * View;
-	shader Shaders3D[] = { GameState->WorldShader, GameState->WaterShader, GameState->CharacterShader,
-						   GameState->HitpointsShader, GameState->BillboardShader, GameState->BlockParticleShader};
 	if(!DebugCamera)
 	{
-		Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), ViewProjection);
 		GlobalViewProjection = ViewProjection;
 	}
 	else
 	{
 		mat4 DEBUGCameraView = LookAt(Camera->DEBUGP, Camera->DEBUGP + Camera->DEBUGFront);
 		mat4 DEBUGCameraViewProjection = Projection * DEBUGCameraView;
-		Initialize3DTransforms(Shaders3D, ArrayCount(Shaders3D), DEBUGCameraViewProjection);
 		GlobalViewProjection = DEBUGCameraViewProjection;
 	}
 	
 
+	glBindBuffer(GL_UNIFORM_BUFFER, GameState->UBOs[BindingPoint_Matrices]);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(mat4), &GlobalViewProjection);
+	glBufferSubData(GL_UNIFORM_BUFFER, sizeof(mat4), 3*sizeof(mat4), LightSpaceMatrices);
+	glBufferSubData(GL_UNIFORM_BUFFER, 4*sizeof(mat4), sizeof(mat4), &ViewProjection);
+
+	glBindBuffer(GL_UNIFORM_BUFFER, GameState->UBOs[BindingPoint_DirectionalLightInfo]);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(vec3), &GameState->DirectionalLightDir);
+	glBufferSubData(GL_UNIFORM_BUFFER, sizeof(vec3), sizeof(vec3), &GameState->DirectionalLightColor);
+
+	point_lights_info PointLightsInfo;
+	PointLightsInfo.Count = 2;
+	PointLightsInfo.PointLights[0] = {vec3(0.0f, 1.0f, 0.0f), vec3(1.0f, 1.0f, 1.0f)};
+	PointLightsInfo.PointLights[1] = {vec3(4.0f, 1.0f, 0.0f), vec3(1.0f, 1.0f, 1.0f)};
+	glBindBuffer(GL_UNIFORM_BUFFER, GameState->UBOs[BindingPoint_PointLightInfo]);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(point_lights_info), &PointLightsInfo);
+
 	DEBUG_VARIABLE(r32, Bias, Rendering);
-	UseShader(GameState->WorldShader);
-	// NOTE(georgy): This is for the situation when we use debug camera. Even if we use debug camera,
-	//  			 we want Output.ClipSpacePosZ to be as it is from our default camera, not debug one
-	SetMat4(GameState->WorldShader, "ViewProjectionForClipSpacePosZ", ViewProjection);
-	SetMat4Array(GameState->WorldShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
-	SetFloatArray(GameState->WorldShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
-	SetVec2Array(GameState->WorldShader, "SampleOffsets", 64, GameState->ShadowSamplesOffsets);
-	SetVec3(GameState->WorldShader, "DirectionalLightDir", GameState->DirectionalLightDir);
-	SetInt(GameState->WorldShader, "ShadowsEnabled", RenderShadows);
-	SetInt(GameState->WorldShader, "ShadowMaps", 0);
-	SetFloat(GameState->WorldShader, "Bias", Bias);
-	SetInt(GameState->WorldShader, "ShadowNoiseTexture", 1);
-	SetInt(GameState->WorldShader, "Width", BufferWidth);
-	SetInt(GameState->WorldShader, "Height", BufferHeight);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
-	glActiveTexture(GL_TEXTURE1);
-	glBindTexture(GL_TEXTURE_2D, GameState->ShadowNoiseTexture);
+	glBindBuffer(GL_UNIFORM_BUFFER, GameState->UBOs[BindingPoint_ShadowsInfo]);
+	u32 OffsetInShadowsUBO = 0;
+	glBufferSubData(GL_UNIFORM_BUFFER, OffsetInShadowsUBO, sizeof(u32), &RenderShadows);
+	OffsetInShadowsUBO = 16;
+	for(u32 CascadeIndex = 0;
+		CascadeIndex <= CASCADES_COUNT;
+		CascadeIndex++, OffsetInShadowsUBO += 16)
+	{
+		glBufferSubData(GL_UNIFORM_BUFFER, OffsetInShadowsUBO, sizeof(r32), &CascadesDistances[CascadeIndex]);
+	}
+	for(u32 SampleIndex = 0;
+		SampleIndex < ArrayCount(GameState->ShadowSamplesOffsets);
+		SampleIndex++, OffsetInShadowsUBO += 16)
+	{
+		glBufferSubData(GL_UNIFORM_BUFFER, OffsetInShadowsUBO, sizeof(vec2), &GameState->ShadowSamplesOffsets[SampleIndex]);
+	}
+	glBufferSubData(GL_UNIFORM_BUFFER, OffsetInShadowsUBO, sizeof(r32), &Bias);
+	glBufferSubData(GL_UNIFORM_BUFFER, OffsetInShadowsUBO + 4, sizeof(i32), &BufferWidth);
+	glBufferSubData(GL_UNIFORM_BUFFER, OffsetInShadowsUBO + 8, sizeof(i32), &BufferHeight);
 
-	UseShader(GameState->WaterShader);
-	// NOTE(georgy): This is for the situation when we use debug camera. Even if we use debug camera,
-	//  			 we want Output.ClipSpacePosZ to be as it is from our default camera, not debug one
-	SetMat4(GameState->WaterShader, "View", View);
-	SetMat4(GameState->WaterShader, "ViewProjectionForClipSpacePosZ", ViewProjection);
-	SetMat4Array(GameState->WaterShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
-	SetFloatArray(GameState->WaterShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
-	SetVec3(GameState->WaterShader, "DirectionalLightDir", GameState->DirectionalLightDir);
-	SetInt(GameState->WaterShader, "ShadowsEnabled", RenderShadows);
-	SetInt(GameState->WaterShader, "ShadowMaps", 0);
-	SetFloat(GameState->WaterShader, "Bias", Bias);
-	SetInt(GameState->WaterShader, "ShadowNoiseTexture", 1);
-	SetInt(GameState->WaterShader, "Width", BufferWidth);
-	SetInt(GameState->WaterShader, "Height", BufferHeight);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
-	glActiveTexture(GL_TEXTURE1);
-	glBindTexture(GL_TEXTURE_2D, GameState->ShadowNoiseTexture);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-	UseShader(GameState->CharacterShader);
-	SetMat4(GameState->CharacterShader, "ViewProjectionForClipSpacePosZ", ViewProjection);
-	SetMat4Array(GameState->CharacterShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
-	SetFloatArray(GameState->CharacterShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
-	SetVec2Array(GameState->CharacterShader, "SampleOffsets", 64, GameState->ShadowSamplesOffsets);
-	SetVec3(GameState->CharacterShader, "DirectionalLightDir", GameState->DirectionalLightDir);
-	SetInt(GameState->CharacterShader, "ShadowsEnabled", RenderShadows);
-	SetInt(GameState->CharacterShader, "ShadowMaps", 0);
-	SetFloat(GameState->CharacterShader, "Bias", Bias);
-	SetInt(GameState->CharacterShader, "ShadowNoiseTexture", 1);
-	SetInt(GameState->CharacterShader, "Width", BufferWidth);
-	SetInt(GameState->CharacterShader, "Height", BufferHeight);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
-	glActiveTexture(GL_TEXTURE1);
-	glBindTexture(GL_TEXTURE_2D, GameState->ShadowNoiseTexture);
-
-	UseShader(GameState->BlockParticleShader);
-	SetMat4(GameState->BlockParticleShader, "ViewProjectionForClipSpacePosZ", ViewProjection);
-	SetMat4Array(GameState->BlockParticleShader, "LightSpaceMatrices", CASCADES_COUNT, LightSpaceMatrices);
-	SetFloatArray(GameState->BlockParticleShader, "CascadesDistances", CASCADES_COUNT + 1, CascadesDistances);
-	SetVec2Array(GameState->BlockParticleShader, "SampleOffsets", 64, GameState->ShadowSamplesOffsets);
-	SetVec3(GameState->BlockParticleShader, "DirectionalLightDir", GameState->DirectionalLightDir);
-	SetInt(GameState->BlockParticleShader, "ShadowsEnabled", RenderShadows);
-	SetInt(GameState->BlockParticleShader, "ShadowMaps", 0);
-	SetFloat(GameState->BlockParticleShader, "Bias", Bias);
-	SetInt(GameState->BlockParticleShader, "ShadowNoiseTexture", 1);
-	SetInt(GameState->BlockParticleShader, "Width", BufferWidth);
-	SetInt(GameState->BlockParticleShader, "Height", BufferHeight);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D_ARRAY, GameState->ShadowMapsArray);
-	glActiveTexture(GL_TEXTURE1);
-	glBindTexture(GL_TEXTURE_2D, GameState->ShadowNoiseTexture);
-
-	UseShader(GameState->BillboardShader);
-	SetVec3(GameState->BillboardShader, "DirectionalLightDir", GameState->DirectionalLightDir);
+	UseShader(GameState->HitpointsShader);
+	SetMat4(GameState->HitpointsShader, "ViewProjection", GlobalViewProjection);
 
 	RenderEntities(GameState, TempState, SimRegion, 
 				   GameState->WorldShader, GameState->CharacterShader, GameState->HitpointsShader,
@@ -1206,14 +1234,10 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	UseShader(GameState->UIQuadShader);
-	SetMat4(GameState->UIQuadShader, "Projection", Orthographic);
-	SetInt(GameState->UIQuadShader, "Texture", 0);
-	glActiveTexture(GL_TEXTURE0);
+	glBindBuffer(GL_UNIFORM_BUFFER, GameState->UBOs[BindingPoint_UIMatrices]);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(mat4), &Orthographic);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 	
-	UseShader(GameState->UIGlyphShader);
-	SetMat4(GameState->UIGlyphShader, "Projection", Orthographic);
-	SetInt(GameState->UIGlyphShader, "Texture", 0);
 	glActiveTexture(GL_TEXTURE0);
 	
 	UseShader(GameState->UIQuadShader);

@@ -197,7 +197,7 @@ WinInitOpenGL(HWND Window, HINSTANCE Instance, LPCSTR WindowClassName)
 				if(wglMakeCurrent(WindowDC, OpenGLRC))
 				{
 					// NOTE(georgy): Success!
-					wglSwapIntervalEXT(1);
+					wglSwapIntervalEXT(1); 
 					glEnable(GL_DEPTH_TEST);
 					glEnable(GL_CULL_FACE);
 					glEnable(GL_MULTISAMPLE);
@@ -377,6 +377,7 @@ WinUpdateWindow(HDC DeviceContext, int WindowWidth, int WindowHeight)
 	glClearColor(0.0f, SquareRoot(0.175f), SquareRoot(0.375f), 1.0f);
 	
 	SwapBuffers(DeviceContext);
+	// glFinish();
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
@@ -725,8 +726,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			{
 				RefreshRate = WinRefreshRate;
 			}
-			int GameRefreshRate = RefreshRate;
-			// int GameRefreshRate = RefreshRate / 2;
+			// int GameRefreshRate = RefreshRate;
+			int GameRefreshRate = RefreshRate / 2;
 			r32 TargetSecondsPerFrame = 1.0f / GameRefreshRate;
 			ReleaseDC(Window, WindowDC);
 
@@ -1138,8 +1139,6 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					BEGIN_BLOCK(SleepTime);
 
 					r32 SecondsElapsedForFrame = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
-
-					
 
 					if(SecondsElapsedForFrame < TargetSecondsPerFrame)
 					{

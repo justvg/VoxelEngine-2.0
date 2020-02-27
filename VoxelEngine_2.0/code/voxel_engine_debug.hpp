@@ -150,6 +150,14 @@ DEBUGReset(debug_state *DebugState, game_memory *Memory, game_assets *GameAssets
 
 		CompileShader(&DebugState->GlyphShader, GlyphVS, GlyphFS);
 		CompileShader(&DebugState->QuadShader, QuadDebug2DVS, QuadDebug2DFS);
+		
+		UseShader(DebugState->GlyphShader);
+		SetInt(DebugState->GlyphShader, "Texture", 0);
+
+#define BindingPoint_DebugOrtho 32
+		GenerateUBO(&DebugState->OrthoUBO, sizeof(mat4), BindingPoint_DebugOrtho);
+		BindUniformBlockToBindingPoint(DebugState->GlyphShader, "Matrices", BindingPoint_DebugOrtho);
+		BindUniformBlockToBindingPoint(DebugState->QuadShader, "Matrices", BindingPoint_DebugOrtho);
 
 		DebugState->GlyphVertices[0] = { 0.0f, 1.0f };
 		DebugState->GlyphVertices[1] = { 0.0f, 0.0f };
@@ -197,12 +205,11 @@ DEBUGReset(debug_state *DebugState, game_memory *Memory, game_assets *GameAssets
 	DebugState->Orthographic = Ortho(-0.5f*BufferHeight, 0.5f*BufferHeight, 
 									 -0.5f*BufferWidth, 0.5f*BufferWidth, 
 									  0.1f, 1000.0f);
-	UseShader(DebugState->GlyphShader);
-	SetMat4(DebugState->GlyphShader, "Projection", DebugState->Orthographic);
-	SetInt(DebugState->GlyphShader, "Texture", 0);
+
+	glBindBuffer(GL_UNIFORM_BUFFER, DebugState->OrthoUBO);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(mat4), &DebugState->Orthographic);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 	glActiveTexture(GL_TEXTURE0);
-	UseShader(DebugState->QuadShader);
-	SetMat4(DebugState->QuadShader, "Projection", DebugState->Orthographic);
 }
 
 inline debug_thread *
@@ -454,8 +461,8 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 		vec3(0.0f, 1.0f, 1.0f),
 	};
 
-	r32 CyclesPerFrame = 0.5f*86666666.0f;
-	// r32 CyclesPerFrame = 86666666.0f;
+	// r32 CyclesPerFrame = 0.5f*86666666.0f;
+	r32 CyclesPerFrame = 86666666.0f;
 	r32 TableWidth = 300.0f;
 	r32 BarSpacing = 5.0f;
 	u32 LaneCount = DebugState->LaneCount;
@@ -699,7 +706,7 @@ DEBUGRenderMainMenu(debug_state *DebugState, game_input *Input)
 			case DebugEvent_r32:
 			{
 				r32 DisplacementY = MouseP.y - DebugState->LastMouseP.y;
-				DebugState->ActiveInteraction->Value_r32 += 0.1f*DisplacementY;
+				DebugState->ActiveInteraction->Value_r32 += 0.0001f*DisplacementY;
 			} break;
 		}
 
@@ -732,8 +739,8 @@ internal void
 DEBUGEndDebugFrameAndRender(game_memory *Memory, game_input *Input, r32 BufferWidth, r32 BufferHeight)
 {
 	Assert(sizeof(debug_state) <= Memory->DebugStorageSize);
-	debug_state* DebugState = (debug_state*)Memory->DebugStorage;
-	game_assets* GameAssets = DEBUGGetGameAssets(Memory);
+	debug_state *DebugState = (debug_state*)Memory->DebugStorage;
+	game_assets *GameAssets = DEBUGGetGameAssets(Memory);
 
 	u32 EventArrayIndex = 0;
 	if(!GlobalDebugTable.ProfilePause)

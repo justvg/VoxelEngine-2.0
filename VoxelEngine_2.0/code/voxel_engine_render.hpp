@@ -109,15 +109,20 @@ SetMat4(shader Shader, char *Name, mat4 Value)
 }
 
 inline void
-Initialize3DTransforms(shader *Shaders, u32 ShaderCount, mat4 ViewProjection)
+GenerateUBO(GLuint *UBO, u32 Size, u32 BindingPoint)
 {
-	for(u32 ShaderIndex = 0;
-		ShaderIndex < ShaderCount;
-		ShaderIndex++)
-	{
-		UseShader(Shaders[ShaderIndex]);	
-		SetMat4(Shaders[ShaderIndex], "ViewProjection", ViewProjection);
-	}
+	glGenBuffers(1, UBO);
+	glBindBuffer(GL_UNIFORM_BUFFER, *UBO);
+	glBufferData(GL_UNIFORM_BUFFER, Size, 0, GL_DYNAMIC_DRAW);
+	glBindBufferBase(GL_UNIFORM_BUFFER, BindingPoint, *UBO);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+}
+
+inline void 
+BindUniformBlockToBindingPoint(shader Shader, char *UniformBlockName, u32 BindingPoint)
+{
+	u32 BlockIndex = glGetUniformBlockIndex(Shader.ID, UniformBlockName);
+	glUniformBlockBinding(Shader.ID, BlockIndex, BindingPoint);
 }
 
 inline void

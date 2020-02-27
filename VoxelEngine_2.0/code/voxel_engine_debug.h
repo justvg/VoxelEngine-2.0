@@ -158,6 +158,8 @@ struct debug_state
     vec2 GlyphVertices[4];
 	GLuint GlyphVAO, GlyphVBO;
 
+    GLuint OrthoUBO;
+
     u32 VariablesCount;
     debug_event *VariablesEvents[64];
 

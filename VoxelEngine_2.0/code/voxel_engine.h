@@ -204,6 +204,29 @@ struct audio_state
 	r32 GlobalVolume;
 };
 
+struct point_light
+{
+	vec3 P;
+	vec3 Color;
+};
+
+struct point_lights_info
+{
+	u32 Count;
+	point_light PointLights[64];
+};
+
+enum ubo_binding_point
+{
+	BindingPoint_Matrices,
+	BindingPoint_UIMatrices,
+	BindingPoint_DirectionalLightInfo,
+	BindingPoint_PointLightInfo,
+	BindingPoint_ShadowsInfo,
+
+	BindingPoint_Counts
+};
+
 struct game_state
 {
 	bool32 IsInitialized;
@@ -227,7 +250,6 @@ struct game_state
 	shader WorldShader;
 	shader WaterShader;
 	shader HitpointsShader;
-	shader BillboardShader;
 	shader BlockParticleShader;
 	shader WorldDepthShader;
 	shader CharacterDepthShader;
@@ -236,6 +258,8 @@ struct game_state
 	shader UIGlyphShader;
 	shader FramebufferScreenShader;
 
+	GLuint UBOs[BindingPoint_Counts];
+
 	animation CharacterAnimations[CharacterAnimation_Count];
 
 	hero Hero;
@@ -243,7 +267,7 @@ struct game_state
 
 	r32 t;
 
-	vec3 DirectionalLightDir;
+	vec3 DirectionalLightDir, DirectionalLightColor;
 #define CASCADES_COUNT 3
 	GLuint ShadowMapFBO, ShadowMapsArray;
 	u32 ShadowMapsWidth, ShadowMapsHeight;
