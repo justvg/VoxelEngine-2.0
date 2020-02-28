@@ -71,6 +71,7 @@ struct sim_entity
 	entity_reference Fireball;
 	
 	particle_emitter_info *ParticlesInfo;
+	point_light *PointLight;
 };
 
 inline bool32 

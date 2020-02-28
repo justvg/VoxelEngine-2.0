@@ -151,6 +151,18 @@ struct camera
 	r32 DEBUGPitch, DEBUGHead;
 };
 
+struct point_light
+{
+	vec3 P;
+	vec3 Color;
+};
+
+struct point_lights_info
+{
+	u32 Count;
+	point_light PointLights[64];
+};
+
 #include "voxel_engine_animation.h"
 #include "voxel_engine_sim_region.h"
 
@@ -202,18 +214,6 @@ struct audio_state
 	playing_sound *FirstFreePlayingSound;
 	
 	r32 GlobalVolume;
-};
-
-struct point_light
-{
-	vec3 P;
-	vec3 Color;
-};
-
-struct point_lights_info
-{
-	u32 Count;
-	point_light PointLights[64];
 };
 
 enum ubo_binding_point

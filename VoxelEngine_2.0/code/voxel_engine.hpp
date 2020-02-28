@@ -159,15 +159,16 @@ TESTAddCube(game_state *GameState, world_position P, vec3 Dim, u32 VerticesCount
 	return(StoredEntity);
 }
 
-inline void
+internal void
 AddParticlesToEntity(game_state *GameState, stored_entity *Entity, 
 					 r32 MaxLifeTime, u32 SpawnInSecond, r32 Scale,
 					 vec3 StartPRanges, vec3 StartdPRanges, r32 dPY, vec3 StartddP, 
 					 vec3 Color)
 {
-	// TODO(georgy): Allow multiple particle systems for an entity
+	// TODO(georgy): Allow multiple particle systems per an entity
 	if(!Entity->Sim.ParticlesInfo)
 	{
+		// TODO(georgy): Think about unloading this
 		Entity->Sim.ParticlesInfo = PushStruct(&GameState->FundamentalTypesAllocator, particle_emitter_info);
 		Entity->Sim.ParticlesInfo->MaxLifeTime = MaxLifeTime;
 		Entity->Sim.ParticlesInfo->SpawnInSecond = SpawnInSecond;
@@ -177,6 +178,20 @@ AddParticlesToEntity(game_state *GameState, stored_entity *Entity,
 		Entity->Sim.ParticlesInfo->dPY = dPY;
 		Entity->Sim.ParticlesInfo->StartddP = StartddP;
 		Entity->Sim.ParticlesInfo->Color = Color;
+	}
+}
+
+internal void
+AddPointLightToEntity(game_state *GameState, stored_entity *Entity,
+					  vec3 OffsetFromEntity, vec3 Color)
+{
+	// TODO(georgy): Allow multiple point lights per an entity
+	if(!Entity->Sim.PointLight)
+	{
+		// TODO(georgy): Think about unloading this
+		Entity->Sim.PointLight = PushStruct(&GameState->FundamentalTypesAllocator, point_light);
+		Entity->Sim.PointLight->P = OffsetFromEntity;
+		Entity->Sim.PointLight->Color = Color;
 	}
 }
 
@@ -234,6 +249,8 @@ AddHero(game_state *GameState, world_position P)
 	AddParticlesToEntity(GameState, &GameState->StoredEntities[Entity.StoredEntity->Sim.Fireball.StorageIndex], 
 						 1.0f, 40, 1.0f, vec3(1.0f, 0.0f, 1.0f), vec3(1.0f, 0.0f, 1.0f), 4.0f, vec3(0.0f, -9.8f, 0.0f),
 						 vec3(1.0f, 0.078f, 0.098f));
+	AddPointLightToEntity(GameState, &GameState->StoredEntities[Entity.StoredEntity->Sim.Fireball.StorageIndex], 
+						  vec3(0.0f, 0.0f, 0.0f), vec3(1.0f, 1.0f, 1.0f));
 
 	return(Entity.StoredEntity);
 }
@@ -559,6 +576,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 		HeroP.Offset = vec3(0.3f, 5.0f, 3.0f);
 		GameState->Hero.Entity = AddHero(GameState, HeroP);
 		GameState->LastHeroWorldP = HeroP;
+		AddPointLightToEntity(GameState, GameState->Hero.Entity,
+					  		  vec3(0.0f, 1.0f, 0.0f), vec3(1.0f, 1.0f, 1.0f));
 		// AddParticlesToEntity(GameState, GameState->Hero.Entity,
 		// 					 1.5f, 30, 0.2f, vec3(0.0f, 0.0f, 0.0f), vec3(0.65f, 0.0f, 0.65f), 2.0f, vec3(0.0f, 0.0f, 0.0f),
 		// 					 vec3(0.25f, 0.25f, 0.25f));
@@ -885,6 +904,7 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	LoadChunks(&GameState->World);
 	CorrectChunksWaterLevel(&GameState->World);
 	
+	point_lights_info PointLightsInfo = {};
 	// NOTE(georgy): Entity simulations
 	for(u32 EntityIndex = 0;
 		EntityIndex < SimRegion->EntityCount;
@@ -988,6 +1008,13 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 				SpawnParticles(&GameState->ParticleGenerator, EntityWorldPosition, *Entity->ParticlesInfo, dt);
 			}
 
+			if(Entity->PointLight)
+			{
+				point_light PointLight = *Entity->PointLight;
+				PointLight.P += Entity->P;
+				PointLightsInfo.PointLights[PointLightsInfo.Count++] = PointLight;
+			}
+
 			if(IsSet(Entity, EntityFlag_Moveable))
 			{
 				MoveEntity(GameState, SimRegion, Entity, MoveSpec, dt, false);
@@ -1002,8 +1029,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	r32 OneDayCycleInSeconds = 1.0f*60.0f;
 	r32 DayCycleInCircle = (GameState->t / OneDayCycleInSeconds) * 1.5f*PI;
 	// GameState->DirectionalLightDir = -vec3(Cos(DayCycleInCircle), Sin(DayCycleInCircle), 0.0f);
-	// GameState->DirectionalLightDir = Normalize(vec3(-0.123566f, -0.9712314f, 0.0f));
-	GameState->DirectionalLightDir = Normalize(vec3(-0.5f, -0.3f, 0.0f));
+	GameState->DirectionalLightDir = Normalize(vec3(-0.123566f, -0.9712314f, 0.0f));
+	// GameState->DirectionalLightDir = Normalize(vec3(-0.5f, -0.3f, 0.0f));
 	GameState->t += Input->dt;
 	if(GameState->t > OneDayCycleInSeconds)
 	{
@@ -1186,10 +1213,6 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(vec3), &GameState->DirectionalLightDir);
 	glBufferSubData(GL_UNIFORM_BUFFER, sizeof(vec3), sizeof(vec3), &GameState->DirectionalLightColor);
 
-	point_lights_info PointLightsInfo;
-	PointLightsInfo.Count = 2;
-	PointLightsInfo.PointLights[0] = {vec3(0.0f, 1.0f, 0.0f), vec3(1.0f, 1.0f, 1.0f)};
-	PointLightsInfo.PointLights[1] = {vec3(4.0f, 1.0f, 0.0f), vec3(1.0f, 1.0f, 1.0f)};
 	glBindBuffer(GL_UNIFORM_BUFFER, GameState->UBOs[BindingPoint_PointLightInfo]);
 	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(point_lights_info), &PointLightsInfo);
 
