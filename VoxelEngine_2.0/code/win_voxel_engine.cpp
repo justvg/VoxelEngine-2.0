@@ -373,6 +373,7 @@ WinGetWindowDimension(HWND Window)
 internal void
 WinUpdateWindow(HDC DeviceContext, int WindowWidth, int WindowHeight)
 {
+	glViewport(0, 0, WindowWidth, WindowHeight);
 	// glClearColor(0.0f, 0.175f, 0.375f, 1.0f);
 	glClearColor(0.0f, SquareRoot(0.175f), SquareRoot(0.375f), 1.0f);
 	
@@ -451,7 +452,7 @@ WinWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 
 			window_dimension Dimension = WinGetWindowDimension(Window);
 
-			//WinUpdateWindow(DeviceContext, Dimension.Width, Dimension.Height);
+			// WinUpdateWindow(DeviceContext, Dimension.Width, Dimension.Height);
 			EndPaint(Window, &Paint);
 		} break;
 
@@ -463,8 +464,6 @@ WinWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 
 	return(Result);
 }
-
-
 
 struct platform_job_system_entry
 {
@@ -925,6 +924,10 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 									if (KeyCode == VK_SPACE)
 									{
 										WinProcessKey(&Input->MoveUp, IsDown);
+									}
+									if (KeyCode == VK_ESCAPE)
+									{
+										WinProcessKey(&Input->Esc, IsDown);
 									}
 
 	#if VOXEL_ENGINE_INTERNAL

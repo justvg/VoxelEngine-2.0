@@ -45,6 +45,12 @@ enum sim_entity_flags
 	EntityFlag_InWater = (1 << 5),
 };
 
+struct point_light
+{
+	vec3 P;
+	vec3 Color;
+};
+
 struct sim_entity
 {
 	u32 StorageIndex;

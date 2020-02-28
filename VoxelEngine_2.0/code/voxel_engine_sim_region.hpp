@@ -34,20 +34,20 @@ GetSimSpaceP(sim_region *SimRegion, stored_entity *StoredEntity)
 }
 
 internal sim_entity *
-AddEntity(game_state *GameState, sim_region *SimRegion, stored_entity *StoredEntity, vec3 SimSpaceP);
+AddEntity(game_mode_world *WorldMode, sim_region *SimRegion, stored_entity *StoredEntity, vec3 SimSpaceP);
 inline void
-LoadEntityReference(game_state *GameState, sim_region *SimRegion, entity_reference *Ref)
+LoadEntityReference(game_mode_world *WorldMode, sim_region *SimRegion, entity_reference *Ref)
 {
 	if(Ref->StorageIndex && !Ref->SimPtr)
 	{
-		stored_entity *StoredEntity = GameState->StoredEntities + Ref->StorageIndex;
+		stored_entity *StoredEntity = WorldMode->StoredEntities + Ref->StorageIndex;
 		vec3 SimSpaceP = GetSimSpaceP(SimRegion, StoredEntity);
-		Ref->SimPtr = AddEntity(GameState, SimRegion, StoredEntity, SimSpaceP);
+		Ref->SimPtr = AddEntity(WorldMode, SimRegion, StoredEntity, SimSpaceP);
 	}
 }
 
 internal sim_entity *
-AddEntity(game_state *GameState, sim_region *SimRegion, stored_entity *StoredEntity, vec3 SimSpaceP)
+AddEntity(game_mode_world *WorldMode, sim_region *SimRegion, stored_entity *StoredEntity, vec3 SimSpaceP)
 {
 	sim_entity *Entity = 0;
 
@@ -65,7 +65,7 @@ AddEntity(game_state *GameState, sim_region *SimRegion, stored_entity *StoredEnt
 			Entry->StorageIndex = Entity->StorageIndex;
 			Entry->SimPtr = Entity;
 
-			LoadEntityReference(GameState, SimRegion, &Entity->Fireball);
+			LoadEntityReference(WorldMode, SimRegion, &Entity->Fireball);
 		}
 	}
 	else
@@ -77,12 +77,12 @@ AddEntity(game_state *GameState, sim_region *SimRegion, stored_entity *StoredEnt
 }
 
 internal sim_region *
-BeginSimulation(game_state *GameState, world_position Origin, rect3 Bounds, 
+BeginSimulation(game_mode_world *WorldMode, world_position Origin, rect3 Bounds, 
 				stack_allocator *TempAllocator, r32 dt)
 {
 	TIME_BLOCK;
-	world *World = &GameState->World;
-	stack_allocator *WorldAllocator = &GameState->WorldAllocator;
+	world *World = &WorldMode->World;
+	stack_allocator *WorldAllocator = &WorldMode->WorldAllocator;
 
 	sim_region *SimRegion = PushStruct(TempAllocator, sim_region);
 	SimRegion->World = World;
@@ -187,14 +187,14 @@ BeginSimulation(game_state *GameState, world_position Origin, rect3 Bounds,
 									EntityIndexInBlock++)
 								{
 									u32 StoredEntityIndex = Block->StoredEntityIndex[EntityIndexInBlock];
-									stored_entity *StoredEntity = GameState->StoredEntities + StoredEntityIndex;
+									stored_entity *StoredEntity = WorldMode->StoredEntities + StoredEntityIndex;
 									if(!IsSet(&StoredEntity->Sim, EntityFlag_NonSpatial))
 									{
 										vec3 SimSpaceP = Substract(World, &StoredEntity->P, &Origin);
 										rect3 EntityAABB = RectCenterDim(SimSpaceP + StoredEntity->Sim.Collision->OffsetP, StoredEntity->Sim.Collision->Dim);
 										if(RectIntersect(SimRegion->Bounds, EntityAABB))
 										{
-											AddEntity(GameState, SimRegion, StoredEntity, SimSpaceP);
+											AddEntity(WorldMode, SimRegion, StoredEntity, SimSpaceP);
 										}
 									}
 								}
@@ -217,7 +217,7 @@ BeginSimulation(game_state *GameState, world_position Origin, rect3 Bounds,
 }
 
 internal void
-EndSimulation(game_state *GameState, sim_region *SimRegion, stack_allocator *WorldAllocator)
+EndSimulation(game_mode_world *WorldMode, sim_region *SimRegion, stack_allocator *WorldAllocator)
 {
 	for(u32 EntityIndex = 0;
 		EntityIndex < SimRegion->EntityCount;
@@ -225,7 +225,7 @@ EndSimulation(game_state *GameState, sim_region *SimRegion, stack_allocator *Wor
 	{
 		sim_entity *Entity = SimRegion->Entities + EntityIndex;
 		Entity->Fireball.SimPtr = 0;
-		stored_entity *StoredEntity = GameState->StoredEntities + Entity->StorageIndex;
+		stored_entity *StoredEntity = WorldMode->StoredEntities + Entity->StorageIndex;
 		StoredEntity->Sim = *Entity;
 
 		world_position NewP = MapIntoChunkSpace(SimRegion->World, &SimRegion->Origin, Entity->P);
@@ -766,7 +766,7 @@ CameraCollisionDetection(world *World, camera *Camera, world_position *OriginP)
 }
 
 internal bool32
-CanCollide(game_state *GameState, sim_entity *A, sim_entity *B)
+CanCollide(game_mode_world *WorldMode, sim_entity *A, sim_entity *B)
 {
 	bool32 Result = false;
 
@@ -787,10 +787,10 @@ CanCollide(game_state *GameState, sim_entity *A, sim_entity *B)
 			}
 
 			for(u32 CollisionRuleIndex = 0;
-				CollisionRuleIndex < ArrayCount(GameState->CollisionRules);
+				CollisionRuleIndex < ArrayCount(WorldMode->CollisionRules);
 				CollisionRuleIndex++)
 			{
-				pairwise_collision_rule *CollisionRule = GameState->CollisionRules + CollisionRuleIndex;
+				pairwise_collision_rule *CollisionRule = WorldMode->CollisionRules + CollisionRuleIndex;
 				if((CollisionRule->StorageIndexA == A->StorageIndex) &&
 				   (CollisionRule->StorageIndexB == B->StorageIndex))
 				{
@@ -805,17 +805,17 @@ CanCollide(game_state *GameState, sim_entity *A, sim_entity *B)
 }
 
 internal bool32
-HandleCollision(game_state *GameState, sim_region *SimRegion, sim_entity *EntityA, sim_entity *EntityB, entity_type A, entity_type B,
+HandleCollision(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *EntityA, sim_entity *EntityB, entity_type A, entity_type B,
 				mat3 EllipsoidToWorld, vec3 ESpaceCollisionP)
 {
 	bool32 Result;
-	world *World = &GameState->World;
+	world *World = &WorldMode->World;
 
 	if(A == EntityType_Fireball)
 	{
 		if(EntityB)
 		{
-			AddCollisionRule(GameState, EntityA->StorageIndex, EntityB->StorageIndex, false);
+			AddCollisionRule(WorldMode, EntityA->StorageIndex, EntityB->StorageIndex, false);
 		}
 	}
 
@@ -873,7 +873,7 @@ HandleCollision(game_state *GameState, sim_region *SimRegion, sim_entity *Entity
 							operation_between_chunks Op = (operation_between_chunks)(OperationBetweenChunks_SetActiveness |
 																					 OperationBetweenChunks_GetColor);
 							OperationBetweenChunks(World, Chunk, X, Y, Z, Op, false, &BlockColor);
-							AddParticle(&GameState->ParticleGenerator, WorldBlockP, DefaultParticleInfoWithColor(vec3(BlockColor.m)));
+							AddParticle(&WorldMode->ParticleGenerator, WorldBlockP, DefaultParticleInfoWithColor(vec3(BlockColor.m)));
 						}
 					} 
 				}	
@@ -913,14 +913,14 @@ HandleCollision(game_state *GameState, sim_region *SimRegion, sim_entity *Entity
 		GetBlockIndexFromOffsetInChunk(World, CollisionWorldP.Offset, &X, &Y, &Z);
 		
 		vec4 BlockColor	= GetBlockColorBetweenChunks(World, Chunk, X, Y, Z);
-		AddParticles(&GameState->ParticleGenerator, 5, CollisionWorldP, DefaultParticleInfoWithColor(vec3(BlockColor.m)));
+		AddParticles(&WorldMode->ParticleGenerator, 5, CollisionWorldP, DefaultParticleInfoWithColor(vec3(BlockColor.m)));
 	}
 
 	return(Result);
 }
 
 internal void
-MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, move_spec MoveSpec, r32 dt, bool32 Gravity)
+MoveEntity(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *Entity, move_spec MoveSpec, r32 dt, bool32 Gravity)
 {
 	mat3 EllipsoidToWorld = Rotate3x3(Entity->Rotation, vec3(0.0f, 1.0f, 0.0f)) * 
 							Scale3x3(0.5f*Entity->Collision->Dim);
@@ -956,7 +956,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 	Entity->dP += MoveSpec.ddP*dt;
 
 	// NOTE(georgy): Collision broad phase
-	stored_entity *StoredEntity = GameState->StoredEntities + Entity->StorageIndex;
+	stored_entity *StoredEntity = WorldMode->StoredEntities + Entity->StorageIndex;
 	world_position OldWorldP = StoredEntity->P;
 	
 	box EntityBox = ConstructBoxDim(Entity->Collision->Dim);
@@ -982,7 +982,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 	{
 		sim_entity *TestEntity = SimRegion->Entities + TestEntityIndex;
 
-		if(CanCollide(GameState, Entity, TestEntity))
+		if(CanCollide(WorldMode, Entity, TestEntity))
 		{
 			box TestEntityBox = ConstructBoxDim(TestEntity->Collision->Dim);
 			mat3 TestEntityTransformation = Rotate3x3(TestEntity->Rotation, vec3(0.0f, 1.0f, 0.0f));
@@ -1040,7 +1040,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 					CollisionEntityIndex++)
 				{
 					sim_entity *TestEntity = CollideEntities[CollisionEntityIndex];
-					if(CanCollide(GameState, Entity, TestEntity))
+					if(CanCollide(WorldMode, Entity, TestEntity))
 					{
 						vec3 Displacement = TestEntity->Collision->OffsetP;
 						mat3 TestEntityTransformation = Rotate3x3(TestEntity->Rotation, vec3(0.0f, 1.0f, 0.0f));
@@ -1067,7 +1067,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 				ESpaceEntityDelta = ESpaceDesiredP - ESpaceP;
 				if(EllipsoidTriangleData.HitEntityType)
 				{
-					bool32 StopOnCollision = HandleCollision(GameState, SimRegion, Entity, HitEntity, Entity->Type, 
+					bool32 StopOnCollision = HandleCollision(WorldMode, SimRegion, Entity, HitEntity, Entity->Type, 
 															 EllipsoidTriangleData.HitEntityType, EllipsoidToWorld, EllipsoidTriangleData.CollisionP);
 
 					if(StopOnCollision)
@@ -1144,7 +1144,7 @@ MoveEntity(game_state *GameState, sim_region *SimRegion, sim_entity *Entity, mov
 }
 
 internal void
-RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegion, 
+RenderEntities(game_mode_world *WorldMode, temp_state *TempState, sim_region *SimRegion, 
 			   shader WorldShader, shader CharacterShader, shader HitpointsShader, 
 			   vec3 Right, bool32 DEBUGRenderBB = false)
 {
@@ -1168,7 +1168,7 @@ RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegi
 						BoneIndex < CharacterBone_Count;
 						BoneIndex++)
 					{
-						BoneTransformations[BoneIndex] = GetBoneForEntity(GameState->CharacterAnimations, &Entity->AnimationState, 
+						BoneTransformations[BoneIndex] = GetBoneForEntity(WorldMode->CharacterAnimations, &Entity->AnimationState, 
 																		  (character_bone_id)BoneIndex);
 					}
 					for(u32 BoneIndex = 0;
@@ -1226,7 +1226,7 @@ RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegi
 				{
 					mat4 Model = Translate(vec3(0.0f, 0.5f*0.25f, 0.0f) + Entity->P) * Scale(vec3(0.25f, 0.25f, 0.25f));
 					SetMat4(WorldShader, "Model", Model);
-					DrawFromVAO(GameState->CubeVAO, 36);
+					DrawFromVAO(WorldMode->CubeVAO, 36);
 
 					if(DEBUGRenderBB)
 					{
@@ -1250,7 +1250,7 @@ RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegi
 				{
 					mat4 Model = Translate(vec3(0.0f, 0.5f, 0.0f) + Entity->P);
 					SetMat4(WorldShader, "Model", Model);
-					DrawFromVAO(GameState->CubeVAO, 36);
+					DrawFromVAO(WorldMode->CubeVAO, 36);
 
 					UseShader(HitpointsShader);
 					SetVec3(HitpointsShader, "Color", vec3(1.0f, 0.0f, 0.0f));
@@ -1258,7 +1258,7 @@ RenderEntities(game_state *GameState, temp_state *TempState, sim_region *SimRegi
 					SetVec3(HitpointsShader, "BillboardSimCenterP", Entity->P + vec3(0.0f, 1.0f + 0.1f, 0.0f));
 					SetVec2(HitpointsShader, "Scale", vec2((r32)Entity->HitPoints / (r32)Entity->MaxHitPoints, 0.2f));
 
-					glBindVertexArray(GameState->QuadVAO);
+					glBindVertexArray(WorldMode->QuadVAO);
 					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 					glBindVertexArray(0);
 

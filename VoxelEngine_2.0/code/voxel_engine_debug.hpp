@@ -753,11 +753,6 @@ DEBUGEndDebugFrameAndRender(game_memory *Memory, game_input *Input, r32 BufferWi
 		GlobalDebugTable.EventCount = EventArrayIndex_EventIndex & 0xFFFFFFFF;
 	}
 
-	// if(!GlobalDebugTable.ProfilePause)
-	// {
-	// 	DebugState->ValuesCount = 0;
-	// }
-	
 	if(DebugState && GameAssets)
 	{
 		DEBUGReset(DebugState, Memory, GameAssets, BufferWidth, BufferHeight);
@@ -781,7 +776,9 @@ DEBUGEndDebugFrameAndRender(game_memory *Memory, game_input *Input, r32 BufferWi
 	u32 FrameAllocatorRemaining = (u32)((DebugState->FrameAllocator.Size - DebugState->FrameAllocator.Used) / 1024);
 	DEBUG_VALUE(u32, FrameAllocatorRemainingKb, DebugTools, FrameAllocatorRemaining);
 
+#if 0
 	game_state* GameState = (game_state*)Memory->PermanentStorage;
 	u32 WorldAllocatorRemaining = (u32)((GameState->WorldAllocator.Size - GameState->WorldAllocator.Used) / 1024);
 	DEBUG_VALUE(u32, WorldAllocatorRemainingKb, World, WorldAllocatorRemaining);
+#endif
 }

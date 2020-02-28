@@ -784,6 +784,7 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(SetupChunkBlocks)
 	if(!World->FirstFreeChunkBlocksInfo)
 	{
 		World->FirstFreeChunkBlocksInfo = PushStruct(WorldAllocator, chunk_blocks_info);
+		World->FirstFreeChunkBlocksInfo->Next = 0;
 	}
 	Chunk->BlocksInfo = World->FirstFreeChunkBlocksInfo;
 	World->FirstFreeChunkBlocksInfo = World->FirstFreeChunkBlocksInfo->Next;
@@ -1579,6 +1580,27 @@ UnloadChunks(world *World, world_position *MinChunkP, world_position *MaxChunkP)
 					ChunksUnloaded++;
  					UnloadChunk(World, Chunk);
 				}
+			}
+
+			Chunk = Chunk->NextInHash;
+		}
+	}
+}
+
+internal void
+UnloadAllChunks(world *World)
+{
+	for(u32 ChunkHashBucket = 0;
+		(ChunkHashBucket < ArrayCount(World->ChunkHash));
+		ChunkHashBucket++)
+	{
+		chunk *Chunk = World->ChunkHash[ChunkHashBucket];
+		while(Chunk)
+		{
+			if(Chunk->IsRecentlyUsed)
+			{
+				Chunk->IsRecentlyUsed = false;
+				UnloadChunk(World, Chunk);
 			}
 
 			Chunk = Chunk->NextInHash;

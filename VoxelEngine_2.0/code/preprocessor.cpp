@@ -310,7 +310,7 @@ main(int ArgCount, char **Args)
 {
     char *FileNames[] = 
     {
-        "voxel_engine.hpp",
+        "voxel_engine_world_mode.hpp",
         "voxel_engine_debug.hpp",
         "voxel_engine_render.hpp"
     };

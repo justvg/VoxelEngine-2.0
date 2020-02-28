@@ -117,6 +117,7 @@ struct game_input
 			button MoveUp;
 
 			button Pause;
+			button Esc;
 		};
 	};
 };

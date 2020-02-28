@@ -46,6 +46,14 @@ GetAlignmentOffset(stack_allocator *Allocator, u64 Alignment)
 }
 
 inline u64
+GetAllocatorSizeRemaining(stack_allocator *Allocator, u64 Alignment = DEFAULT_ALIGNMENT)
+{
+	u64 Result = Allocator->Size - (Allocator->Used + GetAlignmentOffset(Allocator, Alignment));
+
+	return(Result);
+}
+
+inline u64
 GetEffectiveSizeFor(stack_allocator *Allocator, u64 SizeInit, u64 Alignment)
 {
 	u64 AlignmentOffset = GetAlignmentOffset(Allocator, Alignment);
@@ -117,6 +125,7 @@ ZeroSize(void *Ptr, u64 Size)
 	}
 }
 
+struct game_state;
 #include "voxel_engine_intrinsics.h"
 #include "voxel_engine_math.h"
 #include "voxel_engine_dynamic_array.h"
@@ -125,176 +134,38 @@ ZeroSize(void *Ptr, u64 Size)
 #include "voxel_engine_render.h"
 #include "voxel_engine_config.h"
 #include "voxel_engine_debug.h"
+#include "voxel_engine_animation.h"
+#include "voxel_engine_audio.h"
+#include "voxel_engine_sim_region.h"
+#include "voxel_engine_world_mode.h"
+#include "voxel_engine_title_screen.h"
 
 global_variable mat4 GlobalViewProjection;
 
-struct camera
+enum game_mode
 {
-	r32 DistanceFromHero;
-	r32 Pitch, Head;
+	GameMode_None,
 
-	r32 RotSensetivity;
-
-	r32 NearDistance;
-	r32 FarDistance;
-	r32 FoV;
-	r32 AspectRatio;
-
-	mat4 RotationMatrix;
-
-	vec3 OffsetFromHero;
-	vec3 TargetOffset;
-	vec3 LastOffsetFromHero;
-
-	vec3 DEBUGP;
-	vec3 DEBUGFront;
-	r32 DEBUGPitch, DEBUGHead;
-};
-
-struct point_light
-{
-	vec3 P;
-	vec3 Color;
-};
-
-struct point_lights_info
-{
-	u32 Count;
-	point_light PointLights[64];
-};
-
-#include "voxel_engine_animation.h"
-#include "voxel_engine_sim_region.h"
-
-struct stored_entity
-{
-	world_position P;
-	sim_entity Sim;
-};
-
-struct hero
-{
-	stored_entity *Entity;
-
-	bool32 Fireball;
-
-	vec3 ddP;
-	r32 dY;
-	r32 AdditionalRotation;
-};
-
-struct pairwise_collision_rule
-{
-	u32 StorageIndexA;
-	u32 StorageIndexB;
-	bool32 CanCollide;
-};
-
-struct playing_sound
-{
-	sound_id ID;
-	vec2 Volume;
-	vec2 dVolume;
-	vec2 TargetVolume;
-	u32 SamplesPlayed;
-
-	world_position P;
-
-	union
-	{
-		playing_sound *Next;
-		playing_sound *NextFree;
-	};
-};
-
-struct audio_state
-{
-	stack_allocator *Allocator;
-	playing_sound *FirstPlayingSound;
-	playing_sound *FirstFreePlayingSound;
-	
-	r32 GlobalVolume;
-};
-
-enum ubo_binding_point
-{
-	BindingPoint_Matrices,
-	BindingPoint_UIMatrices,
-	BindingPoint_DirectionalLightInfo,
-	BindingPoint_PointLightInfo,
-	BindingPoint_ShadowsInfo,
-
-	BindingPoint_Counts
+	GameMode_TitleScreen,
+	GameMode_World
 };
 
 struct game_state
 {
 	bool32 IsInitialized;
 
-	camera Camera;
-
-	stack_allocator WorldAllocator;
-	world World;	
-
-	stack_allocator FundamentalTypesAllocator;
-
-	u32 LastStoredCollisionRule;
-	pairwise_collision_rule CollisionRules[256];
-
-	sim_entity_collision_volume *HeroCollision;
-	sim_entity_collision_volume *FireballCollision;
-	sim_entity_collision_volume *TreeCollision;
-	sim_entity_collision_volume *TESTCubeCollision;
-
-	shader CharacterShader;
-	shader WorldShader;
-	shader WaterShader;
-	shader HitpointsShader;
-	shader BlockParticleShader;
-	shader WorldDepthShader;
-	shader CharacterDepthShader;
-	shader BlockParticleDepthShader;
-	shader UIQuadShader;
-	shader UIGlyphShader;
-	shader FramebufferScreenShader;
-
-	GLuint UBOs[BindingPoint_Counts];
-
-	animation CharacterAnimations[CharacterAnimation_Count];
-
-	hero Hero;
-	world_position LastHeroWorldP;
-
-	r32 t;
-
-	vec3 DirectionalLightDir, DirectionalLightColor;
-#define CASCADES_COUNT 3
-	GLuint ShadowMapFBO, ShadowMapsArray;
-	u32 ShadowMapsWidth, ShadowMapsHeight;
-	GLuint ShadowNoiseTexture;
-	vec2 ShadowSamplesOffsets[16];
+	stack_allocator ModeAllocator;
+	stack_allocator AudioAllocator;
 
 	audio_state AudioState;
 
-	u32 StoredEntityCount;
-	stored_entity StoredEntities[10000];
-
-	GLuint ParticleVAO, ParticleVBO, ParticlePVBO, ParticleOffsetVBO, ParticleScaleVBO; 
-
-	particle_generator ParticleGenerator;
-
-	// TODO(georgy): Move this to temp state?
-	font_id FontID;
-	loaded_font *Font;
-
-	GLuint UIQuadVAO, UIQuadVBO;
-	GLuint UIGlyphVAO, UIGlyphVBO;
-
-	GLuint CubeVAO, CubeVBO;
-	GLuint QuadVAO, QuadVBO;
+	game_mode GameMode;
+	union
+	{
+		game_mode_title_screen *TitleScreen;
+		game_mode_world *WorldMode;
+	};
 };
-
-internal void AddCollisionRule(game_state *GameState, u32 StorageIndexA, u32 StorageIndexB, bool32 CanCollide);
 
 struct temp_state
 {
@@ -327,3 +198,5 @@ MakeEntityNonSpatial(sim_entity *Entity)
 	}
 #endif
 }
+
+internal void SetGameMode(game_state *GameState, game_mode GameMode);
