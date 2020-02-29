@@ -620,7 +620,7 @@ PlayWorld(game_state *GameState)
 	GameState->WorldMode = WorldMode;
 }
 
-internal void
+internal bool32
 UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_state *TempState, game_input *Input,
                      int BufferWidth, int BufferHeight, bool32 GameProfilingPause, bool32 DebugCamera, game_input *DebugCameraInput)
 {
@@ -1090,6 +1090,8 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 
 	// NOTE(georgy): World and entities rendering
 	glViewport(0, 0, BufferWidth, BufferHeight);
+	glClearColor(0.0f, SquareRoot(0.175f), SquareRoot(0.375f), 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 
 	mat4 View = Camera->RotationMatrix * 
 				Translate(-Camera->OffsetFromHero - Camera->TargetOffset);
@@ -1255,4 +1257,7 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 	{
 		PlayTitleScreen(GameState);
 	}
+
+	bool32 ChangeMode = false;
+	return(ChangeMode);
 }

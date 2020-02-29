@@ -112,19 +112,24 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 
 	temporary_memory SimulationAndRenderMemory = BeginTemporaryMemory(&TempState->Allocator);
 
-	switch(GameState->GameMode)
+	bool32 ChangeMode = false;
+	do
 	{
-		case GameMode_TitleScreen:
+		switch(GameState->GameMode)
 		{
-			UpdateAndRenderTitleScreen(GameState, GameState->TitleScreen, Input);
-		} break;
+			case GameMode_TitleScreen:
+			{
+				ChangeMode = UpdateAndRenderTitleScreen(GameState, GameState->TitleScreen, Input, 
+														BufferWidth, BufferHeight);
+			} break;
 
-		case GameMode_World:
-		{
-			UpdateAndRenderWorld(GameState, GameState->WorldMode, TempState, Input,
-								 BufferWidth, BufferHeight, GameProfilingPause, DebugCamera, DebugCameraInput);
-		} break;
-	}
+			case GameMode_World:
+			{
+				ChangeMode = UpdateAndRenderWorld(GameState, GameState->WorldMode, TempState, Input,
+				  					 			  BufferWidth, BufferHeight, GameProfilingPause, DebugCamera, DebugCameraInput);
+			} break;
+		}
+	} while(ChangeMode);
 
 	EndTemporaryMemory(SimulationAndRenderMemory);
 

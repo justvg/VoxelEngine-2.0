@@ -264,6 +264,9 @@ GetTexture(game_assets *GameAssets, texture_id Index)
 
 		if(!Result->TextureID)
 		{
+			// TODO(georgy): I think, I can do this right after I loaded texture in, e.g., LoadAssetJob
+			// 				 So I don't have to store the actual pixels in memory.
+			// 				 The same kind of stuff can be done with models
 			InitTexture(Result, GL_REPEAT);
 		}
 	}

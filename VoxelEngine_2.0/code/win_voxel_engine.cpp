@@ -373,13 +373,8 @@ WinGetWindowDimension(HWND Window)
 internal void
 WinUpdateWindow(HDC DeviceContext, int WindowWidth, int WindowHeight)
 {
-	glViewport(0, 0, WindowWidth, WindowHeight);
-	// glClearColor(0.0f, 0.175f, 0.375f, 1.0f);
-	glClearColor(0.0f, SquareRoot(0.175f), SquareRoot(0.375f), 1.0f);
-	
 	SwapBuffers(DeviceContext);
 	// glFinish();
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
 internal void 
@@ -702,7 +697,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	WindowClass.lpfnWndProc = WinWindowCallback;
 	WindowClass.hInstance = Instance;
 	WindowClass.hCursor = LoadCursor(0, IDC_ARROW);
-	WindowClass.hbrBackground = CreateSolidBrush(RGB(0, (u8)(0.175f*255.0f), (u8)(0.375f*255.0f)));
+	WindowClass.hbrBackground = CreateSolidBrush(RGB((u8)(SquareRoot(0.5f)*255.0f), 0, (u8)(SquareRoot(0.5f)*255.0f)));
 	WindowClass.lpszClassName = "VoxelEngineWindowClass";
 
 	if(RegisterClass(&WindowClass))
@@ -768,11 +763,6 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					GlobalSecondaryBuffer->Unlock(Part1, Part1Size, Part2, Part2Size);
 				}
 			}
-         
-			window_dimension Dimension = WinGetWindowDimension(Window);
-			glViewport(0, 0, Dimension.Width, Dimension.Height);
-			glClearColor(0.0f, SquareRoot(0.175f), SquareRoot(0.375f), 1.0f);
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 			game_memory GameMemory = {};
 			GameMemory.PermanentStorageSize = Gigabytes(2);
@@ -1042,6 +1032,10 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					BEGIN_BLOCK(GameUpdateTime); 
 
 					GameUpdate(&GameMemory, &GameInput, Dimension.Width, Dimension.Height, GlobalGamePause, DebugCamera, &DebugCameraInput);
+					if(GameInput.QuitRequested)
+					{
+						GlobalRunning = false;
+					}
 
 					END_BLOCK(GameUpdateTime);
 

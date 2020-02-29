@@ -36,6 +36,7 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(LoadAssetJob)
 			Platform.ReadDataFromFile(GameAssets->File, Asset->Header->Model.Normals, VerticesSize, Asset->VEAAsset.DataOffset + (u64)VerticesSize);
 			Platform.ReadDataFromFile(GameAssets->File, Asset->Header->Model.Colors, VerticesSize, Asset->VEAAsset.DataOffset + 2*(u64)VerticesSize);
 
+			// TODO(georgy): I can do these stuff before LoadAssetJob. Should I?
 			Asset->Header->Model.VerticesCount = Asset->VEAAsset.Model.VerticesCount;
 			Asset->Header->Model.Alignment = Asset->VEAAsset.Model.Alignment;
 			Asset->Header->Model.AlignmentX = Asset->VEAAsset.Model.AlignmentX;

@@ -120,6 +120,8 @@ struct game_input
 			button Esc;
 		};
 	};
+
+	bool32 QuitRequested;
 };
 
 inline bool32
