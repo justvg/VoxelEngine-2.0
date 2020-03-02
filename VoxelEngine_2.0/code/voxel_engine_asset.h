@@ -12,6 +12,7 @@ struct loaded_model
 
 	vec3 Alignment;
 	r32 AlignmentX; // NOTE(georgy): This is for models like hands, where we need to multiply this by EntityRight vec
+	r32 AlignmentZ; // NOTE(georgy): This is for models like sword, where we need to multiply this by EntityForward vec
 };
 
 struct loaded_texture

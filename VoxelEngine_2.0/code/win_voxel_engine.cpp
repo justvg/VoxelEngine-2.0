@@ -203,6 +203,9 @@ WinInitOpenGL(HWND Window, HINSTANCE Instance, LPCSTR WindowClassName)
 					glEnable(GL_MULTISAMPLE);
 					glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
+					glClearColor(SquareRoot(0.5f), 0.0f, SquareRoot(0.5f), 1.0f);
+					glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 					// glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 				}
 				else
@@ -393,10 +396,10 @@ ToggleFullscreen(HWND Window)
         {
             SetWindowLong(Window, GWL_STYLE, Style & ~WS_OVERLAPPEDWINDOW);
             SetWindowPos(Window, HWND_TOP,
-                        MonitorInfo.rcMonitor.left, MonitorInfo.rcMonitor.top,
-                        MonitorInfo.rcMonitor.right - MonitorInfo.rcMonitor.left,
-                        MonitorInfo.rcMonitor.bottom - MonitorInfo.rcMonitor.top,
-                        SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+                    	 MonitorInfo.rcMonitor.left, MonitorInfo.rcMonitor.top,
+                         MonitorInfo.rcMonitor.right - MonitorInfo.rcMonitor.left,
+                         MonitorInfo.rcMonitor.bottom - MonitorInfo.rcMonitor.top,
+                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
         }
     }
     else 
@@ -404,8 +407,8 @@ ToggleFullscreen(HWND Window)
         SetWindowLong(Window, GWL_STYLE, Style | WS_OVERLAPPEDWINDOW);
         SetWindowPlacement(Window, &GlobalWindowPosition);
         SetWindowPos(Window, NULL, 0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
-                    SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                     SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
     }
 }
 
@@ -697,7 +700,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	WindowClass.lpfnWndProc = WinWindowCallback;
 	WindowClass.hInstance = Instance;
 	WindowClass.hCursor = LoadCursor(0, IDC_ARROW);
-	WindowClass.hbrBackground = CreateSolidBrush(RGB((u8)(SquareRoot(0.5f)*255.0f), 0, (u8)(SquareRoot(0.5f)*255.0f)));
+	// WindowClass.hbrBackground = CreateSolidBrush(RGB((u8)(SquareRoot(0.5f)*255.0f), 0, (u8)(SquareRoot(0.5f)*255.0f)));
 	WindowClass.lpszClassName = "VoxelEngineWindowClass";
 
 	if(RegisterClass(&WindowClass))
@@ -710,7 +713,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		if(Window)
 		{
 			WinInitOpenGL(Window, Instance, WindowClass.lpszClassName);
-			// ToggleFullscreen(Window);
+			ToggleFullscreen(Window);
 			ShowWindow(Window, SW_SHOW);
 
 			int RefreshRate = 60;
@@ -965,6 +968,22 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 										}
 									}
 	#endif
+								}
+
+								if(IsDown)
+								{
+									bool32 AltKeyWasDown = (Message.lParam & (1 << 29));
+									if((KeyCode == VK_F4) && AltKeyWasDown)
+									{
+										GlobalRunning = false;
+									}
+									if((KeyCode == VK_RETURN) && AltKeyWasDown)
+									{
+										if(Message.hwnd)
+										{
+											ToggleFullscreen(Message.hwnd);
+										}
+									}
 								}
 							} break;
 

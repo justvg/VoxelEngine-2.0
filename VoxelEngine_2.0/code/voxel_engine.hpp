@@ -3,6 +3,7 @@
 #include "voxel_engine_render.hpp"
 #include "voxel_engine_world.hpp"
 #include "voxel_engine_audio.hpp"
+#include "voxel_engine_animation.hpp"
 #include "voxel_engine_sim_region.hpp"
 #include "voxel_engine_world_mode.hpp"
 #include "voxel_engine_title_screen.hpp"
@@ -21,8 +22,7 @@ SetGameMode(game_state *GameState, game_mode GameMode)
 
 		FreeDynamicArray(&WorldMode->HeroCollision->VerticesP);
 		FreeDynamicArray(&WorldMode->FireballCollision->VerticesP);
-		FreeDynamicArray(&WorldMode->TreeCollision->VerticesP);
-		FreeDynamicArray(&WorldMode->TESTCubeCollision->VerticesP);
+		FreeDynamicArray(&WorldMode->HeroSwordCollision->VerticesP);
 
 		glDeleteProgram(WorldMode->CharacterShader.ID);
 		glDeleteProgram(WorldMode->WorldShader.ID);
@@ -128,6 +128,8 @@ GameUpdate(game_memory *Memory, game_input *Input, int BufferWidth, int BufferHe
 				ChangeMode = UpdateAndRenderWorld(GameState, GameState->WorldMode, TempState, Input,
 				  					 			  BufferWidth, BufferHeight, GameProfilingPause, DebugCamera, DebugCameraInput);
 			} break;
+
+			InvalidDefaultCase;
 		}
 	} while(ChangeMode);
 

@@ -38,7 +38,8 @@ AddEntity(game_mode_world *WorldMode, sim_region *SimRegion, stored_entity *Stor
 inline void
 LoadEntityReference(game_mode_world *WorldMode, sim_region *SimRegion, entity_reference *Ref)
 {
-	if(Ref->StorageIndex && !Ref->SimPtr)
+	// if(Ref->StorageIndex && !Ref->SimPtr)
+	if(Ref->StorageIndex)
 	{
 		stored_entity *StoredEntity = WorldMode->StoredEntities + Ref->StorageIndex;
 		vec3 SimSpaceP = GetSimSpaceP(SimRegion, StoredEntity);
@@ -66,6 +67,7 @@ AddEntity(game_mode_world *WorldMode, sim_region *SimRegion, stored_entity *Stor
 			Entry->SimPtr = Entity;
 
 			LoadEntityReference(WorldMode, SimRegion, &Entity->Fireball);
+			LoadEntityReference(WorldMode, SimRegion, &Entity->Sword);
 		}
 	}
 	else
@@ -224,7 +226,7 @@ EndSimulation(game_mode_world *WorldMode, sim_region *SimRegion, stack_allocator
 		EntityIndex++)
 	{
 		sim_entity *Entity = SimRegion->Entities + EntityIndex;
-		Entity->Fireball.SimPtr = 0;
+		// Entity->Fireball.SimPtr = 0;
 		stored_entity *StoredEntity = WorldMode->StoredEntities + Entity->StorageIndex;
 		StoredEntity->Sim = *Entity;
 
@@ -811,7 +813,7 @@ HandleCollision(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *E
 	bool32 Result;
 	world *World = &WorldMode->World;
 
-	if(A == EntityType_Fireball)
+	if((A == EntityType_Fireball))
 	{
 		if(EntityB)
 		{
@@ -819,7 +821,13 @@ HandleCollision(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *E
 		}
 	}
 
-	if((A == EntityType_Fireball) || (B == EntityType_Fireball))
+	if(B == EntityType_Sword)
+	{
+		AddCollisionRule(WorldMode, EntityA->StorageIndex, EntityB->StorageIndex, false);
+	}
+
+	if((A == EntityType_Fireball) || (B == EntityType_Fireball) || 
+	   (A == EntityType_Sword) || (B == EntityType_Sword))
 	{
 		Result = false;
 	}
@@ -880,21 +888,30 @@ HandleCollision(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *E
 			}
 		}
 	}
-	else if((A == EntityType_Chunk) && (B == EntityType_Hero))
+	else if((A == EntityType_Monster) && (B == EntityType_Fireball))
 	{
-		EntityB->HitPoints++;
-		if(EntityB->HitPoints > 100)
+		EntityA->HitPoints -= 30;
+		if(EntityA->HitPoints <= 0)
 		{
-			EntityB->HitPoints = 0;
+			EntityA->HitPoints = 0;
+			MakeEntityNonSpatial(EntityA);
 		}
 	}
-	else if((A == EntityType_Fireball) && (B == 10000))
+	else if((A == EntityType_Monster) && (B == EntityType_Sword))
 	{
-		EntityB->HitPoints -= 10;
-		if(EntityB->HitPoints <= 0)
+		EntityA->HitPoints -= 30;
+		if(EntityA->HitPoints <= 0)
 		{
-			EntityB->HitPoints = 0;
-			MakeEntityNonSpatial(EntityB);
+			EntityA->HitPoints = 0;
+			MakeEntityNonSpatial(EntityA);
+		}
+	}
+	else if((A == EntityType_Hero) && (B == EntityType_Sword))
+	{
+		EntityA->HitPoints -= 5;
+		if(EntityA->HitPoints <= 0)
+		{
+			EntityA->HitPoints = 0;
 		}
 	}
 	else if((A == EntityType_Water) && (B == EntityType_Hero))
@@ -989,7 +1006,7 @@ MoveEntity(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *Entity
 			TransformBox(&TestEntityBox, TestEntityTransformation, TestEntity->P + TestEntity->Collision->OffsetP);
 			rect3 TestEntityAABB = RectFromBox(&TestEntityBox);
 
-			if(RectIntersect(TestEntityAABB, EntityOldPAABB) || RectIntersect(TestEntityAABB, EntityDesiredPAABB))
+			if(RectIntersect(TestEntityAABB, AABB))
 			{
 				Assert(CollideEntitiesCount < ArrayCount(CollideEntities));
 				CollideEntities[CollideEntitiesCount++] = TestEntity;
@@ -1089,7 +1106,7 @@ MoveEntity(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *Entity
 														  false, &RayTriangleData);
 							if(RayTriangleData.t == 1.0f)
 							{
-								MoveOnBlock = true;					
+								MoveOnBlock = (EllipsoidTriangleData.HitEntityType == EntityType_Chunk);					
 							}
 						}
 
@@ -1143,6 +1160,20 @@ MoveEntity(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *Entity
 	}
 }
 
+inline void
+DrawEntityHitpoints(sim_entity *Entity, shader HitpointsShader, vec3 CameraRight, GLuint QuadVAO)
+{
+	UseShader(HitpointsShader);
+	SetVec3(HitpointsShader, "Color", vec3(1.0f, 0.0f, 0.0f));
+	SetVec3(HitpointsShader, "CameraRight", CameraRight);
+	SetVec3(HitpointsShader, "BillboardSimCenterP", Entity->P + vec3(0.0f, 1.0f + 0.1f, 0.0f));
+	SetVec2(HitpointsShader, "Scale", vec2((r32)Entity->HitPoints / (r32)Entity->MaxHitPoints, 0.2f));
+
+	glBindVertexArray(QuadVAO);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	glBindVertexArray(0);
+}
+
 internal void
 RenderEntities(game_mode_world *WorldMode, temp_state *TempState, sim_region *SimRegion, 
 			   shader WorldShader, shader CharacterShader, shader HitpointsShader, 
@@ -1164,31 +1195,67 @@ RenderEntities(game_mode_world *WorldMode, temp_state *TempState, sim_region *Si
 					UseShader(CharacterShader);
 
 					mat4 BoneTransformations[CharacterBone_Count];
-					for(u32 BoneIndex = 0;
-						BoneIndex < CharacterBone_Count;
-						BoneIndex++)
-					{
-						BoneTransformations[BoneIndex] = GetBoneForEntity(WorldMode->CharacterAnimations, &Entity->AnimationState, 
-																		  (character_bone_id)BoneIndex);
-					}
-					for(u32 BoneIndex = 0;
-						BoneIndex < CharacterBone_Count;
-						BoneIndex++)
-					{
-						if(BoneIndex != CharacterBone_Body)
-						{
-							BoneTransformations[BoneIndex] = BoneTransformations[BoneIndex] * BoneTransformations[CharacterBone_Body];
-						}
-					}
+					GetCharacterTransformationsForEntity(WorldMode, Entity, BoneTransformations);
+					SetMat4Array(CharacterShader, "BoneTransformations", CharacterBone_Count, BoneTransformations);
 					
-					SetMat4(CharacterShader, "BoneTransformations[0]", BoneTransformations[CharacterBone_Head]);
-					SetMat4(CharacterShader, "BoneTransformations[1]", BoneTransformations[CharacterBone_Shoulders]);
-					SetMat4(CharacterShader, "BoneTransformations[2]", BoneTransformations[CharacterBone_Body]);
-					SetMat4(CharacterShader, "BoneTransformations[3]", BoneTransformations[CharacterBone_Hand_Right]);
-					SetMat4(CharacterShader, "BoneTransformations[4]", BoneTransformations[CharacterBone_Hand_Left]);
-					SetMat4(CharacterShader, "BoneTransformations[5]", BoneTransformations[CharacterBone_Foot_Right]);
-					SetMat4(CharacterShader, "BoneTransformations[6]", BoneTransformations[CharacterBone_Foot_Left]);
+					r32 HeroRotRadians = DEG2RAD(Entity->Rotation);
+					vec3 FacingDir = Normalize(vec3(Sin(HeroRotRadians), 0.0f, Cos(HeroRotRadians)));
+					vec3 HeroRight = Normalize(Cross(FacingDir, vec3(0.0f, 1.0f, 0.0f))); 
+					asset_tag_vector MatchVector = { 1.0f };
+					model_id HeadIndex = GetBestMatchModelFromType(TempState->GameAssets, AssetType_Head, &MatchVector);
+					SetInt(CharacterShader, "BoneID", CharacterBone_Head);
+					DrawModel(CharacterShader, TempState->GameAssets, HeadIndex, Entity->Rotation, 1.0f, HeroRight, Entity->P);
+					SetInt(CharacterShader, "BoneID", CharacterBone_Shoulders);
+					DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Shoulders),
+							Entity->Rotation, 1.0f, HeroRight, Entity->P);
+					SetInt(CharacterShader, "BoneID", CharacterBone_Body);
+					DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Body),
+							Entity->Rotation, 1.0f, HeroRight, Entity->P);
+					SetInt(CharacterShader, "BoneID", CharacterBone_Hand_Right);
+					DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Hand),
+							Entity->Rotation, 0.8f, HeroRight, Entity->P);
+					SetInt(CharacterShader, "BoneID", CharacterBone_Hand_Left);
+					DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Hand),
+							Entity->Rotation, 0.8f, -HeroRight, Entity->P);
+					SetInt(CharacterShader, "BoneID", CharacterBone_Foot_Right);
+					DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Foot),
+							Entity->Rotation, 1.4f, HeroRight, Entity->P);
+					SetInt(CharacterShader, "BoneID", CharacterBone_Foot_Left);
+					DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Foot),
+							Entity->Rotation, 1.4f, -HeroRight, Entity->P);
 
+					if(Entity->AnimationState.Type == CharacterAnimation_SwordAttack)
+					{
+						SetInt(CharacterShader, "BoneID", CharacterBone_Hand_Left);
+						DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Sword),
+							Entity->Rotation, 0.8f, -HeroRight, Entity->P - 
+																0.3f*HeroRight + 0.1f*vec3(0.0f, 1.0f, 0.0f) + 0.45f*FacingDir);
+					}
+					else
+					{
+						SetInt(CharacterShader, "BoneID", CharacterBone_Body);
+						SetMat4(CharacterShader, "BoneTransformations[2]", BoneTransformations[CharacterBone_Body] *
+																		   Rotate(90.0f, vec3(0.0f, 1.0f, 0.0f)) *
+																		   Rotate(180.0f, vec3(0.0f, 0.0f, 1.0f)));
+						DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Sword),
+								Entity->Rotation, 0.8f, -HeroRight, Entity->P);
+					}
+
+					if(DEBUGRenderBB)
+					{
+						DEBUGRenderAxes(Identity(1.0f));
+						DEBUGRenderSphere(Entity->P + Entity->Collision->OffsetP, Entity->Collision->Dim, Entity->Rotation);
+					}
+				} break;
+
+				case EntityType_Monster:
+				{
+					UseShader(CharacterShader);
+
+					mat4 BoneTransformations[CharacterBone_Count];
+					GetCharacterTransformationsForEntity(WorldMode, Entity, BoneTransformations);
+					SetMat4Array(CharacterShader, "BoneTransformations", CharacterBone_Count, BoneTransformations);
+					
 					r32 HeroRotRadians = DEG2RAD(Entity->Rotation);
 					vec3 FacingDir = vec3(Sin(HeroRotRadians), 0.0f, Cos(HeroRotRadians));
 					vec3 HeroRight = Normalize(Cross(FacingDir, vec3(0.0f, 1.0f, 0.0f))); 
@@ -1215,6 +1282,25 @@ RenderEntities(game_mode_world *WorldMode, temp_state *TempState, sim_region *Si
 					DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Foot),
 							Entity->Rotation, 1.4f, -HeroRight, Entity->P);
 
+					if(Entity->AnimationState.Type == CharacterAnimation_SwordAttack)
+					{
+						SetInt(CharacterShader, "BoneID", CharacterBone_Hand_Left);
+						DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Sword),
+							Entity->Rotation, 0.8f, -HeroRight, Entity->P - 
+																0.3f*HeroRight + 0.1f*vec3(0.0f, 1.0f, 0.0f) + 0.45f*FacingDir);
+					}
+					else
+					{
+						SetInt(CharacterShader, "BoneID", CharacterBone_Body);
+						SetMat4(CharacterShader, "BoneTransformations[2]", BoneTransformations[CharacterBone_Body] *
+																		   Rotate(90.0f, vec3(0.0f, 1.0f, 0.0f)) *
+																		   Rotate(180.0f, vec3(0.0f, 0.0f, 1.0f)));
+						DrawModel(CharacterShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Sword),
+								Entity->Rotation, 0.8f, -HeroRight, Entity->P);
+					}
+
+					DrawEntityHitpoints(Entity, HitpointsShader, Right, WorldMode->QuadVAO);
+
 					if(DEBUGRenderBB)
 					{
 						DEBUGRenderAxes(Identity(1.0f));
@@ -1224,7 +1310,9 @@ RenderEntities(game_mode_world *WorldMode, temp_state *TempState, sim_region *Si
 
 				case EntityType_Fireball:
 				{
-					mat4 Model = Translate(vec3(0.0f, 0.5f*0.25f, 0.0f) + Entity->P) * Scale(vec3(0.25f, 0.25f, 0.25f));
+					mat4 Model = Translate(Entity->Collision->OffsetP + Entity->P) * 
+								 Rotate(Entity->Rotation, vec3(0.0f, 1.0f, 0.0f)) * 
+								 Scale(Entity->Collision->Dim);
 					SetMat4(WorldShader, "Model", Model);
 					DrawFromVAO(WorldMode->CubeVAO, 36);
 
@@ -1234,40 +1322,29 @@ RenderEntities(game_mode_world *WorldMode, temp_state *TempState, sim_region *Si
 					}
 				} break;
 
-				case EntityType_Tree:
-				{
-					DrawModel(WorldShader, TempState->GameAssets, GetFirstModelFromType(TempState->GameAssets, AssetType_Tree),
-								0.0f, 1.0f, vec3(0.0f, 0.0f, 0.0f), Entity->P);
-
-					if(DEBUGRenderBB)
-					{
-						DEBUGRenderCube(Entity->P + Entity->Collision->OffsetP, Entity->Collision->Dim, Entity->Rotation);
-					}
-				} break;
-
-				// TEST
-				default:
-				{
-					mat4 Model = Translate(vec3(0.0f, 0.5f, 0.0f) + Entity->P);
-					SetMat4(WorldShader, "Model", Model);
-					DrawFromVAO(WorldMode->CubeVAO, 36);
-
-					UseShader(HitpointsShader);
-					SetVec3(HitpointsShader, "Color", vec3(1.0f, 0.0f, 0.0f));
-					SetVec3(HitpointsShader, "CameraRight", Right);
-					SetVec3(HitpointsShader, "BillboardSimCenterP", Entity->P + vec3(0.0f, 1.0f + 0.1f, 0.0f));
-					SetVec2(HitpointsShader, "Scale", vec2((r32)Entity->HitPoints / (r32)Entity->MaxHitPoints, 0.2f));
-
-					glBindVertexArray(WorldMode->QuadVAO);
-					glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-					glBindVertexArray(0);
-
-					if(DEBUGRenderBB)
-					{
-						DEBUGRenderCube(Entity->P + Entity->Collision->OffsetP, Entity->Collision->Dim, Entity->Rotation);
-					}
-				}  break;
+				InvalidDefaultCase;
 			}
 		}
+	}
+}
+
+inline void
+SwordAttack(game_mode_world *WorldMode, audio_state *AudioState, game_assets *GameAssets, \
+			sim_entity *Entity, vec3 FacindDir)
+{
+	sim_entity *SwordCollider = Entity->Sword.SimPtr;
+	if(SwordCollider && IsSet(SwordCollider, EntityFlag_NonSpatial))
+	{
+		ClearFlags(SwordCollider, EntityFlag_NonSpatial);
+		SwordCollider->TimeLimit = 0.4f;
+		SwordCollider->P = Entity->P + FacindDir;
+		SwordCollider->Rotation = Entity->Rotation;
+
+		AddCollisionRule(WorldMode, SwordCollider->StorageIndex, Entity->StorageIndex, false);
+
+		Entity->dP.SetX(0.5f*Entity->dP.x());
+		Entity->dP.SetZ(0.5f*Entity->dP.z());
+
+		PlaySound(AudioState, GetFirstSoundFromType(GameAssets, AssetType_Swing));
 	}
 }

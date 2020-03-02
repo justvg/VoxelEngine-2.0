@@ -907,6 +907,20 @@ Quaternion(r32 W, vec3 V)
 }
 
 inline quaternion __vectorcall
+QuaternionAngleAxis(r32 Angle, vec3 Axis)
+{
+	quaternion Result;
+
+	r32 AngleInRadians = DEG2RAD(Angle);
+	r32 W = Cos(0.5f*AngleInRadians);
+	vec3 V = Sin(0.5f*AngleInRadians)*Axis;
+
+	Result = Quaternion(W, V);
+
+	return(Result);
+}
+
+inline quaternion __vectorcall
 operator+ (quaternion A, quaternion B)
 {
 	quaternion Result;

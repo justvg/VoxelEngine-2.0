@@ -28,8 +28,7 @@ enum asset_type_id
 	AssetType_Body,
 	AssetType_Hand,
 	AssetType_Foot,
-
-	AssetType_Tree,
+	AssetType_Sword,
 
 	// 
 	// NOTE(georgy): Textures! 
@@ -44,6 +43,7 @@ enum asset_type_id
 	AssetType_Music,
 	AssetType_WaterSplash,
 	AssetType_Fireball,
+	AssetType_Swing,
 
 	// 
 	// NOTE(georgy): Fonts!
@@ -102,6 +102,7 @@ struct vea_model
 
 	vec3 Alignment;
 	r32 AlignmentX; // NOTE(georgy): This is for models like hands, where we need to multiply this by EntityRight vec
+	r32 AlignmentZ; // NOTE(georgy): This is for models like sword, where we need to multiply this by EntityForward vec
 
 	/* NOTE(georgy): Data is:
 			vec3 Positions[VerticesCount];

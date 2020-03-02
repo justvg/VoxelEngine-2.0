@@ -5,8 +5,8 @@
 #define GlobalConstants_RenderChunksBB false
 #define GlobalConstants_Bias 0.0024f
 
-#define GlobalConstants_SimBoundsRadius 120.0f
+#define GlobalConstants_SimBoundsRadius 20.0f
 
 #define GlobalConstants_DebugCamera false
 #define GlobalConstants_Profiling false
-#define GlobalConstants_GlobalVolume 0.0f
+#define GlobalConstants_GlobalVolume 0.1f

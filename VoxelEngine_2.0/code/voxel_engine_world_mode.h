@@ -40,6 +40,7 @@ struct hero
 {
 	stored_entity *Entity;
 
+	bool32 Attack;
 	bool32 Fireball;
 
 	vec3 ddP;
@@ -79,8 +80,7 @@ struct game_mode_world
 
 	sim_entity_collision_volume *HeroCollision;
 	sim_entity_collision_volume *FireballCollision;
-	sim_entity_collision_volume *TreeCollision;
-	sim_entity_collision_volume *TESTCubeCollision;
+	sim_entity_collision_volume *HeroSwordCollision;
 
 	shader CharacterShader;
 	shader WorldShader;

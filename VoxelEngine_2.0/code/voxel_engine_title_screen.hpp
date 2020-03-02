@@ -24,7 +24,6 @@ CheckForMetaInput(game_state *GameState, game_input *Input)
 	else if(WasDown(&Input->Esc))
 	{
 		Input->QuitRequested = true;
-		Result = true;
 	}
 
 	return(Result);

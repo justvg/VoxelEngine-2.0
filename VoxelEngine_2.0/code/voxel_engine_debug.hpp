@@ -706,7 +706,7 @@ DEBUGRenderMainMenu(debug_state *DebugState, game_input *Input)
 			case DebugEvent_r32:
 			{
 				r32 DisplacementY = MouseP.y - DebugState->LastMouseP.y;
-				DebugState->ActiveInteraction->Value_r32 += 0.0001f*DisplacementY;
+				DebugState->ActiveInteraction->Value_r32 += 0.05f*DisplacementY;
 			} break;
 		}
 

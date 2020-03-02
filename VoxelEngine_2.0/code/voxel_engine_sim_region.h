@@ -16,8 +16,10 @@ enum entity_type
 					  
 
 	EntityType_Hero,
+	EntityType_Monster,
 	EntityType_Fireball,
-	EntityType_Tree,
+
+	EntityType_Sword, // TODO(georgy): Make this something like EntityType_Collider?
 };
 
 struct sim_entity;
@@ -71,10 +73,12 @@ struct sim_entity
 	sim_entity_collision_volume *Collision;
 
 	r32 DistanceLimit;
+	r32 TimeLimit;
 	vec3 P;
 	vec3 dP;
 
 	entity_reference Fireball;
+	entity_reference Sword;
 	
 	particle_emitter_info *ParticlesInfo;
 	point_light *PointLight;

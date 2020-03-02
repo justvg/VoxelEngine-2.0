@@ -133,28 +133,6 @@ ClearCollisionRulesFor(game_mode_world *WorldMode, u32 StorageIndex)
 	}
 }
 
-internal stored_entity *
-TESTAddCube(game_mode_world *WorldMode, world_position P, vec3 Dim, u32 VerticesCount, r32 *Vertices)
-{
-	Assert(WorldMode->StoredEntityCount < ArrayCount(WorldMode->StoredEntities));
-	u32 EntityIndex = WorldMode->StoredEntityCount++;
-
-	stored_entity *StoredEntity = WorldMode->StoredEntities + EntityIndex;
-	*StoredEntity = {};
-	StoredEntity->Sim.StorageIndex = EntityIndex;
-	StoredEntity->Sim.Type = (entity_type)10000;
-	StoredEntity->Sim.Collision = WorldMode->TESTCubeCollision;
-	StoredEntity->P = InvalidPosition();
-	AddFlags(&StoredEntity->Sim, EntityFlag_Moveable | EntityFlag_Collides);
-
-	StoredEntity->Sim.MaxHitPoints = 30;
-	StoredEntity->Sim.HitPoints = 30;
-
-	ChangeEntityLocation(&WorldMode->World, &WorldMode->WorldAllocator, EntityIndex, StoredEntity, P);
-
-	return(StoredEntity);
-}
-
 internal void
 AddParticlesToEntity(game_mode_world *WorldMode, stored_entity *Entity, 
 					 r32 MaxLifeTime, u32 SpawnInSecond, r32 Scale,
@@ -221,8 +199,18 @@ AddFireball(game_mode_world *WorldMode)
 	add_stored_entity_result Entity = AddStoredEntity(WorldMode, EntityType_Fireball, InvalidPosition());
 
 	AddFlags(&Entity.StoredEntity->Sim, EntityFlag_Moveable | EntityFlag_NonSpatial | EntityFlag_Collides);
-	Entity.StoredEntity->Sim.Rotation = 0.0f;
 	Entity.StoredEntity->Sim.Collision = WorldMode->FireballCollision;
+
+	return(Entity.StorageIndex);
+}
+
+internal u32
+AddSword(game_mode_world *WorldMode)
+{
+	add_stored_entity_result Entity = AddStoredEntity(WorldMode, EntityType_Sword, InvalidPosition());
+
+	AddFlags(&Entity.StoredEntity->Sim, EntityFlag_NonSpatial | EntityFlag_Collides);
+	Entity.StoredEntity->Sim.Collision = WorldMode->HeroSwordCollision;
 
 	return(Entity.StorageIndex);
 }
@@ -234,13 +222,13 @@ AddHero(game_mode_world *WorldMode, world_position P)
 
 	Entity.StoredEntity->Sim.CanBeGravityAffected = true;
 	AddFlags(&Entity.StoredEntity->Sim, EntityFlag_Moveable | EntityFlag_Collides | EntityFlag_GravityAffected);
-	Entity.StoredEntity->Sim.HitPoints = 20;
+	Entity.StoredEntity->Sim.HitPoints = 100;
 	Entity.StoredEntity->Sim.MaxHitPoints = 100;
 	Entity.StoredEntity->Sim.ManaPoints = 87;
 	Entity.StoredEntity->Sim.MaxManaPoints = 100;
-	Entity.StoredEntity->Sim.Rotation = 0.0f;
 	Entity.StoredEntity->Sim.Collision = WorldMode->HeroCollision;
 	Entity.StoredEntity->Sim.Fireball.StorageIndex = AddFireball(WorldMode);
+	Entity.StoredEntity->Sim.Sword.StorageIndex = AddSword(WorldMode);
 
 	AddParticlesToEntity(WorldMode, &WorldMode->StoredEntities[Entity.StoredEntity->Sim.Fireball.StorageIndex], 
 						 1.0f, 40, 1.0f, vec3(1.0f, 0.0f, 1.0f), vec3(1.0f, 0.0f, 1.0f), 4.0f, vec3(0.0f, -9.8f, 0.0f),
@@ -251,13 +239,19 @@ AddHero(game_mode_world *WorldMode, world_position P)
 	return(Entity.StoredEntity);
 }
 
-internal void
-AddTree(game_mode_world *WorldMode, world_position P)
+internal stored_entity *
+AddMonster(game_mode_world *WorldMode, world_position P)
 {
-	add_stored_entity_result Entity = AddStoredEntity(WorldMode, EntityType_Tree, P);
+	add_stored_entity_result Entity = AddStoredEntity(WorldMode, EntityType_Monster, P);
 
-	AddFlags(&Entity.StoredEntity->Sim, EntityFlag_Collides);
-	Entity.StoredEntity->Sim.Collision = WorldMode->TreeCollision;
+	Entity.StoredEntity->Sim.CanBeGravityAffected = true;
+	AddFlags(&Entity.StoredEntity->Sim, EntityFlag_Moveable | EntityFlag_Collides | EntityFlag_GravityAffected);
+	Entity.StoredEntity->Sim.HitPoints = 100;
+	Entity.StoredEntity->Sim.MaxHitPoints = 100;
+	Entity.StoredEntity->Sim.Collision = WorldMode->HeroCollision;
+	Entity.StoredEntity->Sim.Sword.StorageIndex = AddSword(WorldMode);
+
+	return(Entity.StoredEntity);
 }
 
 internal void
@@ -287,9 +281,7 @@ PlayWorld(game_state *GameState)
 
 	WorldMode->HeroCollision = MakeSimpleCollision(WorldMode, vec3(0.54f, 0.54f, 0.48f));
 	WorldMode->FireballCollision = MakeSimpleCollision(WorldMode, vec3(0.25f, 0.25f, 0.25f));
-	WorldMode->TreeCollision = MakeSimpleCollision(WorldMode, vec3(0.5f, 0.5f, 0.5f));
-	WorldMode->TESTCubeCollision = MakeSimpleCollision(WorldMode, vec3(1.0f, 1.0f, 1.0f));
-
+	WorldMode->HeroSwordCollision = MakeSimpleCollision(WorldMode, vec3(1.0f, 0.5f, 0.5f));
 
 	CompileShader(&WorldMode->CharacterShader, CharacterVS, CharacterFS);
 	CompileShader(&WorldMode->WorldShader, WorldVS, WorldFS);
@@ -496,12 +488,6 @@ PlayWorld(game_state *GameState)
 	// NOTE(georgy): Reserve slot 0
 	AddStoredEntity(WorldMode, EntityType_Null, InvalidPosition());
 
-	world_position TestP = {};
-	TestP.Offset = vec3(0.0f, 8.0f, 3.0f);
-	// AddParticlesToEntity(WorldMode, TESTAddCube(WorldMode, TestP, vec3(1.0f, 1.0f, 1.0f), 36, CubeVertices),
-	// 					 2.0f, 10, 0.3f, vec3(0.5f, 0.0f, 0.5f), vec3(0.5f, 0.0f, 0.5f), 4.0f, vec3(0.0f, -9.8f, 0.0f),
-	// 					 vec3(0.0f, 0.0f, 0.7f));
-
 	world_position HeroP = {};
 	HeroP.ChunkY = MAX_CHUNKS_Y;
 	HeroP.Offset = vec3(0.3f, 5.0f, 3.0f);
@@ -513,10 +499,10 @@ PlayWorld(game_state *GameState)
 	// 					 1.5f, 30, 0.2f, vec3(0.0f, 0.0f, 0.0f), vec3(0.65f, 0.0f, 0.65f), 2.0f, vec3(0.0f, 0.0f, 0.0f),
 	// 					 vec3(0.25f, 0.25f, 0.25f));
 
-	world_position TestTreeP = {};
-	TestTreeP.ChunkY = MAX_CHUNKS_Y;
-	TestTreeP.Offset = vec3(0.0f, 2.0f, 3.0f);
-	AddTree(WorldMode, TestTreeP);
+	world_position MonsterP = {};
+	MonsterP.ChunkY = MAX_CHUNKS_Y;
+	MonsterP.Offset = vec3(0.0f, 5.0f, 0.0f);
+	AddMonster(WorldMode, MonsterP);
 
 	glGenFramebuffers(1, &WorldMode->ShadowMapFBO);
 	glBindFramebuffer(GL_FRAMEBUFFER, WorldMode->ShadowMapFBO);
@@ -615,7 +601,7 @@ PlayWorld(game_state *GameState)
 	UseShader(WorldMode->UIGlyphShader);
 	SetInt(WorldMode->UIGlyphShader, "Texture", 0);
 
-	InitializeDefaultAnimations(WorldMode->CharacterAnimations);
+	InitializeDefaultCharacterAnimations(WorldMode->CharacterAnimations);
 
 	GameState->WorldMode = WorldMode;
 }
@@ -703,6 +689,12 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 		if (Input->MoveBack.EndedDown && Input->MoveLeft.EndedDown)
 		{
 			WorldMode->Hero.AdditionalRotation = Theta + 135.0f;
+		}
+
+		WorldMode->Hero.Attack = Input->MouseLeft.EndedDown;
+		if(WorldMode->Hero.Attack)
+		{
+			WorldMode->Hero.AdditionalRotation = Theta;
 		}
 
 		WorldMode->Hero.Fireball = WasDown(&Input->MouseRight);
@@ -857,38 +849,43 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 							Fireball->P = Entity->P + vec3(0.0f, 0.5f, 0.0f);
 							Fireball->dP = vec3(Entity->dP.x(), 0.0f, Entity->dP.z()) + 3.0f*Forward;
 
+							Fireball->Rotation = Entity->Rotation;
+
 							PlaySound(&GameState->AudioState, GetFirstSoundFromType(TempState->GameAssets, AssetType_Fireball));
 						}
 					}
 
-					r32 AnimationTimeStep = 0.0f;
-					character_animation_type DesiredAnimation = CharacterAnimation_Idle;
-					if(Length(vec3(Entity->dP.x(), 0.0f, Entity->dP.z())) > 0.12f)
+					if(WorldMode->Hero.Attack)
 					{
-						DesiredAnimation = CharacterAnimation_Run;
-					}
-					if(!IsSet(Entity, EntityFlag_OnGround))
-					{
-						DesiredAnimation = CharacterAnimation_Run;
-						// DesiredAnimation = CharacterAnimation_Jump;
+						SwordAttack(WorldMode, &GameState->AudioState, TempState->GameAssets, Entity, 0.5f*Forward);
 					}
 
-					if(Entity->AnimationState.Type != DesiredAnimation)
+					UpdateCharacterAnimations(Entity, &MoveSpec, dt);
+				} break;
+
+				case EntityType_Monster:
+				{
+					ClearFlags(Entity, EntityFlag_GravityAffected);
+
+					vec3 FromEntityToHero = WorldMode->Hero.Entity->Sim.P - Entity->P;
+					r32 Theta = RAD2DEG(ATan2(-FromEntityToHero.z(), FromEntityToHero.x())) + 90.0f;
+					Entity->Rotation = Theta;
+					if(Length(FromEntityToHero) > 2.0f)
 					{
-						Entity->AnimationState.Type = DesiredAnimation;
-						Entity->AnimationState.Time = 0.0f;
+						MoveSpec.ddP = Normalize(FromEntityToHero);
+						MoveSpec.Speed = 4.0f;
+						if(IsSet(Entity, EntityFlag_InWater))
+						{
+							MoveSpec.Speed *= 0.5f;
+						}
+						MoveSpec.Drag = 4.0f;
 					}
 					else
 					{
-						AnimationTimeStep = dt;
-						if(Entity->AnimationState.Type == CharacterAnimation_Run)
-						{
-							AnimationTimeStep = 1.5f*Length(vec3(Entity->dP.x(), 0.0f, Entity->dP.z()))*dt;
-						}
+						SwordAttack(WorldMode, &GameState->AudioState, TempState->GameAssets, Entity, 0.5f*Normalize(FromEntityToHero));
 					}
 
-					Entity->AnimationState.Time += AnimationTimeStep;
-					DEBUG_VALUE(r32, AnimationStateTime, World, Entity->AnimationState.Time);
+					UpdateCharacterAnimations(Entity, &MoveSpec, dt);
 				} break;
 
 				case EntityType_Fireball:
@@ -900,17 +897,17 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 					}
 				} break;
 
-				case 10000:
+				case EntityType_Sword:
 				{
-					//Drag = 1.0f;
-
-					vec3 DisplacementToHero = -Entity->P;
-					r32 Distance = Length(DisplacementToHero);
-					if(Distance > 2.0f)
+					Entity->TimeLimit -= Input->dt;
+					if(Entity->TimeLimit <= 0.0f)
 					{
-						//ddP = Normalize(DisplacementToHero);
+						MakeEntityNonSpatial(Entity);
+						ClearCollisionRulesFor(WorldMode, Entity->StorageIndex);
 					}
 				} break;
+
+				InvalidDefaultCase;
 			}
 
 			if(Entity->ParticlesInfo)
@@ -1145,6 +1142,9 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 
 	UseShader(WorldMode->HitpointsShader);
 	SetMat4(WorldMode->HitpointsShader, "ViewProjection", GlobalViewProjection);
+
+	UseShader(WorldMode->WaterShader);
+	SetMat4(WorldMode->WaterShader, "View", View);
 
 	RenderEntities(WorldMode, TempState, SimRegion, 
 				   WorldMode->WorldShader, WorldMode->CharacterShader, WorldMode->HitpointsShader,

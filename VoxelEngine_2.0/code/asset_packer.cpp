@@ -43,6 +43,7 @@ struct packer_loaded_model
 
 	vec3 Alignment;
 	r32 AlignmentX; // NOTE(georgy): This is for models like hands, where we need to multiply this by EntityRight vec
+	r32 AlignmentZ; // NOTE(georgy): This is for models like sword, where we need to multiply this by EntityForward vec
 };
 
 struct packer_loaded_sound
@@ -70,13 +71,14 @@ AddQuad(std::vector<vec3> *Array, vec3 A, vec3 B, vec3 C, vec3 D)
 }
 
 internal packer_loaded_model
-LoadCUB(char *Filename, r32 AdditionalAlignmentY = 0.0f, r32 AdditionalAlignmentX = 0.0f)
+LoadCUB(char *Filename, r32 AdditionalAlignmentY = 0.0f, r32 AdditionalAlignmentX = 0.0f, r32 AdditionalAlignmentZ = 0.0f)
 {
 	packer_loaded_model Model;
 
 	Model.VerticesCount = 0;
 	Model.Alignment = vec3(0.0f, 0.0f, 0.0f);
 	Model.AlignmentX = 0.0f;
+	Model.AlignmentZ = 0.0f;
 
 	u32 Width, Height, Depth;
 	read_entire_file_result FileData = ReadEntireFile(Filename);
@@ -121,6 +123,7 @@ LoadCUB(char *Filename, r32 AdditionalAlignmentY = 0.0f, r32 AdditionalAlignment
 		r32 BlockDimInMeters = 0.03f;
 		Model.Alignment = vec3(0.0f, 0.5f*Height*BlockDimInMeters + AdditionalAlignmentY, 0.0f);
 		Model.AlignmentX = AdditionalAlignmentX;
+		Model.AlignmentZ = AdditionalAlignmentZ;
 		for(u32 VoxelY = 0;
 			VoxelY < Height;
 			VoxelY++)
@@ -711,6 +714,7 @@ struct asset_to_pack
 
 	r32 AdditionalAlignmentY;
 	r32 AdditionalAlignmentX;	
+	r32 AdditionalAlignmentZ;	
 
 	char *FontName;
 
@@ -763,12 +767,13 @@ AddAsset(game_assets *Assets, char *Filename, asset_data_type DataType)
 
 inline void
 AddModelAsset(game_assets *Assets, char *Filename, 
-			  r32 AdditionalAlignmentY = 0.0f, r32 AdditionalAlignmentX = 0.0f)
+			  r32 AdditionalAlignmentY = 0.0f, r32 AdditionalAlignmentX = 0.0f, r32 AdditionalAlignmentZ = 0.0f)
 {
 	asset_to_pack *Asset = AddAsset(Assets, Filename, AssetDataType_Model);
 
 	Asset->AdditionalAlignmentY = AdditionalAlignmentY;
 	Asset->AdditionalAlignmentX = AdditionalAlignmentX;
+	Asset->AdditionalAlignmentZ = AdditionalAlignmentZ;
 }
 
 inline void
@@ -848,8 +853,8 @@ main(int ArgCount, char **Args)
 	AddModelAsset(GameAssets, "data/models/foot.cub", 0.0f, 0.15f);
 	EndAssetType(GameAssets);
 
-	BeginAssetType(GameAssets, AssetType_Tree);
-	AddModelAsset(GameAssets, "data/models/tree.cub", 0.0f, 0.0f);
+	BeginAssetType(GameAssets, AssetType_Sword);
+	AddModelAsset(GameAssets, "data/models/sword.cub", 0.0f, 0.0f, -0.22f);
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_UIBar);
@@ -869,6 +874,10 @@ main(int ArgCount, char **Args)
 
 	BeginAssetType(GameAssets, AssetType_WaterSplash);
 	AddSoundAsset(GameAssets, "data/sounds/water_splash.wav");
+	EndAssetType(GameAssets);
+
+	BeginAssetType(GameAssets, AssetType_Swing);
+	AddSoundAsset(GameAssets, "data/sounds/swing.wav");
 	EndAssetType(GameAssets);
 
 	BeginAssetType(GameAssets, AssetType_Font);
@@ -915,10 +924,11 @@ main(int ArgCount, char **Args)
 				case AssetDataType_Model:
 				{
 					packer_loaded_model Model = LoadCUB(AssetToPack->Filename, 
-												  AssetToPack->AdditionalAlignmentY, AssetToPack->AdditionalAlignmentX);
+												  		AssetToPack->AdditionalAlignmentY, AssetToPack->AdditionalAlignmentX, AssetToPack->AdditionalAlignmentZ);
 					Asset->Model.VerticesCount = Model.VerticesCount;
 					Asset->Model.Alignment = Model.Alignment;
 					Asset->Model.AlignmentX = Model.AlignmentX;
+					Asset->Model.AlignmentZ = Model.AlignmentZ;
 
 					u32 VerticesSize = Model.VerticesCount*sizeof(vec3);
 					fwrite(&Model.Positions->front(), VerticesSize, 1, File);					

@@ -259,7 +259,8 @@ DrawModel(shader Shader, game_assets *GameAssets, model_id ModelIndex, r32 Rotat
 	loaded_model *Model = GetModel(GameAssets, ModelIndex);
 	if(Model)
 	{
-		mat4 ModelMatrix = Translate(Model->Alignment + Model->AlignmentX*Right + Translation) * 
+		vec3 Forward = Normalize(Cross(Right, vec3(0.0f, 1.0f, 0.0f)));
+		mat4 ModelMatrix = Translate(Model->Alignment + Model->AlignmentX*Right + Model->AlignmentZ*Forward + Translation) * 
 						   Rotate(Rotation, vec3(0.0f, 1.0f, 0.0f)) * Scale(Scaling);
 		SetMat4(Shader, "Model", ModelMatrix);
 		DrawFromVAO(Model->VAO, Model->VerticesCount);
@@ -586,7 +587,7 @@ internal void
 DEBUGRenderCube(vec3 P, vec3 Scaling, r32 Rotation,
 				vec3 Color = vec3(1.0, 0.0, 0.0))
 {
-	mat4 Model = Translate(P) * Scale(Scaling) * Rotate(Rotation, vec3(0.0f, 1.0f, 0.0f));
+	mat4 Model = Translate(P) * Rotate(Rotation, vec3(0.0f, 1.0f, 0.0f)) * Scale(Scaling);
 	DEBUGBeginRenderDebugObject(&GlobalDebugDrawInfo.Shader, &GlobalDebugDrawInfo.CubeVAO, Model);
 
 	SetVec3(GlobalDebugDrawInfo.Shader, "Color", Color);
@@ -599,7 +600,7 @@ internal void
 DEBUGRenderSphere(vec3 P, vec3 Scaling, r32 Rotation = 0.0f,
 				  vec3 Color = vec3(1.0, 0.0, 0.0))
 {
-	mat4 Model = Translate(P) * Scale(Scaling) * Rotate(Rotation, vec3(0.0f, 1.0f, 0.0f));
+	mat4 Model = Translate(P) * Rotate(Rotation, vec3(0.0f, 1.0f, 0.0f)) * Scale(Scaling);
 	DEBUGBeginRenderDebugObject(&GlobalDebugDrawInfo.Shader, &GlobalDebugDrawInfo.SphereVAO, Model);
 
 	SetVec3(GlobalDebugDrawInfo.Shader, "Color", Color);

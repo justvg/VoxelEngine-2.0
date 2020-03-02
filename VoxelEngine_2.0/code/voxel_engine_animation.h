@@ -20,6 +20,7 @@ enum character_animation_type
 	CharacterAnimation_Idle,
 	CharacterAnimation_Run,
 	CharacterAnimation_Jump,
+	CharacterAnimation_SwordAttack,
 
 	CharacterAnimation_Count
 };
@@ -90,112 +91,75 @@ GetBoneForEntity(animation *Animations, entity_animation_state *EntityAnimationS
 	return(BoneTransform);
 }
 
+internal animation_key_frame
+DefaultCharacterKeyFrame(r32 TimeStampInSeconds = 0.0f)
+{
+	animation_key_frame KeyFrame = {};
+
+	KeyFrame.TimeStampInSeconds = TimeStampInSeconds;
+	KeyFrame.Translation[CharacterBone_Head] = vec3(0.0f, 0.0f, 0.0f);
+	KeyFrame.Translation[CharacterBone_Shoulders] = vec3(0.0f, 0.0f, 0.0f);
+	KeyFrame.Translation[CharacterBone_Body] = vec3(0.0f, 0.0f, 0.0f);
+	KeyFrame.Translation[CharacterBone_Hand_Right] = vec3(0.0f, 0.0f, 0.0f);
+	KeyFrame.Translation[CharacterBone_Hand_Left] = vec3(0.0f, 0.0f, 0.0f);
+	KeyFrame.Translation[CharacterBone_Foot_Right] = vec3(0.0f, 0.0f, 0.0f);
+	KeyFrame.Translation[CharacterBone_Foot_Left] = vec3(0.0f, 0.0f, 0.0f);
+	KeyFrame.Rotation[CharacterBone_Head] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
+	KeyFrame.Rotation[CharacterBone_Shoulders] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
+	KeyFrame.Rotation[CharacterBone_Body] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
+	KeyFrame.Rotation[CharacterBone_Hand_Right] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
+	KeyFrame.Rotation[CharacterBone_Hand_Left] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
+	KeyFrame.Rotation[CharacterBone_Foot_Right] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
+	KeyFrame.Rotation[CharacterBone_Foot_Left] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
+	KeyFrame.Scaling[CharacterBone_Head] = 1.0f;
+	KeyFrame.Scaling[CharacterBone_Shoulders] = 1.0f;
+	KeyFrame.Scaling[CharacterBone_Body] = 1.0f;
+	KeyFrame.Scaling[CharacterBone_Hand_Right] = 1.0f;
+	KeyFrame.Scaling[CharacterBone_Hand_Left] = 1.0f;
+	KeyFrame.Scaling[CharacterBone_Foot_Right] = 1.0f;
+	KeyFrame.Scaling[CharacterBone_Foot_Left] = 1.0f;
+
+	return(KeyFrame);
+}
+
 inline void
-InitializeDefaultAnimations(animation *CharacterAnimations)
+InitializeDefaultCharacterAnimations(animation *CharacterAnimations)
 {
 	CharacterAnimations[CharacterAnimation_Idle].DurationInSeconds = 4.0f;
 	CharacterAnimations[CharacterAnimation_Idle].KeyFrameCount = 4;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].TimeStampInSeconds = 0.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Translation[CharacterBone_Head] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Translation[CharacterBone_Shoulders] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Translation[CharacterBone_Body] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Translation[CharacterBone_Hand_Right] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Translation[CharacterBone_Hand_Left] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Translation[CharacterBone_Foot_Right] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Translation[CharacterBone_Foot_Left] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Rotation[CharacterBone_Head] = Quaternion(1.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Rotation[CharacterBone_Shoulders] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Rotation[CharacterBone_Body] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Rotation[CharacterBone_Hand_Right] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Rotation[CharacterBone_Hand_Left] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Rotation[CharacterBone_Foot_Right] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Rotation[CharacterBone_Foot_Left] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Scaling[CharacterBone_Head] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Scaling[CharacterBone_Shoulders] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Scaling[CharacterBone_Body] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Scaling[CharacterBone_Hand_Right] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Scaling[CharacterBone_Hand_Left] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Scaling[CharacterBone_Foot_Right] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0].Scaling[CharacterBone_Foot_Left] = 1.0f;
+	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0] = DefaultCharacterKeyFrame();
 
-	r32 W = Cos(DEG2RAD(5.0f)/2.0f);
-	vec3 V = Sin(DEG2RAD(5.0f)/2.0f)*vec3(0.0f, 1.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].TimeStampInSeconds = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Translation[CharacterBone_Head] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Translation[CharacterBone_Shoulders] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Translation[CharacterBone_Body] = vec3(0.0f, 0.0f, 0.0f);
+	quaternion IdleHeadRotation = QuaternionAngleAxis(5.0f, vec3(0.0f, 1.0f, 0.0f));
+	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1] = DefaultCharacterKeyFrame(1.0f);
 	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Translation[CharacterBone_Hand_Right] = vec3(0.0f, 0.02f, 0.0f);
 	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Translation[CharacterBone_Hand_Left] = vec3(0.0f, 0.02f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Translation[CharacterBone_Foot_Right] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Translation[CharacterBone_Foot_Left] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Rotation[CharacterBone_Head] = Quaternion(W, V);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Rotation[CharacterBone_Shoulders] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Rotation[CharacterBone_Body] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Rotation[CharacterBone_Hand_Right] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Rotation[CharacterBone_Hand_Left] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Rotation[CharacterBone_Foot_Right] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Rotation[CharacterBone_Foot_Left] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Scaling[CharacterBone_Head] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Scaling[CharacterBone_Shoulders] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Scaling[CharacterBone_Body] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Scaling[CharacterBone_Hand_Right] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Scaling[CharacterBone_Hand_Left] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Scaling[CharacterBone_Foot_Right] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Scaling[CharacterBone_Foot_Left] = 1.0f;
+	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[1].Rotation[CharacterBone_Head] = IdleHeadRotation;
 
-	W = Cos(DEG2RAD(-5.0f)/2.0f);
-	V = Sin(DEG2RAD(-5.0f)/2.0f)*vec3(0.0f, 1.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].TimeStampInSeconds = 3.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Translation[CharacterBone_Head] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Translation[CharacterBone_Shoulders] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Translation[CharacterBone_Body] = vec3(0.0f, 0.0f, 0.0f);
+	IdleHeadRotation = QuaternionAngleAxis(-5.0f, vec3(0.0f, 1.0f, 0.0f));
+	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2] = DefaultCharacterKeyFrame(3.0f);
 	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Translation[CharacterBone_Hand_Right] = vec3(0.0f, 0.02f, 0.0f);
 	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Translation[CharacterBone_Hand_Left] = vec3(0.0f, 0.02f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Translation[CharacterBone_Foot_Right] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Translation[CharacterBone_Foot_Left] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Rotation[CharacterBone_Head] = Quaternion(W, V);
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Rotation[CharacterBone_Shoulders] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Rotation[CharacterBone_Body] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Rotation[CharacterBone_Hand_Right] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Rotation[CharacterBone_Hand_Left] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Rotation[CharacterBone_Foot_Right] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Rotation[CharacterBone_Foot_Left] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Scaling[CharacterBone_Head] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Scaling[CharacterBone_Shoulders] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Scaling[CharacterBone_Body] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Scaling[CharacterBone_Hand_Right] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Scaling[CharacterBone_Hand_Left] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Scaling[CharacterBone_Foot_Right] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Scaling[CharacterBone_Foot_Left] = 1.0f;
+	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[2].Rotation[CharacterBone_Head] = IdleHeadRotation;
 
 	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[3] = CharacterAnimations[CharacterAnimation_Idle].KeyFrames[0];
 	CharacterAnimations[CharacterAnimation_Idle].KeyFrames[3].TimeStampInSeconds = 4.0f;
 
 
-	r32 PositiveRotW = Cos(DEG2RAD(90.0f)/2.0f);
-	vec3 PositiveRotV = Sin(DEG2RAD(90.0f)/2.0f)*vec3(1.0f, 0.0f, 0.0f);
-	r32 NegativeRotW = Cos(DEG2RAD(-90.0f)/2.0f);
-	vec3 NegativeRotV = Sin(DEG2RAD(-90.0f)/2.0f)*vec3(1.0f, 0.0f, 0.0f);
-	W = Cos(DEG2RAD(20.0f)/2.0f);
-	V = Sin(DEG2RAD(20.0f)/2.0f)*vec3(1.0f, 0.0f, 0.0f);
 
+	quaternion RunFootPositiveRotation = QuaternionAngleAxis(90.0f, vec3(1.0f, 0.0f, 0.0f));
+	quaternion RunFootNegativeRotation = QuaternionAngleAxis(-90.0f, vec3(1.0f, 0.0f, 0.0f));
+	quaternion RunBodyRotation = QuaternionAngleAxis(20.0f, vec3(1.0f, 0.0f, 0.0f));
 	CharacterAnimations[CharacterAnimation_Run].DurationInSeconds = 2.0f;
 	CharacterAnimations[CharacterAnimation_Run].KeyFrameCount = 3;
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].TimeStampInSeconds = 0.0f;
+	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0] = DefaultCharacterKeyFrame();
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Translation[CharacterBone_Head] = vec3(0.0f, -0.065f, 0.15f);
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Translation[CharacterBone_Shoulders] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Translation[CharacterBone_Body] = vec3(0.0f, 0.0f, 0.0f);
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Translation[CharacterBone_Hand_Right] = vec3(0.0f, 0.0f, -0.1f);
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Translation[CharacterBone_Hand_Left] = vec3(0.0f, 0.0f, 0.1f);
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Translation[CharacterBone_Foot_Right] = vec3(0.0f, 0.0f, 0.15f);
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Translation[CharacterBone_Foot_Left] = vec3(0.0f, 0.1f, -0.25f);
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Rotation[CharacterBone_Head] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Rotation[CharacterBone_Shoulders] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Rotation[CharacterBone_Body] = Quaternion(W, V);
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Rotation[CharacterBone_Hand_Right] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Rotation[CharacterBone_Hand_Left] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Rotation[CharacterBone_Foot_Right] = Quaternion(PositiveRotW, PositiveRotV);
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Rotation[CharacterBone_Foot_Left] = Quaternion(NegativeRotW, NegativeRotV);
+	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Rotation[CharacterBone_Body] = RunBodyRotation;
+	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Rotation[CharacterBone_Foot_Right] = RunFootPositiveRotation;
+	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Rotation[CharacterBone_Foot_Left] = RunFootNegativeRotation;
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Scaling[CharacterBone_Head] = 1.0f;
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Scaling[CharacterBone_Shoulders] = 1.0f;
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Scaling[CharacterBone_Body] = 1.0f;
@@ -204,59 +168,52 @@ InitializeDefaultAnimations(animation *CharacterAnimations)
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Scaling[CharacterBone_Foot_Right] = 1.0f;
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[0].Scaling[CharacterBone_Foot_Left] = 1.0f;
 	
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].TimeStampInSeconds = 1.0f;
+	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1] = DefaultCharacterKeyFrame(1.0f);
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Translation[CharacterBone_Head] = vec3(0.0f, -0.05f, 0.15f);
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Translation[CharacterBone_Shoulders] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Translation[CharacterBone_Body] = vec3(0.0f, 0.0f, 0.0f);
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Translation[CharacterBone_Hand_Right] = vec3(0.0f, 0.0f, 0.1f);
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Translation[CharacterBone_Hand_Left] = vec3(0.0f, 0.0f, -0.1f);
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Translation[CharacterBone_Foot_Right] = vec3(0.0f, 0.1f, -0.25f);
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Translation[CharacterBone_Foot_Left] = vec3(0.0f, 0.0f, 0.15f);
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Rotation[CharacterBone_Head] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Rotation[CharacterBone_Shoulders] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Rotation[CharacterBone_Body] = Quaternion(W, V);
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Rotation[CharacterBone_Hand_Right] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Rotation[CharacterBone_Hand_Left] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Rotation[CharacterBone_Foot_Right] = Quaternion(NegativeRotW, NegativeRotV);
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Rotation[CharacterBone_Foot_Left] = Quaternion(PositiveRotW, PositiveRotV);
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Scaling[CharacterBone_Head] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Scaling[CharacterBone_Shoulders] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Scaling[CharacterBone_Body] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Scaling[CharacterBone_Hand_Right] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Scaling[CharacterBone_Hand_Left] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Scaling[CharacterBone_Foot_Right] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Scaling[CharacterBone_Foot_Left] = 1.0f;
-
+	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Rotation[CharacterBone_Body] = RunBodyRotation;
+	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Rotation[CharacterBone_Foot_Right] = RunFootNegativeRotation;
+	CharacterAnimations[CharacterAnimation_Run].KeyFrames[1].Rotation[CharacterBone_Foot_Left] = RunFootPositiveRotation;
+	
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[2] = CharacterAnimations[CharacterAnimation_Run].KeyFrames[0];
 	CharacterAnimations[CharacterAnimation_Run].KeyFrames[2].TimeStampInSeconds = 2.0f;
 
-	W = Cos(DEG2RAD(30.0f)/2.0f);
-	V = Sin(DEG2RAD(30.0f)/2.0f)*vec3(1.0f, 0.0f, 0.0f);
+
+
+	quaternion JumpHeadRotation = QuaternionAngleAxis(30.0f, vec3(1.0f, 0.0f, 0.0f));
 	CharacterAnimations[CharacterAnimation_Jump].DurationInSeconds = 1.0f;
 	CharacterAnimations[CharacterAnimation_Jump].KeyFrameCount = 2;
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].TimeStampInSeconds = 0.0f;
+	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0] = DefaultCharacterKeyFrame();
 	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Translation[CharacterBone_Head] = vec3(0.0f, -0.1f, 0.17f);
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Translation[CharacterBone_Shoulders] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Translation[CharacterBone_Body] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Translation[CharacterBone_Hand_Right] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Translation[CharacterBone_Hand_Left] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Translation[CharacterBone_Foot_Right] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Translation[CharacterBone_Foot_Left] = vec3(0.0f, 0.0f, 0.0f);
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Rotation[CharacterBone_Head] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Rotation[CharacterBone_Shoulders] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Rotation[CharacterBone_Body] = Quaternion(W, V);
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Rotation[CharacterBone_Hand_Right] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Rotation[CharacterBone_Hand_Left] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Rotation[CharacterBone_Foot_Right] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Rotation[CharacterBone_Foot_Left] = Quaternion(0.0f, vec3(0.0f, 0.0f, 0.0f));
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Scaling[CharacterBone_Head] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Scaling[CharacterBone_Shoulders] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Scaling[CharacterBone_Body] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Scaling[CharacterBone_Hand_Right] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Scaling[CharacterBone_Hand_Left] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Scaling[CharacterBone_Foot_Right] = 1.0f;
-	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Scaling[CharacterBone_Foot_Left] = 1.0f;
-
+	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0].Rotation[CharacterBone_Body] = JumpHeadRotation;
+	
 	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[1] = CharacterAnimations[CharacterAnimation_Jump].KeyFrames[0];
 	CharacterAnimations[CharacterAnimation_Jump].KeyFrames[1].TimeStampInSeconds = 1.0f;
+
+
+
+	quaternion SwordAttackBodyStartRotation = QuaternionAngleAxis(15.0f, vec3(0.0f, 1.0f, 0.0f));
+	quaternion SwordAttackBodyEndRotation = QuaternionAngleAxis(-80.0f, vec3(0.0f, 1.0f, 0.0f));
+	CharacterAnimations[CharacterAnimation_SwordAttack].DurationInSeconds = 0.4f;
+	CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrameCount = 4;
+	CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrames[0] = DefaultCharacterKeyFrame();
+	CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrames[0].Rotation[CharacterBone_Body] = SwordAttackBodyStartRotation;
+
+	quaternion SwordRotation = QuaternionAngleAxis(90.0f, vec3(1.0f, 0.0f, 0.0f));
+	CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrames[1] = DefaultCharacterKeyFrame(0.1f);
+	CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrames[1].Rotation[CharacterBone_Hand_Left] = SwordRotation;
+
+	CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrames[2] = DefaultCharacterKeyFrame(0.25f);
+	CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrames[2].Translation[CharacterBone_Hand_Right] = vec3(0.2f, 0.0f, -0.33f);
+	CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrames[2].Translation[CharacterBone_Hand_Left] = vec3(-0.5f, 0.0f, 0.3f);
+	CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrames[2].Translation[CharacterBone_Foot_Right] = 0.5f*vec3(0.2f, 0.0f, -0.33f);
+	CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrames[2].Translation[CharacterBone_Foot_Left] = 0.5f*vec3(-0.2f, 0.0f, 0.33f);
+	CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrames[2].Rotation[CharacterBone_Body] = SwordAttackBodyEndRotation;
+	CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrames[2].Rotation[CharacterBone_Hand_Left] = SwordRotation;
+
+	CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrames[3] = CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrames[0];
+	CharacterAnimations[CharacterAnimation_SwordAttack].KeyFrames[3].TimeStampInSeconds = 0.4f;
 }

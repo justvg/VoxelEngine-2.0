@@ -40,6 +40,7 @@ internal PLATFORM_JOB_SYSTEM_CALLBACK(LoadAssetJob)
 			Asset->Header->Model.VerticesCount = Asset->VEAAsset.Model.VerticesCount;
 			Asset->Header->Model.Alignment = Asset->VEAAsset.Model.Alignment;
 			Asset->Header->Model.AlignmentX = Asset->VEAAsset.Model.AlignmentX;
+			Asset->Header->Model.AlignmentZ = Asset->VEAAsset.Model.AlignmentZ;
 
 			AssetSize = 3*VerticesSize;
 		} break;
