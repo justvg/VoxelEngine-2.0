@@ -1135,64 +1135,6 @@ Real32Modulo(r32 Numerator, r32 Denominator)
 	return(Result);
 }
 
-// 
-// NOTE(georgy): box (rect3 but with 8 vertices)
-// 
-
-struct box
-{
-	vec3 Points[8];
-};
-
-internal box __vectorcall
-ConstructBoxMinDim(vec3 Min, vec3 Dim)
-{
-	box Result;
-
-	Result.Points[0] = Min;
-	Result.Points[1] = Result.Points[0] + vec3(0.0f, Dim.y(), 0.0f);
-	Result.Points[2] = Result.Points[0] + vec3(0.0f, 0.0f, Dim.z());
-	Result.Points[3] = Result.Points[0] + vec3(0.0f, Dim.y(), Dim.z());
-	Result.Points[4] = Result.Points[0] + vec3(Dim.x(), 0.0f, 0.0f);
-	Result.Points[5] = Result.Points[0] + vec3(Dim.x(), Dim.y(), 0.0f);
-	Result.Points[6] = Result.Points[0] + vec3(Dim.x(), 0.0f, Dim.z());
-	Result.Points[7] = Result.Points[0] + vec3(Dim.x(), Dim.y(), Dim.z());
-
-	return(Result);
-}
-
-internal box __vectorcall
-ConstructBoxDim(vec3 Dim)
-{
-	box Result = ConstructBoxMinDim(-0.5f*Dim, Dim);
-
-	return(Result);
-}
-
-internal box __vectorcall
-ConstructBox(box *Box, mat3 Transformation, vec3 Translation = vec3(0.0f, 0.0f, 0.0f))
-{
-	box Result;
-
-	Result.Points[0] = Translation + Transformation * Box->Points[0];
-	Result.Points[1] = Translation + Transformation * Box->Points[1];
-	Result.Points[2] = Translation + Transformation * Box->Points[2];
-	Result.Points[3] = Translation + Transformation * Box->Points[3];
-	Result.Points[4] = Translation + Transformation * Box->Points[4];
-	Result.Points[5] = Translation + Transformation * Box->Points[5];
-	Result.Points[6] = Translation + Transformation * Box->Points[6];
-	Result.Points[7] = Translation + Transformation * Box->Points[7];
-
-	return(Result);
-}
-
-internal void __vectorcall
-TransformBox(box *Box, mat3 Transformation, vec3 Translation = vec3(0.0f, 0.0f, 0.0f))
-{
-	// TODO(georgy): This is stupid, I dont want to copy box from ConstructBox. Can do this with pointers!
-	*Box = ConstructBox(Box, Transformation, Translation);
-}
-
 //
 // NOTE(georgy): rect2
 //
@@ -1372,20 +1314,128 @@ RectIntersect(rect3 A, rect3 B)
 	return(Result);
 }
 
-inline rect3
-RectFromBox(box *Box)
+internal rect3
+RectForTransformedRect(rect3 OldRect, mat3 Transformation, vec3 Translation = vec3(0.0f, 0.0f, 0.0f))
 {
-	rect3 Result;
+	rect3 Result = {Translation, Translation};
+	r32 m11 = Transformation.FirstColumn.x();
+	r32 m12 = Transformation.SecondColumn.x();
+	r32 m13 = Transformation.ThirdColumn.x();
+	r32 m21 = Transformation.FirstColumn.y();
+	r32 m22 = Transformation.SecondColumn.y();
+	r32 m23 = Transformation.ThirdColumn.y();
+	r32 m31 = Transformation.FirstColumn.z();
+	r32 m32 = Transformation.SecondColumn.z();
+	r32 m33 = Transformation.ThirdColumn.z();
 
-	Result.Min = vec3(FLT_MAX, FLT_MAX, FLT_MAX);
-	Result.Max = vec3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-	for(u32 PointIndex = 0;
-		PointIndex < 8;
-		PointIndex++)
+	r32 OldRectMaxX = OldRect.Max.x();
+	r32 OldRectMinX = OldRect.Min.x();
+	r32 OldRectMaxY = OldRect.Max.y();
+	r32 OldRectMinY = OldRect.Min.y();
+	r32 OldRectMaxZ = OldRect.Max.z();
+	r32 OldRectMinZ = OldRect.Min.z();
+
+	if(m11 > 0.0f)
 	{
-		Result.Min = Min(Result.Min, Box->Points[PointIndex]);
-		Result.Max = Max(Result.Max, Box->Points[PointIndex]);
+		Result.Max.SetX(Result.Max.x() + m11*OldRectMaxX);
+		Result.Min.SetX(Result.Min.x() + m11*OldRectMinX);
 	}
+	else
+	{
+		Result.Max.SetX(Result.Max.x() + m11*OldRectMinX);
+		Result.Min.SetX(Result.Min.x() + m11*OldRectMaxX);
+	}
+
+	if(m12 > 0.0f)
+	{
+		Result.Max.SetX(Result.Max.x() + m12*OldRectMaxY);
+		Result.Min.SetX(Result.Min.x() + m12*OldRectMinY);
+	}
+	else
+	{
+		Result.Max.SetX(Result.Max.x() + m12*OldRectMinY);
+		Result.Min.SetX(Result.Min.x() + m12*OldRectMaxY);
+	}
+
+	if(m13 > 0.0f)
+	{
+		Result.Max.SetX(Result.Max.x() + m13*OldRectMaxZ);
+		Result.Min.SetX(Result.Min.x() + m13*OldRectMinZ);
+	}
+	else
+	{
+		Result.Max.SetX(Result.Max.x() + m13*OldRectMinZ);
+		Result.Min.SetX(Result.Min.x() + m13*OldRectMaxZ);
+	}
+
+
+	if(m21 > 0.0f)
+	{
+		Result.Max.SetY(Result.Max.y() + m21*OldRectMaxX);
+		Result.Min.SetY(Result.Min.y() + m21*OldRectMinX);
+	}
+	else
+	{
+		Result.Max.SetY(Result.Max.y() + m21*OldRectMinX);
+		Result.Min.SetY(Result.Min.y() + m21*OldRectMaxX);
+	}
+
+	if(m22 > 0.0f)
+	{
+		Result.Max.SetY(Result.Max.y() + m22*OldRectMaxY);
+		Result.Min.SetY(Result.Min.y() + m22*OldRectMinY);
+	}
+	else
+	{
+		Result.Max.SetY(Result.Max.y() + m22*OldRectMinY);
+		Result.Min.SetY(Result.Min.y() + m22*OldRectMaxY);
+	}
+
+	if(m23 > 0.0f)
+	{
+		Result.Max.SetY(Result.Max.y() + m23*OldRectMaxZ);
+		Result.Min.SetY(Result.Min.y() + m23*OldRectMinZ);
+	}
+	else
+	{
+		Result.Max.SetY(Result.Max.y() + m23*OldRectMinZ);
+		Result.Min.SetY(Result.Min.y() + m23*OldRectMaxZ);
+	}
+
+	
+	if(m31 > 0.0f)
+	{
+		Result.Max.SetZ(Result.Max.z() + m31*OldRectMaxX);
+		Result.Min.SetZ(Result.Min.z() + m31*OldRectMinX);
+	}
+	else
+	{
+		Result.Max.SetZ(Result.Max.z() + m31*OldRectMinX);
+		Result.Min.SetZ(Result.Min.z() + m31*OldRectMaxX);
+	}
+
+	if(m32 > 0.0f)
+	{
+		Result.Max.SetZ(Result.Max.z() + m32*OldRectMaxY);
+		Result.Min.SetZ(Result.Min.z() + m32*OldRectMinY);
+	}
+	else
+	{
+		Result.Max.SetZ(Result.Max.z() + m32*OldRectMinY);
+		Result.Min.SetZ(Result.Min.z() + m32*OldRectMaxY);
+	}
+
+	if(m33 > 0.0f)
+	{
+		Result.Max.SetZ(Result.Max.z() + m33*OldRectMaxZ);
+		Result.Min.SetZ(Result.Min.z() + m33*OldRectMinZ);
+	}
+	else
+	{
+		Result.Max.SetZ(Result.Max.z() + m33*OldRectMinZ);
+		Result.Min.SetZ(Result.Min.z() + m33*OldRectMaxZ);
+	}
+
 
 	return(Result);
 }

@@ -976,14 +976,10 @@ MoveEntity(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *Entity
 	stored_entity *StoredEntity = WorldMode->StoredEntities + Entity->StorageIndex;
 	world_position OldWorldP = StoredEntity->P;
 	
-	box EntityBox = ConstructBoxDim(Entity->Collision->Dim);
 	mat3 EntityRotationMatrix = Rotate3x3(Entity->Rotation, vec3(0.0f, 1.0f, 0.0f)); 
-
-	box EntityBoxOldP = ConstructBox(&EntityBox, EntityRotationMatrix, OldP);
-	rect3 EntityOldPAABB = RectFromBox(&EntityBoxOldP);
-
-	box EntityBoxDesiredP = ConstructBox(&EntityBox, EntityRotationMatrix, DesiredP);
-	rect3 EntityDesiredPAABB = RectFromBox(&EntityBoxDesiredP);
+	rect3 EntityAABB = RectMinMax(-0.5f*Entity->Collision->Dim, 0.5f*Entity->Collision->Dim);
+	rect3 EntityOldPAABB = RectForTransformedRect(EntityAABB, EntityRotationMatrix, OldP);
+	rect3 EntityDesiredPAABB = RectForTransformedRect(EntityAABB, EntityRotationMatrix, DesiredP);
 
 	vec3 MinForAABB = Min(EntityOldPAABB.Min, EntityDesiredPAABB.Min);
 	vec3 MaxForAABB = Max(EntityOldPAABB.Max, EntityDesiredPAABB.Max);
@@ -1001,10 +997,10 @@ MoveEntity(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *Entity
 
 		if(CanCollide(WorldMode, Entity, TestEntity))
 		{
-			box TestEntityBox = ConstructBoxDim(TestEntity->Collision->Dim);
 			mat3 TestEntityTransformation = Rotate3x3(TestEntity->Rotation, vec3(0.0f, 1.0f, 0.0f));
-			TransformBox(&TestEntityBox, TestEntityTransformation, TestEntity->P + TestEntity->Collision->OffsetP);
-			rect3 TestEntityAABB = RectFromBox(&TestEntityBox);
+			rect3 TestEntityAABB = RectMinMax(-0.5f*TestEntity->Collision->Dim, 0.5f*TestEntity->Collision->Dim);
+			TestEntityAABB = RectForTransformedRect(TestEntityAABB, TestEntityTransformation, 
+													TestEntity->P + TestEntity->Collision->OffsetP);
 
 			if(RectIntersect(TestEntityAABB, AABB))
 			{

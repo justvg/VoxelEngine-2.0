@@ -10,56 +10,66 @@ MakeSimpleCollision(game_mode_world *WorldMode, vec3 Dim)
 
 	InitializeDynamicArray(&Result->VerticesP);
 
-	box Box = ConstructBoxDim(Dim);
+	vec3 Min = -0.5f*Dim;
+	vec3 Points[8];
+	Points[0] = Min;
+	Points[1] = Points[0] + vec3(0.0f, Dim.y(), 0.0f);
+	Points[2] = Points[0] + vec3(0.0f, 0.0f, Dim.z());
+	Points[3] = Points[0] + vec3(0.0f, Dim.y(), Dim.z());
+	Points[4] = Points[0] + vec3(Dim.x(), 0.0f, 0.0f);
+	Points[5] = Points[0] + vec3(Dim.x(), Dim.y(), 0.0f);
+	Points[6] = Points[0] + vec3(Dim.x(), 0.0f, Dim.z());
+	Points[7] = Points[0] + vec3(Dim.x(), Dim.y(), Dim.z());
+
 	vec3 VolumeVertices[] = 
 	{
 			// Back face
-			Box.Points[0],
-			Box.Points[5],
-			Box.Points[4],
-			Box.Points[5],
-			Box.Points[0],
-			Box.Points[1],
+			Points[0],
+			Points[5],
+			Points[4],
+			Points[5],
+			Points[0],
+			Points[1],
 
 			// Front face
-			Box.Points[2],
-			Box.Points[6],
-			Box.Points[7],
-			Box.Points[7],			
-			Box.Points[3],
-			Box.Points[2],
+			Points[2],
+			Points[6],
+			Points[7],
+			Points[7],			
+			Points[3],
+			Points[2],
 
 			// Left face
-			Box.Points[3],
-			Box.Points[1],
-			Box.Points[0],
-			Box.Points[0],			
-			Box.Points[2],
-			Box.Points[3],
+			Points[3],
+			Points[1],
+			Points[0],
+			Points[0],			
+			Points[2],
+			Points[3],
 
 			// Right face
-			Box.Points[7],
-			Box.Points[4],
-			Box.Points[5],
-			Box.Points[4],
-			Box.Points[7],
-			Box.Points[6],
+			Points[7],
+			Points[4],
+			Points[5],
+			Points[4],
+			Points[7],
+			Points[6],
 
 			// Bottom face
-			Box.Points[0],
-			Box.Points[4],
-			Box.Points[6],
-			Box.Points[6],
-			Box.Points[2],
-			Box.Points[0],
+			Points[0],
+			Points[4],
+			Points[6],
+			Points[6],
+			Points[2],
+			Points[0],
 
 			// Top face
-			Box.Points[1],
-			Box.Points[7],
-			Box.Points[5],
-			Box.Points[7],
-			Box.Points[1],
-			Box.Points[3],			
+			Points[1],
+			Points[7],
+			Points[5],
+			Points[7],
+			Points[1],
+			Points[3],			
 	};
 
 	for(u32 VertexIndex = 0;
@@ -493,8 +503,8 @@ PlayWorld(game_state *GameState)
 	HeroP.Offset = vec3(0.3f, 5.0f, 3.0f);
 	WorldMode->Hero.Entity = AddHero(WorldMode, HeroP);
 	WorldMode->LastHeroWorldP = HeroP;
-	AddPointLightToEntity(WorldMode, WorldMode->Hero.Entity,
-							vec3(0.0f, 1.0f, 0.0f), vec3(1.0f, 1.0f, 1.0f));
+	// AddPointLightToEntity(WorldMode, WorldMode->Hero.Entity,
+	// 						vec3(0.0f, 1.0f, 0.0f), vec3(1.0f, 1.0f, 1.0f));
 	// AddParticlesToEntity(WorldMode, WorldMode->Hero.Entity,
 	// 					 1.5f, 30, 0.2f, vec3(0.0f, 0.0f, 0.0f), vec3(0.65f, 0.0f, 0.65f), 2.0f, vec3(0.0f, 0.0f, 0.0f),
 	// 					 vec3(0.25f, 0.25f, 0.25f));

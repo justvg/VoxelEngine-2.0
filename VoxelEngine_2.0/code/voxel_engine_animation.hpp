@@ -14,7 +14,6 @@ UpdateCharacterAnimations(sim_entity *Entity, move_spec *MoveSpec, r32 dt)
 
 	if(!IsSet(Entity, EntityFlag_OnGround))
 	{
-		// DesiredAnimation = CharacterAnimation_Run;
 		DesiredAnimation = CharacterAnimation_Jump;
 	}
 
