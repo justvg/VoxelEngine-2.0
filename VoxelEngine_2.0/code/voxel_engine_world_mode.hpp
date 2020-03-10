@@ -993,75 +993,19 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 			{
 				Cascade[PointIndex] = Cascade[PointIndex] + vec4(Camera->OffsetFromHero + Camera->TargetOffset, 0.0f);
 			}
-			
-			vec3 SphereP;
-			r32 Radius;
-			r32 MinX = FLT_MAX, MinY = FLT_MAX, MinZ = FLT_MAX, MaxX = -FLT_MAX, MaxY = -FLT_MAX, MaxZ = -FLT_MAX;
-			u32 MinXIndex = ArrayCount(Cascade) - 1, MinYIndex = ArrayCount(Cascade) - 1, MinZIndex = ArrayCount(Cascade) - 1, MaxXIndex = 0, MaxYIndex = 0, MaxZIndex = 0;
-			for(u32 PointIndex = 0;
-				PointIndex < ArrayCount(Cascade);
-				PointIndex++)
-			{
-				if(MinX > Cascade[PointIndex].x()) { MinX = Cascade[PointIndex].x(); MinXIndex = PointIndex; }
-				if(MinY > Cascade[PointIndex].y()) { MinY = Cascade[PointIndex].y(); MinYIndex = PointIndex; }
-				if(MinZ > Cascade[PointIndex].z()) { MinZ = Cascade[PointIndex].z(); MinZIndex = PointIndex; }
-				if(MaxX < Cascade[PointIndex].x()) { MaxX = Cascade[PointIndex].x(); MaxXIndex = PointIndex; }
-				if(MaxY < Cascade[PointIndex].y()) { MaxY = Cascade[PointIndex].y(); MaxYIndex = PointIndex; }
-				if(MaxZ < Cascade[PointIndex].z()) { MaxZ = Cascade[PointIndex].z(); MaxZIndex = PointIndex; }
-			}
-			r32 XDiff = MaxX - MinX;
-			r32 YDiff = MaxY - MinY;
-			r32 ZDiff = MaxZ - MinZ;
-			if(XDiff > YDiff)
-			{
-				if(XDiff > ZDiff)
-				{
-					SphereP = Lerp(vec3(Cascade[MinXIndex].m), vec3(Cascade[MaxXIndex].m), 0.5f);
-					Radius = MaxX - SphereP.x();
-				}
-				else
-				{
-					SphereP = Lerp(vec3(Cascade[MinZIndex].m), vec3(Cascade[MaxZIndex].m), 0.5f);
-					Radius = MaxZ - SphereP.z();
-				}
-			}
-			else
-			{
-				if(YDiff > ZDiff)
-				{
-					SphereP = Lerp(vec3(Cascade[MinYIndex].m), vec3(Cascade[MaxYIndex].m), 0.5f);
-					Radius = MaxY - SphereP.y();
-				}
-				else
-				{
-					SphereP = Lerp(vec3(Cascade[MinZIndex].m), vec3(Cascade[MaxZIndex].m), 0.5f);
-					Radius = MaxZ - SphereP.z();
-				}
-			}
-			
-			for(u32 PointIndex = 0;
-				PointIndex < ArrayCount(Cascade);
-				PointIndex++)
-			{
-				vec3 FromCenter = vec3(Cascade[PointIndex].m) - SphereP;
-				r32 DistanceToPoint = Length(FromCenter);
-				if(DistanceToPoint > Radius)
-				{
-					SphereP += (0.5f*(DistanceToPoint - Radius))*Normalize(FromCenter);
-					Radius = 0.5f*(DistanceToPoint + Radius);
-				}
-			}
 
-			Radius = Round(Radius);
-			
+			sphere BoundingSphere = SphereFromPoints((vec3 *)Cascade, ArrayCount(Cascade), 4);
+			BoundingSphere.Radius = Round(BoundingSphere.Radius);
+
 			r32 ExtraBackup = 60.0f;
 			r32 NearClip = 1.0f;
-			r32 FarClip = ExtraBackup + 2.0f*Radius;
-			r32 BackupDistance = ExtraBackup + NearClip + Radius;
-			vec3 LightP = SphereP - WorldMode->DirectionalLightDir*BackupDistance;
+			r32 FarClip = ExtraBackup + 2.0f*BoundingSphere.Radius;
+			r32 BackupDistance = ExtraBackup + NearClip + BoundingSphere.Radius;
+			vec3 LightP = BoundingSphere.P - WorldMode->DirectionalLightDir*BackupDistance;
 			
-			mat4 LightView = LookAt(LightP, SphereP);
-			mat4 LightProjection = Ortho(-Radius, Radius, -Radius, Radius,
+			mat4 LightView = LookAt(LightP, BoundingSphere.P);
+			mat4 LightProjection = Ortho(-BoundingSphere.Radius, BoundingSphere.Radius, 
+										 -BoundingSphere.Radius, BoundingSphere.Radius,
 										 NearClip, FarClip);
 
 			LightSpaceMatrices[CascadeIndex] = LightProjection * LightView;

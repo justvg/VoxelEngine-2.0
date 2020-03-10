@@ -1664,3 +1664,93 @@ PerlinNoise3D(vec3 P)
 
 	return(Result);
 }
+
+// 
+// NOTE(georgy): Sphere
+// 
+
+struct sphere
+{
+	vec3 P;
+	r32 Radius;
+};
+
+inline void
+AddPointToSphere(sphere *Sphere, vec3 Point)
+{
+	vec3 FromCenter = Point - Sphere->P;
+	r32 DistanceToPoint = LengthSq(FromCenter);
+	if(DistanceToPoint > (Sphere->Radius * Sphere->Radius))
+	{
+		DistanceToPoint = SquareRoot(DistanceToPoint);
+		Sphere->P += (0.5f*(DistanceToPoint - Sphere->Radius))*Normalize(FromCenter);
+		Sphere->Radius = 0.5f*(DistanceToPoint + Sphere->Radius);
+	}
+}
+
+internal sphere
+SphereFromPoints(vec3 *Points, u32 Count, u32 Iterations = 0)
+{
+	sphere Result = {};
+
+	r32 MinX = FLT_MAX, MinY = FLT_MAX, MinZ = FLT_MAX, MaxX = -FLT_MAX, MaxY = -FLT_MAX, MaxZ = -FLT_MAX;
+	u32 MinXIndex = Count - 1, MinYIndex = Count - 1, MinZIndex = Count - 1, MaxXIndex = 0, MaxYIndex = 0, MaxZIndex = 0;
+	for(u32 PointIndex = 0;
+		PointIndex < Count;
+		PointIndex++)
+	{
+		if(MinX > Points[PointIndex].x()) { MinX = Points[PointIndex].x(); MinXIndex = PointIndex; }
+		if(MinY > Points[PointIndex].y()) { MinY = Points[PointIndex].y(); MinYIndex = PointIndex; }
+		if(MinZ > Points[PointIndex].z()) { MinZ = Points[PointIndex].z(); MinZIndex = PointIndex; }
+		if(MaxX < Points[PointIndex].x()) { MaxX = Points[PointIndex].x(); MaxXIndex = PointIndex; }
+		if(MaxY < Points[PointIndex].y()) { MaxY = Points[PointIndex].y(); MaxYIndex = PointIndex; }
+		if(MaxZ < Points[PointIndex].z()) { MaxZ = Points[PointIndex].z(); MaxZIndex = PointIndex; }
+	}
+
+	r32 XDiff = MaxX - MinX;
+	r32 YDiff = MaxY - MinY;
+	r32 ZDiff = MaxZ - MinZ;
+	u32 MinIndex = MinXIndex;
+	u32 MaxIndex = MaxXIndex;
+	if((YDiff > XDiff) && (YDiff > ZDiff))
+	{
+		MinIndex = MinYIndex;
+		MaxIndex = MaxYIndex;
+	}
+	else if((ZDiff > XDiff) && (ZDiff > YDiff))
+	{
+		MinIndex = MinZIndex;
+		MaxIndex = MaxZIndex;
+	}
+
+	Result.P = Lerp(vec3(Points[MinIndex].m), vec3(Points[MaxIndex].m), 0.5f);
+	Result.Radius = Length(Points[MaxIndex] - Result.P);
+
+	for(u32 PointIndex = 0;
+		PointIndex < Count;
+		PointIndex++)
+	{
+		AddPointToSphere(&Result, vec3(Points[PointIndex].m));
+	}
+	
+	for(u32 Iteration = 0;
+		Iteration < Iterations;
+		Iteration++)
+	{
+		sphere NewSphere = {Result.P, 0.8f*Result.Radius};
+				
+		for(u32 PointIndex = 0;
+			PointIndex < Count;
+			PointIndex++)
+		{
+			AddPointToSphere(&NewSphere, vec3(Points[PointIndex].m));
+		}
+
+		if(NewSphere.Radius < Result.Radius)
+		{
+			Result = NewSphere;
+		}
+	}
+
+	return(Result);
+}
