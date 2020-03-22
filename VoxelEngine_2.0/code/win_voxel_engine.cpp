@@ -1006,13 +1006,13 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 									// GameInput.MouseY += RawInput.data.mouse.lLastY;
 									
 									if(RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN ||
-									RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_UP)
+									   RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_UP)
 									{
 										WinProcessKey(&Input->MouseLeft, RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN);
 									}
 										
 									if(RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN ||
-									RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_UP)
+									   RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_UP)
 									{
 										WinProcessKey(&Input->MouseRight, RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN);
 									}

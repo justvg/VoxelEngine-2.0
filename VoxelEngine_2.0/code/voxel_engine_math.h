@@ -1473,9 +1473,11 @@ SignedDistance(plane Plane, vec3 P)
 inline bool32 __vectorcall
 IsPointInTriangle(vec3 P, vec3 A, vec3 B, vec3 C)
 {
-	bool32 Result = ((Dot(Cross(B - A, P - A), Cross(B - A, C - A)) >= 0.0f) &&
-					 (Dot(Cross(C - B, P - B), Cross(C - B, A - B)) >= 0.0f) &&
-					 (Dot(Cross(A - C, P - C), Cross(A - C, B - C)) >= 0.0f));
+	A -= P; B -= P; C -= P;
+	vec3 U = Cross(B, C);
+	vec3 V = Cross(C, A);
+	vec3 W = Cross(A, B);
+	bool32 Result = (Dot(U, V) >= 0.0f) && (Dot(U, W) >= 0.0f);
 
 	return(Result);
 }
