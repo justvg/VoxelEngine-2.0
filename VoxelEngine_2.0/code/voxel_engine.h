@@ -8,7 +8,7 @@ global_variable platform_api Platform;
 		Platform.FreeMemory(Memory); \
 		(Memory) = 0;
 
-#define DEFAULT_ALIGNMENT 16
+#define DEFAULT_ALIGNMENT 4
 struct stack_allocator
 {
 	u64 Size;
@@ -62,10 +62,23 @@ GetEffectiveSizeFor(stack_allocator *Allocator, u64 SizeInit, u64 Alignment)
 	return(Size);
 }
 
+#define ZeroStruct(Struct) ZeroSize(&(Struct), sizeof(Struct));
+#define ZeroArray(Pointer, Count) ZeroSize((Pointer), Count*sizeof((Pointer)[0]));
+inline void
+ZeroSize(void *Ptr, u64 Size)
+{
+	// TODO(georgy): Performance!
+	u8 *Byte = (u8 *)Ptr;
+	while(Size--)
+	{
+		*Byte++ = 0;
+	}
+}
+
 #define PushStruct(Allocator, type, ...) (type *)PushSize(Allocator, sizeof(type), ## __VA_ARGS__)
 #define PushArray(Allocator, Count, type, ...) (type *)PushSize(Allocator, (Count)*sizeof(type), ## __VA_ARGS__)
 inline void *
-PushSize(stack_allocator *Allocator, u64 SizeInit, u64 Alignment = DEFAULT_ALIGNMENT)
+PushSize(stack_allocator *Allocator, u64 SizeInit, bool32 ZeroMemory = false, u64 Alignment = DEFAULT_ALIGNMENT)
 {
 	u64 Size = GetEffectiveSizeFor(Allocator, SizeInit, Alignment);
 
@@ -73,6 +86,11 @@ PushSize(stack_allocator *Allocator, u64 SizeInit, u64 Alignment = DEFAULT_ALIGN
 	u64 AlignmentOffset = GetAlignmentOffset(Allocator, Alignment);
 	void *Result = Allocator->Base + Allocator->Used + AlignmentOffset;
 	Allocator->Used += Size;
+
+	if(ZeroMemory)
+	{
+		ZeroSize(Result, SizeInit);
+	}
 
 	return(Result);
 }
@@ -87,10 +105,10 @@ AllocatorHasRoomFor(stack_allocator *Allocator, u64 SizeInit, u64 Alignment = DE
 }
 
 inline void
-SubAllocator(stack_allocator *Result, stack_allocator *Allocator, u64 Size, u64 Alignment = DEFAULT_ALIGNMENT)
+SubAllocator(stack_allocator *Result, stack_allocator *Allocator, u64 Size, bool32 ZeroMemory = false, u64 Alignment = DEFAULT_ALIGNMENT)
 {
 	Result->Size = Size;
-	Result->Base = (u8 *)PushSize(Allocator, Size, Alignment);
+	Result->Base = (u8 *)PushSize(Allocator, Size, ZeroMemory, Alignment);
 	Result->Used = 0;
 }
 
@@ -110,19 +128,6 @@ EndTemporaryMemory(temporary_memory TempMemory)
 	stack_allocator *Allocator = TempMemory.Allocator;
 	Assert(Allocator->Used >= TempMemory.Used);
 	Allocator->Used = TempMemory.Used;
-}
-
-#define ZeroStruct(Struct) ZeroSize(&(Struct), sizeof(Struct));
-#define ZeroArray(Pointer, Count) ZeroSize((Pointer), Count*sizeof((Pointer)[0]));
-inline void
-ZeroSize(void *Ptr, u64 Size)
-{
-	// TODO(georgy): Performance!
-	u8 *Byte = (u8 *)Ptr;
-	while(Size--)
-	{
-		*Byte++ = 0;
-	}
 }
 
 struct game_state;

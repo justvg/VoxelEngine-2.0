@@ -461,8 +461,8 @@ DEBUGRenderRegions(debug_state *DebugState, game_input *Input)
 		vec3(0.0f, 1.0f, 1.0f),
 	};
 
-	// r32 CyclesPerFrame = 0.5f*86666666.0f;
-	r32 CyclesPerFrame = 86666666.0f;
+	r32 CyclesPerFrame = 0.5f*86666666.0f;
+	// r32 CyclesPerFrame = 86666666.0f;
 	r32 TableWidth = 300.0f;
 	r32 BarSpacing = 5.0f;
 	u32 LaneCount = DebugState->LaneCount;
@@ -630,7 +630,7 @@ DEBUGEventToText(debug_event *Event, char *Buffer, u32 BufferSize, u32 Depth = 0
 		case DebugEvent_vec3:
 		{
 			_snprintf_s(At, BufferSize - (At - Buffer), BufferSize - (At - Buffer), 
-						"vec3(%.2f, %.2f, %.2f)", Event->Value_vec3.x(), Event->Value_vec3.y(), Event->Value_vec3.z());
+						"vec3(%.2f, %.2f, %.2f)", Event->Value_vec3.x, Event->Value_vec3.y, Event->Value_vec3.z);
 		} break;
 	}
 }
@@ -776,9 +776,12 @@ DEBUGEndDebugFrameAndRender(game_memory *Memory, game_input *Input, r32 BufferWi
 	u32 FrameAllocatorRemaining = (u32)((DebugState->FrameAllocator.Size - DebugState->FrameAllocator.Used) / 1024);
 	DEBUG_VALUE(u32, FrameAllocatorRemainingKb, DebugTools, FrameAllocatorRemaining);
 
-#if 0
+#if 1
 	game_state* GameState = (game_state*)Memory->PermanentStorage;
-	u32 WorldAllocatorRemaining = (u32)((GameState->WorldAllocator.Size - GameState->WorldAllocator.Used) / 1024);
-	DEBUG_VALUE(u32, WorldAllocatorRemainingKb, World, WorldAllocatorRemaining);
+	if(GameState->GameMode == GameMode_World)
+	{
+		u32 WorldAllocatorRemaining = (u32)((GameState->WorldMode->WorldAllocator.Size - GameState->WorldMode->WorldAllocator.Used) / 1024);
+		DEBUG_VALUE(u32, WorldAllocatorRemainingKb, World, WorldAllocatorRemaining);
+	}
 #endif
 }

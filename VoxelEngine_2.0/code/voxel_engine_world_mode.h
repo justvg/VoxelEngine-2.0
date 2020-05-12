@@ -23,12 +23,6 @@ struct camera
 	r32 DEBUGPitch, DEBUGHead;
 };
 
-struct point_lights_info
-{
-	u32 Count;
-	point_light PointLights[64];
-};
-
 struct sim_entity;
 struct stored_entity
 {
@@ -60,7 +54,6 @@ enum ubo_binding_point
 	BindingPoint_Matrices,
 	BindingPoint_UIMatrices,
 	BindingPoint_DirectionalLightInfo,
-	BindingPoint_PointLightInfo,
 	BindingPoint_ShadowsInfo,
 
 	BindingPoint_Counts

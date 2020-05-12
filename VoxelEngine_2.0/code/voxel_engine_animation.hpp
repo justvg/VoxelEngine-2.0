@@ -7,7 +7,7 @@ UpdateCharacterAnimations(sim_entity *Entity, move_spec *MoveSpec, r32 dt)
 	
 	character_animation_type DesiredAnimation = CharacterAnimation_Idle;
 
-	if(Length(vec3(Entity->dP.x(), 0.0f, Entity->dP.z())) > 0.12f)
+	if(Length(vec3(Entity->dP.x, 0.0f, Entity->dP.z)) > 0.12f)
 	{
 		DesiredAnimation = CharacterAnimation_Run;
 	}
@@ -34,7 +34,7 @@ UpdateCharacterAnimations(sim_entity *Entity, move_spec *MoveSpec, r32 dt)
 		AnimationTimeStep = dt;
 		if(Entity->AnimationState.Type == CharacterAnimation_Run)
 		{
-			AnimationTimeStep = 1.5f*Length(vec3(Entity->dP.x(), 0.0f, Entity->dP.z()))*dt;
+			AnimationTimeStep = 1.5f*Length(vec3(Entity->dP.x, 0.0f, Entity->dP.z))*dt;
 		}
 	}
 

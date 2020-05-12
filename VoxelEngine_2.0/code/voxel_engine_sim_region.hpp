@@ -80,7 +80,7 @@ AddEntity(game_mode_world *WorldMode, sim_region *SimRegion, stored_entity *Stor
 
 internal sim_region *
 BeginSimulation(game_mode_world *WorldMode, world_position Origin, rect3 Bounds, 
-				stack_allocator *TempAllocator, r32 dt)
+				stack_allocator *TempAllocator, r32 dt, vec3 HeroForwardDir)
 {
 	TIME_BLOCK;
 	world *World = &WorldMode->World;
@@ -144,6 +144,7 @@ BeginSimulation(game_mode_world *WorldMode, world_position Origin, rect3 Bounds,
 					   (!Chunk->IsSetupBlocks))
 					{
 						World->ChunksToSetupBlocks[World->ChunksToSetupBlocksThisFrameCount++] = Chunk;
+						continue;
 					}
 
 					if((ChunkX > MinChunkP.ChunkX - 1) && (ChunkX < MaxChunkP.ChunkX + 1) &&
@@ -153,6 +154,7 @@ BeginSimulation(game_mode_world *WorldMode, world_position Origin, rect3 Bounds,
 							Chunk->IsSetupBlocks && !Chunk->IsFullySetup && CanSetupAO(World, Chunk, WorldAllocator))
 						{
 							World->ChunksToSetupFully[World->ChunksToSetupFullyThisFrameCount++] = Chunk;
+							continue;
 						}
 
 						if(Chunk->IsSetupBlocks && Chunk->IsFullySetup && Chunk->IsLoaded && Chunk->IsModified)
@@ -164,18 +166,24 @@ BeginSimulation(game_mode_world *WorldMode, world_position Origin, rect3 Bounds,
 							Chunk->IsFullySetup && !Chunk->IsLoaded)
 						{
 							World->ChunksToLoad[World->ChunksToLoadThisFrameCount++] = Chunk;
+							continue;
 						}
 
 						if(Chunk->IsFullySetup && Chunk->IsLoaded && Chunk->IsNotEmpty)
 						{
 							world_position ChunkPosition = { ChunkX, ChunkY, ChunkZ, vec3(0.0f, 0.0f, 0.0f) };
 							Chunk->Translation = Substract(World, &ChunkPosition, &Origin);
-							chunk *ChunkToRender = PushStruct(TempAllocator, chunk);
-							*ChunkToRender = *Chunk;
-							ChunkToRender->LengthSqTranslation = LengthSq(ChunkToRender->Translation);
 
-							ChunkToRender->Next = World->ChunksToRender;
-							World->ChunksToRender = ChunkToRender;
+							if(!((Dot(Normalize(Chunk->Translation), HeroForwardDir) < -0.3f) &&
+							     (Length(vec3(Chunk->Translation.x, 0.0f, Chunk->Translation.z)) > 3.0f*World->ChunkDimInMeters)))
+							{
+								chunk *ChunkToRender = PushStruct(TempAllocator, chunk);
+								*ChunkToRender = *Chunk;
+								ChunkToRender->LengthSqTranslation = LengthSq(ChunkToRender->Translation);
+
+								ChunkToRender->Next = World->ChunksToRender;
+								World->ChunksToRender = ChunkToRender;
+							}
 						}
 
 						if(Chunk->IsFullySetup && Chunk->IsLoaded)
@@ -560,7 +568,7 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 		ChunkIndex++)
 	{
 		chunk *Chunk = CollideChunks[ChunkIndex].Chunk;
-		vec3 *Vertices = Chunk->VerticesP.Entries;
+		vec4 *Vertices = Chunk->VerticesP.Entries;
 		u32 *Indices = Chunk->IndexBuffer.Entries;
 		r32 BlockDimInMeters = World->BlockDimInMeters;
 		vec3 MinChunkP = CollideChunks[ChunkIndex].Min - vec3(BlockDimInMeters, BlockDimInMeters, BlockDimInMeters);
@@ -570,15 +578,24 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 			TriangleIndex++)
 		{
 			u32 FirstVertexIndex = TriangleIndex * 3;
-			vec3 P1 = Vertices[Indices[FirstVertexIndex]];
-			vec3 P2 = Vertices[Indices[FirstVertexIndex + 1]];
-			vec3 P3 = Vertices[Indices[FirstVertexIndex + 2]];
+			vec3 P1 = Vertices[Indices[FirstVertexIndex]].xyz;
+			vec3 P2 = Vertices[Indices[FirstVertexIndex + 1]].xyz;
+			vec3 P3 = Vertices[Indices[FirstVertexIndex + 2]].xyz;
 
+#if 0
 			vec3 MinP = Min(Min(P1, P2), P3);
 			vec3 MaxP = Max(Max(P1, P2), P3);
 			
+			// NOTE(georgy): This tests if the triangle's AABB is inside chunk's collision part AABB
+			// TODO(georgy): Check not "insideness" but intersection!
 			if(All(MinP < MaxChunkP) &&
 			   All(MaxP > MinChunkP))
+#endif
+			vec3 MinP = Min(Min(P1, P2), P3);
+			vec3 MaxP = Max(Max(P1, P2), P3);
+
+			if((MinP.x < MaxChunkP.x) && (MinP.y < MaxChunkP.y) && (MinP.z < MaxChunkP.z) &&
+			   (MaxP.x > MinChunkP.x) && (MaxP.y > MinChunkP.y) && (MaxP.z > MinChunkP.z))
 			{
 				P1 += Chunk->Translation;
 				P2 += Chunk->Translation;
@@ -621,22 +638,31 @@ NarrowPhaseCollisionDetection(world *World, broad_phase_chunk_collision_detectio
 		{
 			if((Chunk->WaterVerticesP.EntriesCount > 0))
 			{
-				vec3 *WaterVertices = Chunk->WaterVerticesP.Entries;
+				vec4 *WaterVertices = Chunk->WaterVerticesP.Entries;
 				u32 *WaterIndices = Chunk->WaterIndexBuffer.Entries;
 				for(u32 TriangleIndex = 0;
 					TriangleIndex < (Chunk->WaterIndexBuffer.EntriesCount / 3);
 					TriangleIndex++)
 				{
 					u32 FirstVertexIndex = TriangleIndex * 3;
-					vec3 P1 = WaterVertices[WaterIndices[FirstVertexIndex]];
-					vec3 P2 = WaterVertices[WaterIndices[FirstVertexIndex + 1]];
-					vec3 P3 = WaterVertices[WaterIndices[FirstVertexIndex + 2]];
+					vec3 P1 = WaterVertices[WaterIndices[FirstVertexIndex]].xyz;
+					vec3 P2 = WaterVertices[WaterIndices[FirstVertexIndex + 1]].xyz;
+					vec3 P3 = WaterVertices[WaterIndices[FirstVertexIndex + 2]].xyz;
 
+#if 0
 					vec3 MinP = Min(Min(P1, P2), P3);
 					vec3 MaxP = Max(Max(P1, P2), P3);
 					
+					// NOTE(georgy): This tests if the triangle's AABB is inside chunk's collision part AABB
+					// TODO(georgy): Check not "insideness" but intersection!
 					if(All(MinP < MaxChunkP) &&
 					   All(MaxP > MinChunkP))
+#endif
+					vec3 MinP = Min(Min(P1, P2), P3);
+					vec3 MaxP = Max(Max(P1, P2), P3);
+
+					if((MinP.x < MaxChunkP.x) && (MinP.y < MaxChunkP.y) && (MinP.z < MaxChunkP.z) &&
+					   (MaxP.x > MinChunkP.x) && (MaxP.y > MinChunkP.y) && (MaxP.z > MinChunkP.z))
 					{
 						P1 += Chunk->Translation;
 						P2 += Chunk->Translation;
@@ -691,10 +717,14 @@ CameraCollisionDetection(world *World, camera *Camera, world_position *OriginP)
 	r32 FoV = Camera->FoV;
 	r32 NearPlaneHalfHeight = Tan(DEG2RAD(FoV)*0.5f)*NearDistance;
 	r32 NearPlaneHalfWidth = NearPlaneHalfHeight*Camera->AspectRatio;
+	
+	vec3 FirstColumn = vec3(Camera->RotationMatrix.a11, Camera->RotationMatrix.a21, Camera->RotationMatrix.a31);
+	vec3 SecondColumn = vec3(Camera->RotationMatrix.a12, Camera->RotationMatrix.a22, Camera->RotationMatrix.a32);
+	vec3 ThirdColumn = vec3(Camera->RotationMatrix.a13, Camera->RotationMatrix.a23, Camera->RotationMatrix.a33);
 
-	vec3 CameraRight = vec3(Camera->RotationMatrix.FirstColumn.x(), Camera->RotationMatrix.SecondColumn.x(), Camera->RotationMatrix.ThirdColumn.x());;
-	vec3 CameraUp = vec3(Camera->RotationMatrix.FirstColumn.y(), Camera->RotationMatrix.SecondColumn.y(), Camera->RotationMatrix.ThirdColumn.y());;
-	vec3 CameraOut = -vec3(Camera->RotationMatrix.FirstColumn.z(), Camera->RotationMatrix.SecondColumn.z(), Camera->RotationMatrix.ThirdColumn.z());
+	vec3 CameraRight = vec3(FirstColumn.x, SecondColumn.x, ThirdColumn.x);;
+	vec3 CameraUp = vec3(FirstColumn.y, SecondColumn.y, ThirdColumn.y);;
+	vec3 CameraOut = -vec3(FirstColumn.z, SecondColumn.z, ThirdColumn.z);
 	ray_triangle_collision_detection_data RayTriangleData;
 	RayTriangleData.t = 1.0f;
 
@@ -881,7 +911,7 @@ HandleCollision(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *E
 							operation_between_chunks Op = (operation_between_chunks)(OperationBetweenChunks_SetActiveness |
 																					 OperationBetweenChunks_GetColor);
 							OperationBetweenChunks(World, Chunk, X, Y, Z, Op, false, &BlockColor);
-							AddParticle(&WorldMode->ParticleGenerator, WorldBlockP, DefaultParticleInfoWithColor(vec3(BlockColor.m)));
+							AddParticle(&WorldMode->ParticleGenerator, WorldBlockP, DefaultParticleInfoWithColor(BlockColor.xyz));
 						}
 					} 
 				}	
@@ -919,7 +949,7 @@ HandleCollision(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *E
 		if(!IsSet(EntityB, EntityFlag_InWater))
 		{
 			AddFlags(EntityB, EntityFlag_InWater);
-			EntityB->dP.SetY(0.0f);
+			EntityB->dP.y = 0.0f;
 		}
 
 		world_position CollisionWorldP = MapIntoChunkSpace(World, &SimRegion->Origin, EllipsoidToWorld * ESpaceCollisionP);
@@ -930,7 +960,7 @@ HandleCollision(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *E
 		GetBlockIndexFromOffsetInChunk(World, CollisionWorldP.Offset, &X, &Y, &Z);
 		
 		vec4 BlockColor	= GetBlockColorBetweenChunks(World, Chunk, X, Y, Z);
-		AddParticles(&WorldMode->ParticleGenerator, 5, CollisionWorldP, DefaultParticleInfoWithColor(vec3(BlockColor.m)));
+		AddParticles(&WorldMode->ParticleGenerator, 5, CollisionWorldP, DefaultParticleInfoWithColor(BlockColor.xyz));
 	}
 
 	return(Result);
@@ -941,7 +971,8 @@ MoveEntity(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *Entity
 {
 	mat3 EllipsoidToWorld = Rotate3x3(Entity->Rotation, vec3(0.0f, 1.0f, 0.0f)) * 
 							Scale3x3(0.5f*Entity->Collision->Dim);
-	mat3 WorldToEllipsoid = Scale3x3(1.0f / (0.5f*Entity->Collision->Dim)) * 
+	vec3 ScaleVec = vec3(1.0f / (0.5f*Entity->Collision->Dim.x), 1.0f / (0.5f*Entity->Collision->Dim.y), 1.0f / (0.5f*Entity->Collision->Dim.z));
+	mat3 WorldToEllipsoid = Scale3x3(ScaleVec) * 
 							Rotate3x3(-Entity->Rotation, vec3(0.0f, 1.0f, 0.0f));
 
 	ellipsoid_triangle_collision_detection_data EllipsoidTriangleData;
@@ -960,7 +991,7 @@ MoveEntity(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *Entity
 		}
 		MoveSpec.ddP *= MoveSpec.Speed;
 		vec3 DragV = -MoveSpec.Drag*Entity->dP;
-		DragV.SetY(0.0f);
+		DragV.y = 0.0f;
 		MoveSpec.ddP += DragV;
 	}
 
@@ -1087,13 +1118,13 @@ MoveEntity(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *Entity
 					{
 						vec3 SlidingPlaneNormal = Normalize((ESpaceP - EllipsoidTriangleData.CollisionP));
 
-						if((SlidingPlaneNormal.y() > -0.1f) && (SlidingPlaneNormal.y() < 0.1f) &&
-						    IsSet(Entity, EntityFlag_OnGround) && (Entity->dP.y() < 0.01f))
+						if((SlidingPlaneNormal.y > -0.1f) && (SlidingPlaneNormal.y < 0.1f) &&
+						    IsSet(Entity, EntityFlag_OnGround) && (Entity->dP.y < 0.01f))
 						{
 							ray_triangle_collision_detection_data RayTriangleData;
-							RayTriangleData.RayOrigin = EllipsoidToWorld * ESpaceP - CollisionVolumeDisplacement + vec3(0.0f, Entity->Collision->Dim.y(), 0.0f);
+							RayTriangleData.RayOrigin = EllipsoidToWorld * ESpaceP - CollisionVolumeDisplacement + vec3(0.0f, Entity->Collision->Dim.y, 0.0f);
 							vec3 SlidingPlaneNormalWorld = EllipsoidToWorld * SlidingPlaneNormal;
-							vec3 MovementDir = -Normalize(vec3(SlidingPlaneNormalWorld.x(), 0.0f, SlidingPlaneNormalWorld.z()));
+							vec3 MovementDir = -Normalize(vec3(SlidingPlaneNormalWorld.x, 0.0f, SlidingPlaneNormalWorld.z));
 							RayTriangleData.RayEnd = RayTriangleData.RayOrigin + SimRegion->World->BlockDimInMeters*MovementDir;
 							RayTriangleData.RayDirection = Normalize(RayTriangleData.RayEnd - RayTriangleData.RayOrigin);
 							RayTriangleData.t = 1.0f;
@@ -1145,7 +1176,7 @@ MoveEntity(game_mode_world *WorldMode, sim_region *SimRegion, sim_entity *Entity
 	if(MoveOnBlock)
 	{
 		dPNormalized = Normalize(Entity->dP);
-		dPNormalized.SetY(0.0f);
+		dPNormalized.y = 0.0f;
 	}
 	Entity->P = EllipsoidToWorld * ESpaceP - CollisionVolumeDisplacement + 
 				(r32)MoveOnBlock*(vec3(0.0f, 1.1f*SimRegion->World->BlockDimInMeters, 0.0f) + 0.3f*dPNormalized);
@@ -1338,8 +1369,8 @@ SwordAttack(game_mode_world *WorldMode, audio_state *AudioState, game_assets *Ga
 
 		AddCollisionRule(WorldMode, SwordCollider->StorageIndex, Entity->StorageIndex, false);
 
-		Entity->dP.SetX(0.5f*Entity->dP.x());
-		Entity->dP.SetZ(0.5f*Entity->dP.z());
+		Entity->dP.x = 0.5f*Entity->dP.x;
+		Entity->dP.z = 0.5f*Entity->dP.z;
 
 		PlaySound(AudioState, GetFirstSoundFromType(GameAssets, AssetType_Swing));
 	}

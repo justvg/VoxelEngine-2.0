@@ -58,18 +58,18 @@ struct chunk
 
 	// TODO(georgy): Do I want collapse these in one dynamic array? (AoS)
 	// NOTE(georg): VerticesP vectors' w component stores AO value
-	dynamic_array_vec3 VerticesP;
-	dynamic_array_vec3 VerticesNormals;
-	dynamic_array_vec4 VerticesColors;
+	dynamic_array_vec4 VerticesP;
+	dynamic_array_i8_normal VerticesNormals;
+	dynamic_array_u8_color VerticesColors;
 	dynamic_array_u32 IndexBuffer;
-	GLuint VAO, EBO, PVBO, NormalsVBO, ColorsVBO;
+	GLuint VAO, VBO, EBO;
 
 	// TODO(georgy): Do I want collapse these in one dynamic array? (AoS)
 	// NOTE(georg): VerticesP vectors' w component stores AO value
-	dynamic_array_vec3 WaterVerticesP;
-	dynamic_array_vec4 WaterVerticesColors;
+	dynamic_array_vec4 WaterVerticesP;
+	dynamic_array_u8_color WaterVerticesColors;
 	dynamic_array_u32 WaterIndexBuffer;
-	GLuint WaterVAO, WaterEBO, WaterPVBO, WaterColorsVBO;
+	GLuint WaterVAO, WaterVBO, WaterEBO;
 	u32 MaxWaterLevel;
 
 	vec3 Translation;

@@ -25,6 +25,28 @@ struct dynamic_array_u32
 	u32 *Entries;
 };
 
+struct i8_normal
+{
+	i8 X, Y, Z;
+};
+struct dynamic_array_i8_normal
+{
+	u32 MaxEntriesCount;
+	u32 EntriesCount;
+	i8_normal *Entries;
+};
+
+struct u8_color
+{
+	u8 R, G, B, A;
+};
+struct dynamic_array_u8_color
+{
+	u32 MaxEntriesCount;
+	u32 EntriesCount;
+	u8_color *Entries;
+};
+
 #define INITIALIZE_DYNAMIC_ARRAY(Array, InitialMaxEntriesCount, type) \
 	Array->MaxEntriesCount = InitialMaxEntriesCount; \
 	Array->EntriesCount = 0; \
@@ -189,6 +211,88 @@ AddTriangle(dynamic_array_u32 *Array, u32 A, u32 B, u32 C)
 
 inline void
 AddQuad(dynamic_array_u32 *Array, u32 A, u32 B, u32 C, u32 D)
+{
+	AddTriangle(Array, A, B, C);
+	AddTriangle(Array, C, B, D);
+}
+
+// 
+// NOTE(georgy): i8_normal
+// 
+
+inline void
+InitializeDynamicArray(dynamic_array_i8_normal *Array, u32 InitialMaxEntriesCount = INITIAL_MAX_ENTRIES_COUNT)
+{
+	INITIALIZE_DYNAMIC_ARRAY(Array, InitialMaxEntriesCount, i8_normal);
+}
+
+internal void
+ExpandDynamicArray(dynamic_array_i8_normal *Array)
+{
+	EXPAND_DYNAMIC_ARRAY(Array, i8_normal);
+}
+
+internal void
+PushEntry(dynamic_array_i8_normal *Array, i8_normal Entry)
+{
+	PUSH_ENTRY(Array, Entry);
+}
+
+inline void
+FreeDynamicArray(dynamic_array_i8_normal *Array)
+{
+	FREE_DYNAMIC_ARRAY(Array);
+}
+
+inline void
+AddTriangle(dynamic_array_i8_normal *Array, i8_normal A, i8_normal B, i8_normal C)
+{
+	ADD_TRIANGLE(Array, A, B, C);
+}
+
+inline void
+AddQuad(dynamic_array_i8_normal *Array, i8_normal A, i8_normal B, i8_normal C, i8_normal D)
+{
+	AddTriangle(Array, A, B, C);
+	AddTriangle(Array, C, B, D);
+}
+
+// 
+// NOTE(georgy): u8_color
+// 
+
+inline void
+InitializeDynamicArray(dynamic_array_u8_color *Array, u32 InitialMaxEntriesCount = INITIAL_MAX_ENTRIES_COUNT)
+{
+	INITIALIZE_DYNAMIC_ARRAY(Array, InitialMaxEntriesCount, u8_color);
+}
+
+internal void
+ExpandDynamicArray(dynamic_array_u8_color *Array)
+{
+	EXPAND_DYNAMIC_ARRAY(Array, u8_color);
+}
+
+internal void
+PushEntry(dynamic_array_u8_color *Array, u8_color Entry)
+{
+	PUSH_ENTRY(Array, Entry);
+}
+
+inline void
+FreeDynamicArray(dynamic_array_u8_color *Array)
+{
+	FREE_DYNAMIC_ARRAY(Array);
+}
+
+inline void
+AddTriangle(dynamic_array_u8_color *Array, u8_color A, u8_color B, u8_color C)
+{
+	ADD_TRIANGLE(Array, A, B, C);
+}
+
+inline void
+AddQuad(dynamic_array_u8_color *Array, u8_color A, u8_color B, u8_color C, u8_color D)
 {
 	AddTriangle(Array, A, B, C);
 	AddTriangle(Array, C, B, D);

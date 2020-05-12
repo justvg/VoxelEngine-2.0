@@ -12,7 +12,6 @@ Inspired by handmadehero.org and Cube World game.
 The engine implements the following (and more):
 - Chunk system management
 - Entity system
-- SIMD math lib
 - Collision detection (sweep and prune: ellipsoid/polygon soup; ray/polygon soup)
 - Job system
 - Asset packer

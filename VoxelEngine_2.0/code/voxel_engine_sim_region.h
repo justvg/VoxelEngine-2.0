@@ -47,12 +47,6 @@ enum sim_entity_flags
 	EntityFlag_InWater = (1 << 5),
 };
 
-struct point_light
-{
-	vec3 P;
-	vec3 Color;
-};
-
 struct sim_entity
 {
 	u32 StorageIndex;
@@ -81,7 +75,6 @@ struct sim_entity
 	entity_reference Sword;
 	
 	particle_emitter_info *ParticlesInfo;
-	point_light *PointLight;
 };
 
 inline bool32 

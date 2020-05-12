@@ -6,20 +6,20 @@ MakeSimpleCollision(game_mode_world *WorldMode, vec3 Dim)
 	sim_entity_collision_volume *Result = PushStruct(&WorldMode->FundamentalTypesAllocator, sim_entity_collision_volume);
 
 	Result->Dim = Dim;
-	Result->OffsetP = vec3(0.0f, 0.5f*Dim.y(), 0.0f);
+	Result->OffsetP = vec3(0.0f, 0.5f*Dim.y, 0.0f);
 
 	InitializeDynamicArray(&Result->VerticesP);
 
 	vec3 Min = -0.5f*Dim;
 	vec3 Points[8];
 	Points[0] = Min;
-	Points[1] = Points[0] + vec3(0.0f, Dim.y(), 0.0f);
-	Points[2] = Points[0] + vec3(0.0f, 0.0f, Dim.z());
-	Points[3] = Points[0] + vec3(0.0f, Dim.y(), Dim.z());
-	Points[4] = Points[0] + vec3(Dim.x(), 0.0f, 0.0f);
-	Points[5] = Points[0] + vec3(Dim.x(), Dim.y(), 0.0f);
-	Points[6] = Points[0] + vec3(Dim.x(), 0.0f, Dim.z());
-	Points[7] = Points[0] + vec3(Dim.x(), Dim.y(), Dim.z());
+	Points[1] = Points[0] + vec3(0.0f, Dim.y, 0.0f);
+	Points[2] = Points[0] + vec3(0.0f, 0.0f, Dim.z);
+	Points[3] = Points[0] + vec3(0.0f, Dim.y, Dim.z);
+	Points[4] = Points[0] + vec3(Dim.x, 0.0f, 0.0f);
+	Points[5] = Points[0] + vec3(Dim.x, Dim.y, 0.0f);
+	Points[6] = Points[0] + vec3(Dim.x, 0.0f, Dim.z);
+	Points[7] = Points[0] + vec3(Dim.x, Dim.y, Dim.z);
 
 	vec3 VolumeVertices[] = 
 	{
@@ -165,20 +165,6 @@ AddParticlesToEntity(game_mode_world *WorldMode, stored_entity *Entity,
 	}
 }
 
-internal void
-AddPointLightToEntity(game_mode_world *WorldMode, stored_entity *Entity,
-					  vec3 OffsetFromEntity, vec3 Color)
-{
-	// TODO(georgy): Allow multiple point lights per an entity
-	if(!Entity->Sim.PointLight)
-	{
-		// TODO(georgy): Think about unloading this
-		Entity->Sim.PointLight = PushStruct(&WorldMode->FundamentalTypesAllocator, point_light);
-		Entity->Sim.PointLight->P = OffsetFromEntity;
-		Entity->Sim.PointLight->Color = Color;
-	}
-}
-
 struct add_stored_entity_result
 {
 	stored_entity *StoredEntity;
@@ -243,8 +229,6 @@ AddHero(game_mode_world *WorldMode, world_position P)
 	AddParticlesToEntity(WorldMode, &WorldMode->StoredEntities[Entity.StoredEntity->Sim.Fireball.StorageIndex], 
 						 1.0f, 40, 1.0f, vec3(1.0f, 0.0f, 1.0f), vec3(1.0f, 0.0f, 1.0f), 4.0f, vec3(0.0f, -9.8f, 0.0f),
 						 vec3(1.0f, 0.078f, 0.098f));
-	AddPointLightToEntity(WorldMode, &WorldMode->StoredEntities[Entity.StoredEntity->Sim.Fireball.StorageIndex], 
-						  vec3(0.0f, 0.0f, 0.0f), vec3(1.0f, 1.0f, 1.0f));
 
 	return(Entity.StoredEntity);
 }
@@ -269,8 +253,7 @@ PlayWorld(game_state *GameState)
 {
 	SetGameMode(GameState, GameMode_World);
 
-	game_mode_world *WorldMode = PushStruct(&GameState->ModeAllocator, game_mode_world);
-	ZeroSize(WorldMode, sizeof(game_mode_world));
+	game_mode_world *WorldMode = PushStruct(&GameState->ModeAllocator, game_mode_world, true);
 
 	SubAllocator(&WorldMode->WorldAllocator, &GameState->ModeAllocator, GetAllocatorSizeRemaining(&GameState->ModeAllocator));
 	SubAllocator(&WorldMode->FundamentalTypesAllocator, &WorldMode->WorldAllocator, Megabytes(64));
@@ -307,8 +290,7 @@ PlayWorld(game_state *GameState)
 
 	GenerateUBO(&WorldMode->UBOs[BindingPoint_Matrices], 5*sizeof(mat4), BindingPoint_Matrices);
 	GenerateUBO(&WorldMode->UBOs[BindingPoint_UIMatrices], sizeof(mat4), BindingPoint_UIMatrices);
-	GenerateUBO(&WorldMode->UBOs[BindingPoint_DirectionalLightInfo], 2*sizeof(vec3), BindingPoint_DirectionalLightInfo);
-	GenerateUBO(&WorldMode->UBOs[BindingPoint_PointLightInfo], sizeof(point_lights_info), BindingPoint_PointLightInfo);
+	GenerateUBO(&WorldMode->UBOs[BindingPoint_DirectionalLightInfo], 2*sizeof(vec4), BindingPoint_DirectionalLightInfo);
 	GenerateUBO(&WorldMode->UBOs[BindingPoint_ShadowsInfo], 352, BindingPoint_ShadowsInfo);
 
 	BindUniformBlockToBindingPoint(WorldMode->WorldShader, "Matrices", BindingPoint_Matrices);
@@ -323,11 +305,6 @@ PlayWorld(game_state *GameState)
 	BindUniformBlockToBindingPoint(WorldMode->WaterShader, "DirectionalLightInfo", BindingPoint_DirectionalLightInfo);
 	BindUniformBlockToBindingPoint(WorldMode->CharacterShader, "DirectionalLightInfo", BindingPoint_DirectionalLightInfo);
 	BindUniformBlockToBindingPoint(WorldMode->BlockParticleShader, "DirectionalLightInfo", BindingPoint_DirectionalLightInfo);
-
-	BindUniformBlockToBindingPoint(WorldMode->WorldShader, "PointLightsInfo", BindingPoint_PointLightInfo);
-	BindUniformBlockToBindingPoint(WorldMode->WaterShader, "PointLightsInfo", BindingPoint_PointLightInfo);
-	BindUniformBlockToBindingPoint(WorldMode->CharacterShader, "PointLightsInfo", BindingPoint_PointLightInfo);
-	BindUniformBlockToBindingPoint(WorldMode->BlockParticleShader, "PointLightsInfo", BindingPoint_PointLightInfo);
 
 	BindUniformBlockToBindingPoint(WorldMode->WorldShader, "ShadowsInfo", BindingPoint_ShadowsInfo);
 	BindUniformBlockToBindingPoint(WorldMode->WaterShader, "ShadowsInfo", BindingPoint_ShadowsInfo);
@@ -503,16 +480,11 @@ PlayWorld(game_state *GameState)
 	HeroP.Offset = vec3(0.3f, 5.0f, 3.0f);
 	WorldMode->Hero.Entity = AddHero(WorldMode, HeroP);
 	WorldMode->LastHeroWorldP = HeroP;
-	// AddPointLightToEntity(WorldMode, WorldMode->Hero.Entity,
-	// 						vec3(0.0f, 1.0f, 0.0f), vec3(1.0f, 1.0f, 1.0f));
-	// AddParticlesToEntity(WorldMode, WorldMode->Hero.Entity,
-	// 					 1.5f, 30, 0.2f, vec3(0.0f, 0.0f, 0.0f), vec3(0.65f, 0.0f, 0.65f), 2.0f, vec3(0.0f, 0.0f, 0.0f),
-	// 					 vec3(0.25f, 0.25f, 0.25f));
 
 	world_position MonsterP = {};
 	MonsterP.ChunkY = MAX_CHUNKS_Y;
 	MonsterP.Offset = vec3(0.0f, 5.0f, 0.0f);
-	AddMonster(WorldMode, MonsterP);
+	// AddMonster(WorldMode, MonsterP);
 
 	glGenFramebuffers(1, &WorldMode->ShadowMapFBO);
 	glBindFramebuffer(GL_FRAMEBUFFER, WorldMode->ShadowMapFBO);
@@ -521,7 +493,7 @@ PlayWorld(game_state *GameState)
 	glGenTextures(1, &WorldMode->ShadowMapsArray);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, WorldMode->ShadowMapsArray);
 	glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT, WorldMode->ShadowMapsWidth, WorldMode->ShadowMapsHeight, 
-					CASCADES_COUNT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
+				 CASCADES_COUNT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -533,11 +505,11 @@ PlayWorld(game_state *GameState)
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 	srand(1234);
-	for(u32 Y = 0;
-		Y < 4;
-		Y++)
+	for(i32 Y = 3;
+		Y >= 0;
+		Y--)
 	{
-		r32 StrataY1 = (Y/ 4.0f);
+		r32 StrataY1 = (Y / 4.0f);
 		r32 StrataY2 = ((Y + 1) / 4.0f);
 
 		for(u32 X = 0;
@@ -647,9 +619,9 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 		Camera->LastOffsetFromHero = Camera->OffsetFromHero;
 	}
 
-	vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x(), 0.0f, -Camera->OffsetFromHero.z()));
+	vec3 Forward = Normalize(vec3(-Camera->OffsetFromHero.x, 0.0f, -Camera->OffsetFromHero.z));
 	vec3 Right = Normalize(Cross(Forward, vec3(0.0f, 1.0f, 0.0f)));
-	r32 Theta = -RAD2DEG(ATan2(Forward.z(), Forward.x())) + 90.0f;
+	r32 Theta = -RAD2DEG(ATan2(Forward.z, Forward.x)) + 90.0f;
 	WorldMode->Hero.ddP = vec3(0.0f, 0.0f, 0.0f);
 
 	// NOTE(georgy): Hero input stuff
@@ -806,19 +778,19 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 	HeroPosDifferenceBetweenFrames = Lerp(vec3(0.0f, 0.0f, 0.0f), HeroPosDifferenceBetweenFrames, 8.0f*Input->dt);
 	world_position HeroWorldP = MapIntoChunkSpace(World, &WorldMode->LastHeroWorldP, HeroPosDifferenceBetweenFrames);
 	sim_region *SimRegion = BeginSimulation(WorldMode, HeroWorldP, 
-											SimRegionUpdatableBounds, &TempState->Allocator, Input->dt);
+											SimRegionUpdatableBounds, &TempState->Allocator, Input->dt, Forward);
 	WorldMode->LastHeroWorldP = HeroWorldP;
 
-	Camera->RotationMatrix = RotationMatrixFromDirection(Camera->OffsetFromHero);
+	Camera->RotationMatrix = ViewRotationMatrixFromDirection(Camera->OffsetFromHero);
 #if !defined(VOXEL_ENGINE_DEBUG_BUILD)
 	CameraCollisionDetection(World, Camera, &WorldMode->Hero.Entity->P);
 #endif
 	SetupChunksBlocks(World, &WorldMode->WorldAllocator, TempState);								
 	SetupChunksVertices(World, TempState);
 	LoadChunks(World);
-	CorrectChunksWaterLevel(World);
+	// CorrectChunksWaterLevel(World);
 	
-	point_lights_info PointLightsInfo = {};
+	BEGIN_BLOCK(EntitySimulation);
 	// NOTE(georgy): Entity simulations
 	for(u32 EntityIndex = 0;
 		EntityIndex < SimRegion->EntityCount;
@@ -844,7 +816,7 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 					MoveSpec.Drag = 2.0f;
 					if(WorldMode->Hero.dY && IsSet(Entity, EntityFlag_OnGround))
 					{
-						Entity->dP.SetY(WorldMode->Hero.dY);
+						Entity->dP.y = WorldMode->Hero.dY;
 					}
 
 					Entity->Rotation = WorldMode->Hero.AdditionalRotation;
@@ -857,7 +829,7 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 							ClearFlags(Fireball, EntityFlag_NonSpatial);
 							Fireball->DistanceLimit = 8.0f;
 							Fireball->P = Entity->P + vec3(0.0f, 0.5f, 0.0f);
-							Fireball->dP = vec3(Entity->dP.x(), 0.0f, Entity->dP.z()) + 3.0f*Forward;
+							Fireball->dP = vec3(Entity->dP.x, 0.0f, Entity->dP.z) + 3.0f*Forward;
 
 							Fireball->Rotation = Entity->Rotation;
 
@@ -878,7 +850,7 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 					ClearFlags(Entity, EntityFlag_GravityAffected);
 
 					vec3 FromEntityToHero = WorldMode->Hero.Entity->Sim.P - Entity->P;
-					r32 Theta = RAD2DEG(ATan2(-FromEntityToHero.z(), FromEntityToHero.x())) + 90.0f;
+					r32 Theta = RAD2DEG(ATan2(-FromEntityToHero.z, FromEntityToHero.x)) + 90.0f;
 					Entity->Rotation = Theta;
 					if(Length(FromEntityToHero) > 2.0f)
 					{
@@ -927,13 +899,6 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 				SpawnParticles(&WorldMode->ParticleGenerator, EntityWorldPosition, *Entity->ParticlesInfo, dt);
 			}
 
-			if(Entity->PointLight)
-			{
-				point_light PointLight = *Entity->PointLight;
-				PointLight.P += Entity->P;
-				PointLightsInfo.PointLights[PointLightsInfo.Count++] = PointLight;
-			}
-
 			if(IsSet(Entity, EntityFlag_Moveable))
 			{
 				MoveEntity(WorldMode, SimRegion, Entity, MoveSpec, dt, false);
@@ -941,7 +906,11 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 			}
 		}
 	}
+	END_BLOCK(EntitySimulation);
+
+	BEGIN_BLOCK(ParticleUpdate);
 	ParticlesUpdate(&WorldMode->ParticleGenerator, Input->dt);
+	END_BLOCK(ParticleUpdate);
 
 	DEBUG_VARIABLE(bool32, ShowDebugDrawings, Rendering);
 
@@ -952,6 +921,8 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 	}
 	WorldMode->DirectionalLightColor = vec3(0.666666, 0.788235, 0.79215);
 
+	SortChunks(World);
+
 	// NOTE(georgy): Directional shadow map rendering
 	r32 CascadesDistances[CASCADES_COUNT + 1] = {Camera->NearDistance, 25.0f, 50.0f, 75.0f};
 	mat4 LightSpaceMatrices[CASCADES_COUNT];
@@ -961,6 +932,13 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 
 		glViewport(0, 0, WorldMode->ShadowMapsWidth, WorldMode->ShadowMapsHeight);
 		glBindFramebuffer(GL_FRAMEBUFFER, WorldMode->ShadowMapFBO);
+	
+		vec3 CameraRight = vec3(Camera->RotationMatrix.a11, Camera->RotationMatrix.a12, Camera->RotationMatrix.a13);
+		vec3 CameraUp = vec3(Camera->RotationMatrix.a21, Camera->RotationMatrix.a22, Camera->RotationMatrix.a23);
+		vec3 CameraOut = -vec3(Camera->RotationMatrix.a31, Camera->RotationMatrix.a32, Camera->RotationMatrix.a33);
+
+		vec3 AdditionalCameraOffset = Camera->OffsetFromHero + Camera->TargetOffset;
+
 		for(u32 CascadeIndex = 0;
 			CascadeIndex < CASCADES_COUNT;
 			CascadeIndex++)
@@ -968,33 +946,29 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 			glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, WorldMode->ShadowMapsArray, 0, CascadeIndex);
 			glClear(GL_DEPTH_BUFFER_BIT);
 
-			vec3 CameraRight = vec3(Camera->RotationMatrix.FirstColumn.x(), Camera->RotationMatrix.SecondColumn.x(), Camera->RotationMatrix.ThirdColumn.x());
-			vec3 CameraUp = vec3(Camera->RotationMatrix.FirstColumn.y(), Camera->RotationMatrix.SecondColumn.y(), Camera->RotationMatrix.ThirdColumn.y());
-			vec3 CameraOut = -vec3(Camera->RotationMatrix.FirstColumn.z(), Camera->RotationMatrix.SecondColumn.z(), Camera->RotationMatrix.ThirdColumn.z());
-
 			r32 NearPlaneHalfHeight = Tan(0.5f*DEG2RAD(Camera->FoV))*CascadesDistances[CascadeIndex];
 			r32 NearPlaneHalfWidth = NearPlaneHalfHeight*Camera->AspectRatio;
 			r32 FarPlaneHalfHeight = Tan(0.5f*DEG2RAD(Camera->FoV))*CascadesDistances[CascadeIndex + 1];
 			r32 FarPlaneHalfWidth = FarPlaneHalfHeight*Camera->AspectRatio;
 
-			vec4 Cascade[8];
-			Cascade[0] = vec4(CameraRight*NearPlaneHalfWidth + CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
-			Cascade[1] = vec4(CameraRight*NearPlaneHalfWidth - CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
-			Cascade[2] = vec4(-CameraRight*NearPlaneHalfWidth + CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
-			Cascade[3] = vec4(-CameraRight*NearPlaneHalfWidth - CameraUp*NearPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex], 1.0f);
-			Cascade[4] = vec4(CameraRight*FarPlaneHalfWidth + CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
-			Cascade[5] = vec4(CameraRight*FarPlaneHalfWidth - CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
-			Cascade[6] = vec4(-CameraRight*FarPlaneHalfWidth + CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
-			Cascade[7] = vec4(-CameraRight*FarPlaneHalfWidth - CameraUp*FarPlaneHalfHeight + CameraOut*CascadesDistances[CascadeIndex + 1], 1.0f);
+			vec3 NearVec = CameraOut*CascadesDistances[CascadeIndex];
+			vec3 FarVec = CameraOut*CascadesDistances[CascadeIndex + 1];
+			vec3 RightNear = CameraRight*NearPlaneHalfWidth + NearVec + AdditionalCameraOffset;
+			vec3 LeftNear = -CameraRight*NearPlaneHalfWidth + NearVec + AdditionalCameraOffset;
+			vec3 RightFar = CameraRight*FarPlaneHalfWidth + FarVec + AdditionalCameraOffset;
+			vec3 LeftFar = -CameraRight*FarPlaneHalfWidth + FarVec + AdditionalCameraOffset;
 
-			for(u32 PointIndex = 0;
-				PointIndex < ArrayCount(Cascade);
-				PointIndex++)
-			{
-				Cascade[PointIndex] = Cascade[PointIndex] + vec4(Camera->OffsetFromHero + Camera->TargetOffset, 0.0f);
-			}
+			vec3 Cascade[8];
+			Cascade[0] = RightNear + CameraUp*NearPlaneHalfHeight;
+			Cascade[1] = RightNear - CameraUp*NearPlaneHalfHeight;
+			Cascade[2] = LeftNear + CameraUp*NearPlaneHalfHeight;
+			Cascade[3] = LeftNear - CameraUp*NearPlaneHalfHeight;
+			Cascade[4] = RightFar + CameraUp*FarPlaneHalfHeight;
+			Cascade[5] = RightFar - CameraUp*FarPlaneHalfHeight;
+			Cascade[6] = LeftFar + CameraUp*FarPlaneHalfHeight;
+			Cascade[7] = LeftFar - CameraUp*FarPlaneHalfHeight;
 
-			sphere BoundingSphere = SphereFromPoints((vec3 *)Cascade, ArrayCount(Cascade), 4);
+			sphere BoundingSphere = SphereFromPoints(Cascade, ArrayCount(Cascade), 4);
 			BoundingSphere.Radius = Round(BoundingSphere.Radius);
 
 			r32 ExtraBackup = 60.0f;
@@ -1013,24 +987,28 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 			world_position HeroWorldP = WorldMode->Hero.Entity->P;
 			chunk *HeroChunk = GetChunk(World, HeroWorldP.ChunkX, HeroWorldP.ChunkY, HeroWorldP.ChunkZ);
 			vec4 HeroChunkP = vec4(HeroChunk->Translation, 1.0f);
-			vec3 ShadowOrigin = vec3((LightSpaceMatrices[CascadeIndex] * HeroChunkP).m);
+			vec3 ShadowOrigin = vec3((LightSpaceMatrices[CascadeIndex] * HeroChunkP).xyz);
 			ShadowOrigin *= 0.5f*WorldMode->ShadowMapsWidth;
-			vec2 RoundedOrigin = vec2(Round(ShadowOrigin.x()), Round(ShadowOrigin.y()));
-			vec2 Rounding = RoundedOrigin - vec2(ShadowOrigin.x(), ShadowOrigin.y());
+			vec2 RoundedOrigin = vec2(Round(ShadowOrigin.x), Round(ShadowOrigin.y));
+			vec2 Rounding = RoundedOrigin - vec2(ShadowOrigin.x, ShadowOrigin.y);
 			Rounding *= 2.0f / WorldMode->ShadowMapsWidth;
 			mat4 RoundMatrix = Translate(vec3(Rounding.x, Rounding.y, 0.0f));
 			LightSpaceMatrices[CascadeIndex] = RoundMatrix*LightSpaceMatrices[CascadeIndex];
 
+			BEGIN_BLOCK(DrawCallChunks);
 			UseShader(WorldMode->WorldDepthShader);
-			SetMat4(WorldMode->WorldDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
+			RenderChunksShadowPath(World, WorldMode->WorldDepthShader, WorldMode->WaterShader, LightSpaceMatrices[CascadeIndex], Camera->OffsetFromHero);
+			END_BLOCK(DrawCallChunks);
+
+			BEGIN_BLOCK(DrawCallEntities);
 			UseShader(WorldMode->CharacterDepthShader);
 			SetMat4(WorldMode->CharacterDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
-			UseShader(WorldMode->BlockParticleDepthShader);
-			SetMat4(WorldMode->BlockParticleDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
-
 			RenderEntities(WorldMode, TempState, SimRegion, WorldMode->WorldDepthShader, 
 						   WorldMode->CharacterDepthShader, WorldMode->HitpointsShader, Right);
-			RenderChunks(World, WorldMode->WorldDepthShader, WorldMode->WaterShader, LightSpaceMatrices[CascadeIndex], Camera->OffsetFromHero);
+			END_BLOCK(DrawCallEntities);
+
+			UseShader(WorldMode->BlockParticleDepthShader);
+			SetMat4(WorldMode->BlockParticleDepthShader, "ViewProjection", LightSpaceMatrices[CascadeIndex]);
 			RenderParticles(&WorldMode->ParticleGenerator, World, &TempState->Allocator, 
 						    WorldMode->BlockParticleDepthShader, WorldMode->Hero.Entity->P);
 		}
@@ -1066,10 +1044,7 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 
 	glBindBuffer(GL_UNIFORM_BUFFER, WorldMode->UBOs[BindingPoint_DirectionalLightInfo]);
 	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(vec3), &WorldMode->DirectionalLightDir);
-	glBufferSubData(GL_UNIFORM_BUFFER, sizeof(vec3), sizeof(vec3), &WorldMode->DirectionalLightColor);
-
-	glBindBuffer(GL_UNIFORM_BUFFER, WorldMode->UBOs[BindingPoint_PointLightInfo]);
-	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(point_lights_info), &PointLightsInfo);
+	glBufferSubData(GL_UNIFORM_BUFFER, sizeof(vec4), sizeof(vec3), &WorldMode->DirectionalLightColor);
 
 	DEBUG_VARIABLE(r32, Bias, Rendering);
 	glBindBuffer(GL_UNIFORM_BUFFER, WorldMode->UBOs[BindingPoint_ShadowsInfo]);
@@ -1096,14 +1071,14 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 
 	UseShader(WorldMode->HitpointsShader);
 	SetMat4(WorldMode->HitpointsShader, "ViewProjection", GlobalViewProjection);
-
-	UseShader(WorldMode->WaterShader);
-	SetMat4(WorldMode->WaterShader, "View", View);
-
 	RenderEntities(WorldMode, TempState, SimRegion, 
 				   WorldMode->WorldShader, WorldMode->CharacterShader, WorldMode->HitpointsShader,
 				   Right, ShowDebugDrawings);
+
+	UseShader(WorldMode->WaterShader);
+	SetMat4(WorldMode->WaterShader, "View", View);
 	RenderChunks(World, WorldMode->WorldShader, WorldMode->WaterShader, ViewProjection, Camera->OffsetFromHero);
+
 	RenderParticles(&WorldMode->ParticleGenerator, World, &TempState->Allocator, 
 					WorldMode->BlockParticleShader, WorldMode->Hero.Entity->P);
 

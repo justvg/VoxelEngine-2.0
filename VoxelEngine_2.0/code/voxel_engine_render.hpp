@@ -87,13 +87,13 @@ SetVec2(shader Shader, char *Name, vec2 Value)
 inline void
 SetVec3(shader Shader, char *Name, vec3 Value)
 {
-	glUniform3fv(glGetUniformLocation(Shader.ID, Name), 1, (GLfloat *)&Value.m);
+	glUniform3fv(glGetUniformLocation(Shader.ID, Name), 1, (GLfloat *)&Value.x);
 }
 
 inline void
 SetVec4(shader Shader, char *Name, vec4 Value)
 {
-	glUniform4fv(glGetUniformLocation(Shader.ID, Name), 1, (GLfloat *)&Value.m);
+	glUniform4fv(glGetUniformLocation(Shader.ID, Name), 1, (GLfloat *)&Value.x);
 }
 
 inline void
@@ -155,8 +155,8 @@ RenderQuad(shader Shader, GLuint VAO, game_assets *Assets, texture_id ID,
 internal void
 RenderQuad(shader Shader, GLuint VAO, vec2 ScreenP, vec2 Scale, vec4 Color)
 {
-	SetVec3(Shader, "Color", vec3(Color.m));
-	RenderQuad(Shader, VAO, false, ScreenP, Scale, Color.w());
+	SetVec3(Shader, "Color", Color.xyz);
+	RenderQuad(Shader, VAO, false, ScreenP, Scale, Color.w);
 }
 
 internal rect2
@@ -288,7 +288,7 @@ AddParticle(particle_generator *Generator, world_position BaseP, particle_emitte
 							Info.StartdPRanges);
 	if(Info.dPY != 0.0f)
 	{
-		Particle->dP.SetY(Info.dPY);
+		Particle->dP.y = Info.dPY;
 	}
 
 	Particle->ddP = Info.StartddP;
