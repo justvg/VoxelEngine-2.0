@@ -1,6 +1,6 @@
-// TODO(georgy): Replace glew lib with my code
 #include "gl\glew.h"
 #include "gl\wglew.h"
+#include "glfw3.h"
 
 // TOOD(georgy): Get rid of this
 #include <stdio.h>
@@ -16,9 +16,10 @@
 global_variable bool8 GlobalRunning;
 global_variable bool8 GlobalGamePause;
 global_variable LPDIRECTSOUNDBUFFER GlobalSecondaryBuffer;
-global_variable bool8 GlobalCursorShouldBeClipped;
 global_variable LARGE_INTEGER GlobalPerformanceFrequency;
 global_variable WINDOWPLACEMENT GlobalWindowPosition = { sizeof(GlobalWindowPosition) };
+global_variable i32 GlobalWindowWidth;
+global_variable i32 GlobalWindowHeight;
 
 global_variable bool8 GlobalDEBUGCursor;
 
@@ -125,115 +126,6 @@ WinGetSecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End)
 {
 	r32 Result = (End.QuadPart - Start.QuadPart) / (r32)GlobalPerformanceFrequency.QuadPart;
 	return(Result);
-}
-
-internal void
-WinInitOpenGL(HWND Window, HINSTANCE Instance, LPCSTR WindowClassName)
-{
-	HWND FakeWindow = CreateWindowEx(0, WindowClassName,
-									 "FakeWindow",
-									 WS_OVERLAPPEDWINDOW,
-									 CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-									 0, 0, Instance, 0);
-
-	HDC FakeWindowDC = GetDC(FakeWindow);
-
-	PIXELFORMATDESCRIPTOR FakeDesiredPixelFormat = {};
-	FakeDesiredPixelFormat.nSize = sizeof(FakeDesiredPixelFormat);
-	FakeDesiredPixelFormat.nVersion = 1;
-	FakeDesiredPixelFormat.iPixelType = PFD_TYPE_RGBA;
-	FakeDesiredPixelFormat.dwFlags = PFD_SUPPORT_OPENGL | PFD_DRAW_TO_WINDOW | PFD_DOUBLEBUFFER;
-	FakeDesiredPixelFormat.cColorBits = 32;
-	FakeDesiredPixelFormat.cAlphaBits = 8;
-	FakeDesiredPixelFormat.cDepthBits = 24;
-	FakeDesiredPixelFormat.cStencilBits = 8;
-	FakeDesiredPixelFormat.iLayerType = PFD_MAIN_PLANE;
-
-	int FakeSuggestedPixelFormatIndex = ChoosePixelFormat(FakeWindowDC, &FakeDesiredPixelFormat);
-	PIXELFORMATDESCRIPTOR FakeSuggestedPixelFormat;
-	DescribePixelFormat(FakeWindowDC, FakeSuggestedPixelFormatIndex, sizeof(FakeSuggestedPixelFormat), &FakeSuggestedPixelFormat);
-	SetPixelFormat(FakeWindowDC, FakeSuggestedPixelFormatIndex, &FakeSuggestedPixelFormat);
-
-	HGLRC FakeOpenGLRC = wglCreateContext(FakeWindowDC);
-	if(wglMakeCurrent(FakeWindowDC, FakeOpenGLRC))
-	{
-		if (glewInit() == GLEW_OK)
-		{
-			wglMakeCurrent(0, 0);
-			wglDeleteContext(FakeOpenGLRC);
-			ReleaseDC(FakeWindow, FakeWindowDC);
-			DestroyWindow(FakeWindow);
-
-			if(WGLEW_ARB_create_context && WGLEW_ARB_pixel_format)
-			{
-				HDC WindowDC = GetDC(Window);
-
-				int PixelFormatAttributes[] = 
-				{
-					WGL_DRAW_TO_WINDOW_ARB, GL_TRUE,
-					WGL_ACCELERATION_ARB, WGL_FULL_ACCELERATION_ARB,
-					WGL_SUPPORT_OPENGL_ARB, GL_TRUE,
-					WGL_DOUBLE_BUFFER_ARB, GL_TRUE,
-					WGL_PIXEL_TYPE_ARB, WGL_TYPE_RGBA_ARB,
-					WGL_COLOR_BITS_ARB, 32,
-					WGL_DEPTH_BITS_ARB, 24,
-					WGL_STENCIL_BITS_ARB, 8,
-					WGL_SAMPLE_BUFFERS_ARB, 1,
-					WGL_SAMPLES_ARB, 4,
-					0
-				};
-				int ContextAttributes[] =
-				{
-					WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
-					WGL_CONTEXT_MINOR_VERSION_ARB, 3,
-					0
-				};
-				int PixelFormatIndex, PixelFormatCount;
-				wglChoosePixelFormatARB(WindowDC, PixelFormatAttributes, 0, 1, &PixelFormatIndex, (UINT *)&PixelFormatCount);
-				PIXELFORMATDESCRIPTOR SuggestedPixelFormat;
-				DescribePixelFormat(WindowDC, PixelFormatIndex, sizeof(SuggestedPixelFormat), &SuggestedPixelFormat);
-				SetPixelFormat(WindowDC, PixelFormatIndex, &SuggestedPixelFormat);
-
-				HGLRC OpenGLRC = wglCreateContextAttribsARB(WindowDC, 0, ContextAttributes);
-				if(wglMakeCurrent(WindowDC, OpenGLRC))
-				{
-					// NOTE(georgy): Success!
-					wglSwapIntervalEXT(0); 
-					glEnable(GL_DEPTH_TEST);
-					glEnable(GL_CULL_FACE);
-					glEnable(GL_MULTISAMPLE);
-					glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-					glClearColor(SquareRoot(0.5f), 0.0f, SquareRoot(0.5f), 1.0f);
-					glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-					// glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-				}
-				else
-				{
-					InvalidCodePath;
-					// TODO(georgy): Diagnostic
-				}
-
-				ReleaseDC(Window, WindowDC);
-			}
-			else
-			{
-				InvalidCodePath;
-				// TODO(georgy): Diagnostic
-			}
-		}
-		else
-		{
-			InvalidCodePath;
-			// TODO(georgy): Diagnostic
-		}
-	}
-	else
-	{
-		InvalidCodePath;
-		// TODO(georgy): Diagnostic
-	}
 }
 
 typedef HRESULT WINAPI direct_sound_create(LPGUID lpGuid, LPDIRECTSOUND* ppDS, LPUNKNOWN  pUnkOuter);
@@ -355,118 +247,10 @@ WinFillSoundBuffer(win_sound_output *SoundOutput, DWORD ByteToLock, DWORD BytesT
 	}
 }
 
-struct window_dimension
-{
-	int Width;
-	int Height;
-};
-
-internal window_dimension
-WinGetWindowDimension(HWND Window)
-{
-	window_dimension Result;
-
-	RECT Rect;
-	GetClientRect(Window, &Rect);
-	Result.Width = Rect.right - Rect.left;
-	Result.Height = Rect.bottom - Rect.top;
-
-	return(Result);
-}
-
-internal void
-WinUpdateWindow(HDC DeviceContext, int WindowWidth, int WindowHeight)
-{
-	SwapBuffers(DeviceContext);
-}
-
-internal void 
-ToggleFullscreen(HWND Window)
-{
-    // NOTE(george): This follows Raymond Chen's prescription
-    // for fullscreen toggling, see:
-    // https://blogs.msdn.microsoft.com/oldnewthing/20100412-00/?p=14353
-
-    DWORD Style = GetWindowLong(Window, GWL_STYLE);
-    if (Style & WS_OVERLAPPEDWINDOW) 
-    {
-        MONITORINFO MonitorInfo = { sizeof(MonitorInfo) };
-        if (GetWindowPlacement(Window, &GlobalWindowPosition) &&
-            GetMonitorInfo(MonitorFromWindow(Window, MONITOR_DEFAULTTOPRIMARY), &MonitorInfo)) 
-        {
-            SetWindowLong(Window, GWL_STYLE, Style & ~WS_OVERLAPPEDWINDOW);
-            SetWindowPos(Window, HWND_TOP,
-                    	 MonitorInfo.rcMonitor.left, MonitorInfo.rcMonitor.top,
-                         MonitorInfo.rcMonitor.right - MonitorInfo.rcMonitor.left,
-                         MonitorInfo.rcMonitor.bottom - MonitorInfo.rcMonitor.top,
-                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-        }
-    }
-    else 
-    {
-        SetWindowLong(Window, GWL_STYLE, Style | WS_OVERLAPPEDWINDOW);
-        SetWindowPlacement(Window, &GlobalWindowPosition);
-        SetWindowPos(Window, NULL, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
-                     SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-    }
-}
-
-LRESULT CALLBACK 
-WinWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
-{
-	LRESULT Result = 0;
-
-	switch (Message)
-	{
-		case WM_ACTIVATEAPP:
-		{
-			if (WParam)
-			{
-				ShowCursor(FALSE);
-				GlobalCursorShouldBeClipped = true && !GlobalDEBUGCursor;
-			}
-			else
-			{
-				ShowCursor(TRUE);
-				GlobalCursorShouldBeClipped = false;
-			}
-		} break;
-
-		case WM_CLOSE:
-		{
-			GlobalRunning = false;
-		} break;
-		
-		case WM_DESTROY:
-		{
-			GlobalRunning = false;
-		} break;
-
-		case WM_PAINT:
-		{
-			PAINTSTRUCT Paint;
-			HDC DeviceContext = BeginPaint(Window, &Paint);
-
-			window_dimension Dimension = WinGetWindowDimension(Window);
-
-			// WinUpdateWindow(DeviceContext, Dimension.Width, Dimension.Height);
-			EndPaint(Window, &Paint);
-		} break;
-
-		default:
-		{
-			Result = DefWindowProc(Window, Message, WParam, LParam);
-		} break;
-	}
-
-	return(Result);
-}
-
 struct platform_job_system_entry
 {
 	platform_job_system_callback *Callback;
-	void *Data;	
+	void *Data;
 };
 struct platform_job_system_queue
 {
@@ -680,506 +464,439 @@ WinPlaybackInput(win_state *WinState, game_input *GameInput)
 }
 #endif
 
+struct glfw_callback_struct
+{
+	win_state *WinState;
+	game_input *Input;
+	game_memory *GameMemory;
+};
+static void
+GLFW_KeyCallback(GLFWwindow *Window, int Key, int ScanCode, int Action, int Mods)
+{
+	glfw_callback_struct *CallbackInfo = (glfw_callback_struct *)glfwGetWindowUserPointer(Window);
+
+	win_state *WinState = CallbackInfo->WinState;
+	game_input *Input = CallbackInfo->Input;
+	game_memory *GameMemory = CallbackInfo->GameMemory;
+	
+	if(Key == GLFW_KEY_W)
+	{
+		WinProcessKey(&Input->MoveForward, Action);
+	}
+	if(Key == GLFW_KEY_S)
+	{
+		WinProcessKey(&Input->MoveBack, Action);
+	}
+	if(Key == GLFW_KEY_A)
+	{
+		WinProcessKey(&Input->MoveLeft, Action);
+	}
+	if(Key == GLFW_KEY_D)
+	{
+		WinProcessKey(&Input->MoveRight, Action);
+	}
+	if(Key == GLFW_KEY_SPACE)
+	{
+		WinProcessKey(&Input->MoveUp, Action);
+	}
+	if(Key == GLFW_KEY_ESCAPE)
+	{
+		WinProcessKey(&Input->Esc, Action);
+	}
+
+	if(Key == GLFW_KEY_P)
+	{
+		// TODO(georgy): I don't want the pause button to be _game_ input
+		WinProcessKey(&Input->Pause, Action);
+		// if(IsDown)
+		// {
+		// 	GlobalGamePause = !GlobalGamePause;
+		// 	GameInput.dt = GlobalGamePause ? 0.0f : TargetSecondsPerFrame;
+		// 	GlobalDebugTable.ProfilePause = !GlobalDebugTable.ProfilePause || GlobalGamePause;
+		// }
+	}
+	if(Key == GLFW_KEY_L)
+	{
+		if(Action == GLFW_PRESS)
+		{
+			if(!WinState->InputPlayback)
+			{
+				WinCompleteAllWork(GameMemory->JobSystemQueue);
+				if(!WinState->InputRecording)
+				{
+					WinBeginRecordingInput(WinState);
+				}
+				else
+				{
+					WinEndRecordingInput(WinState);
+					WinBeginInputPlayback(WinState);
+				}
+			}
+			else if(Action == GLFW_RELEASE)
+			{
+				WinEndInputPlayback(WinState);
+			}
+		}
+	}
+
+	if (Key == GLFW_KEY_2)
+	{
+		if(Action == GLFW_PRESS)
+		{
+			GlobalDEBUGCursor = !GlobalDEBUGCursor;
+			int EnableCursor = GlobalDEBUGCursor ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED; 
+			glfwSetInputMode(Window, GLFW_CURSOR, EnableCursor);
+		}
+	}
+}
+
+static void
+GLFW_MouseButtonCallback(GLFWwindow *Window, int Button, int Action, int Mods)
+{
+	glfw_callback_struct *CallbackInfo = (glfw_callback_struct *)glfwGetWindowUserPointer(Window);
+
+	game_input *Input = CallbackInfo->Input;
+
+	if(Button == GLFW_MOUSE_BUTTON_1)
+	{
+		WinProcessKey(&Input->MouseLeft, Action);
+	}
+	if(Button == GLFW_MOUSE_BUTTON_2)
+	{
+		WinProcessKey(&Input->MouseRight, Action);
+	}
+}
+
+static void
+GLFW_CursorPosCallback(GLFWwindow *Window, double XPos, double YPos)
+{
+	glfw_callback_struct *CallbackInfo = (glfw_callback_struct *)glfwGetWindowUserPointer(Window);
+
+	game_input *Input = CallbackInfo->Input;
+
+	int BufferWidth, BufferHeight;
+	glfwGetFramebufferSize(Window, &BufferWidth, &BufferHeight);
+
+	XPos = (XPos - 0.5*GlobalWindowWidth);
+	YPos = (0.5*GlobalWindowHeight - YPos);
+	
+	if(!GlobalDEBUGCursor)
+	{
+		Input->MouseXDisplacement = (i32)(XPos - Input->MouseX);
+		Input->MouseYDisplacement = (i32)(YPos - Input->MouseY);
+	}
+
+	Input->MouseX = (r32)XPos;
+	Input->MouseY = (r32)YPos;	
+}
+
+static void 
+GLFW_WindowSizeCallback(GLFWwindow *Window, int Width, int Height)
+{
+	GlobalWindowWidth = Width;
+	GlobalWindowHeight = Height;
+}
+
 int CALLBACK
 WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
 {	
 	win_state WinState = {};
 
 	platform_job_system_queue JobSystem;
-	WinInitializeJobSystem(&JobSystem, 3);
+	WinInitializeJobSystem(&JobSystem, 5);
 
 	DWORD ThreadID = GetCurrentThreadId();
 
 	QueryPerformanceFrequency(&GlobalPerformanceFrequency);
 
-	UINT DesiredSchedulerMS = 1;
-	bool32 SleepIsGranular = (timeBeginPeriod(DesiredSchedulerMS) == TIMERR_NOERROR);
+	GlobalWindowWidth = 1366;
+	GlobalWindowHeight = 768;
 
-	WNDCLASS WindowClass = {};
-	WindowClass.style = CS_OWNDC | CS_VREDRAW | CS_HREDRAW;
-	WindowClass.lpfnWndProc = WinWindowCallback;
-	WindowClass.hInstance = Instance;
-	WindowClass.hCursor = LoadCursor(0, IDC_ARROW);
-	// WindowClass.hbrBackground = CreateSolidBrush(RGB((u8)(SquareRoot(0.5f)*255.0f), 0, (u8)(SquareRoot(0.5f)*255.0f)));
-	WindowClass.lpszClassName = "VoxelEngineWindowClass";
-
-	if(RegisterClass(&WindowClass))
+	if(glfwInit())
 	{
-		HWND Window = CreateWindowEx(0, WindowClass.lpszClassName,
-									 "Voxel Engine 2.0", 
-									 WS_OVERLAPPEDWINDOW,
-									 CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-									 0, 0, Instance, 0);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+		GLFWwindow *Window = glfwCreateWindow(GlobalWindowWidth, GlobalWindowHeight, "VoxelEngine2.0", 0, 0);
 		if(Window)
 		{
-			WinInitOpenGL(Window, Instance, WindowClass.lpszClassName);
-			ToggleFullscreen(Window);
-			ShowWindow(Window, SW_SHOW);
+			glfwMakeContextCurrent(Window);
+			glfwSwapInterval(1);
 
-			int RefreshRate = 60;
-			HDC WindowDC = GetDC(Window);
-			int WinRefreshRate = GetDeviceCaps(WindowDC, VREFRESH);
-			if (WinRefreshRate > 0)
+			glfwSetInputMode(Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+			if(glewInit() == GLEW_OK)
 			{
-				RefreshRate = WinRefreshRate;
-			}
-			int GameRefreshRate = RefreshRate;
-			// int GameRefreshRate = RefreshRate / 2;
-			r32 TargetSecondsPerFrame = 1.0f / GameRefreshRate;
-			ReleaseDC(Window, WindowDC);
+				glEnable(GL_DEPTH_TEST);
+				glEnable(GL_CULL_FACE);
+				glEnable(GL_MULTISAMPLE);
+				glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-			win_sound_output SoundOutput = {};
-			SoundOutput.SamplesPerSecond = 44100;
-			SoundOutput.BytesPerSample = sizeof(i16)*2;
-			SoundOutput.SecondaryBufferSize = SoundOutput.SamplesPerSecond* SoundOutput.BytesPerSample;
-			SoundOutput.LatencySampleCount = 3*(SoundOutput.SamplesPerSecond / GameRefreshRate);
-			SoundOutput.SafetyBytes = ((SoundOutput.SamplesPerSecond*SoundOutput.BytesPerSample) / GameRefreshRate) / 2;
+				glClearColor(SquareRoot(0.5f), 0.0f, SquareRoot(0.5f), 1.0f);
+				glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-			bool32 SoundIsValid = false;
-			DWORD AudioLatencyBytes = 0;
-			r32 AudioLatencySeconds = 0;
+				GLFWmonitor *Monitor = glfwGetPrimaryMonitor();
+				const GLFWvidmode *VidMode = glfwGetVideoMode(Monitor);
+				i32 GameUpdateHz = VidMode->refreshRate;
+				r32 TargetSecondsPerFrame = 1.0f / GameUpdateHz;
 
-			i16 *Samples = (i16 *)VirtualAlloc(0, SoundOutput.SamplesPerSecond*SoundOutput.BytesPerSample, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-			WinInitDirectSound(Window, SoundOutput.SamplesPerSecond, SoundOutput.SecondaryBufferSize);
-			// NOTE(georgy): Clear sound buffer
-			{
-				VOID *Part1, *Part2;
-				DWORD Part1Size, Part2Size;
-				if(GlobalSecondaryBuffer->Lock(0, SoundOutput.SecondaryBufferSize, &Part1, &Part1Size, &Part2, &Part2Size, 0) == DS_OK)
+				game_memory GameMemory = {};
+				GameMemory.PermanentStorageSize = Gigabytes(2);
+				GameMemory.TemporaryStorageSize = Megabytes(128);
+				GameMemory.DebugStorageSize = Megabytes(64);
+				WinState.GameMemorySize = GameMemory.PermanentStorageSize + GameMemory.TemporaryStorageSize + GameMemory.DebugStorageSize;
+				WinState.GameMemory = VirtualAlloc(0, WinState.GameMemorySize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+				GameMemory.PermanentStorage = WinState.GameMemory;
+				GameMemory.TemporaryStorage = (u8 *)GameMemory.PermanentStorage + GameMemory.PermanentStorageSize;
+				GameMemory.DebugStorage = (u8 *)GameMemory.TemporaryStorage + GameMemory.TemporaryStorageSize;
+
+				win_sound_output SoundOutput = {};
+				SoundOutput.SamplesPerSecond = 44100;
+				SoundOutput.BytesPerSample = sizeof(i16)*2;
+				SoundOutput.SecondaryBufferSize = SoundOutput.SamplesPerSecond* SoundOutput.BytesPerSample;
+				SoundOutput.LatencySampleCount = 3*(SoundOutput.SamplesPerSecond / GameUpdateHz);
+				SoundOutput.SafetyBytes = ((SoundOutput.SamplesPerSecond*SoundOutput.BytesPerSample) / GameUpdateHz) / 2;
+
+				bool32 SoundIsValid = false;
+				DWORD AudioLatencyBytes = 0;
+				r32 AudioLatencySeconds = 0;
+
+				i16 *Samples = (i16 *)VirtualAlloc(0, SoundOutput.SamplesPerSecond*SoundOutput.BytesPerSample, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+				WinInitDirectSound(GetForegroundWindow(), SoundOutput.SamplesPerSecond, SoundOutput.SecondaryBufferSize);
+				// NOTE(georgy): Clear sound buffer
 				{
-					u8 *Dest = (u8 *)Part1;
-					for(u32 ByteIndex = 0;
-						ByteIndex < Part1Size;
-						ByteIndex++)
+					VOID *Part1, *Part2;
+					DWORD Part1Size, Part2Size;
+					if(GlobalSecondaryBuffer->Lock(0, SoundOutput.SecondaryBufferSize, &Part1, &Part1Size, &Part2, &Part2Size, 0) == DS_OK)
 					{
-						*Dest++ = 0;
-					}
+						u8 *Dest = (u8 *)Part1;
+						for(u32 ByteIndex = 0;
+							ByteIndex < Part1Size;
+							ByteIndex++)
+						{
+							*Dest++ = 0;
+						}
 
-					Dest = (u8 *)Part2;
-					for(u32 ByteIndex = 0;
-						ByteIndex < Part2Size;
-						ByteIndex++)
-					{
-						*Dest++ = 0;
-					}
+						Dest = (u8 *)Part2;
+						for(u32 ByteIndex = 0;
+							ByteIndex < Part2Size;
+							ByteIndex++)
+						{
+							*Dest++ = 0;
+						}
 
-					GlobalSecondaryBuffer->Unlock(Part1, Part1Size, Part2, Part2Size);
+						GlobalSecondaryBuffer->Unlock(Part1, Part1Size, Part2, Part2Size);
+					}
 				}
-			}
 
-			game_memory GameMemory = {};
-			GameMemory.PermanentStorageSize = Gigabytes(2);
-			GameMemory.TemporaryStorageSize = Megabytes(128);
-			GameMemory.DebugStorageSize = Megabytes(64);
-			WinState.GameMemorySize = GameMemory.PermanentStorageSize + GameMemory.TemporaryStorageSize + GameMemory.DebugStorageSize;
-			WinState.GameMemory = VirtualAlloc(0, WinState.GameMemorySize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-			GameMemory.PermanentStorage = WinState.GameMemory;
-			GameMemory.TemporaryStorage = (u8 *)GameMemory.PermanentStorage + GameMemory.PermanentStorageSize;
-			GameMemory.DebugStorage = (u8 *)GameMemory.TemporaryStorage + GameMemory.TemporaryStorageSize;
-
-			if(GameMemory.PermanentStorage && GameMemory.TemporaryStorage && Samples)
-			{
-				GameMemory.JobSystemQueue = &JobSystem;
-
-				GameMemory.PlatformAPI.AddEntry = WinAddEntry;
-				GameMemory.PlatformAPI.CompleteAllWork = WinCompleteAllWork;
-				GameMemory.PlatformAPI.ReadEntireFile = WinReadEntireFile;
-				GameMemory.PlatformAPI.OpenFile = WinOpenFile;
-				GameMemory.PlatformAPI.ReadDataFromFile = WinReadDataFromFile;
-				GameMemory.PlatformAPI.AllocateMemory = WinAllocateMemory;
-				GameMemory.PlatformAPI.FreeMemory = WinFreeMemory;
-				GameMemory.PlatformAPI.OutputDebugString = WinOutputDebugString;
-
-				// TODO(georgy): Make the path to be created automatically in .exe directory
-				WinState.RecordStateFile = 
-					CreateFileA("C:/Users/georg/source/repos/VoxelEngine 2.0/build/playback_state.vep", GENERIC_WRITE|GENERIC_READ, 
-								0, 0, CREATE_ALWAYS, 0, 0);
-
-				LARGE_INTEGER MaxSize;
-				MaxSize.QuadPart = WinState.GameMemorySize;
-				WinState.RecordStateMemoryMap = 
-					CreateFileMapping(WinState.RecordStateFile, 0, PAGE_READWRITE,
-									MaxSize.HighPart, MaxSize.LowPart, 0);
-
-				WinState.RecordStateMemory = 
-					MapViewOfFile(WinState.RecordStateMemoryMap, FILE_MAP_ALL_ACCESS, 0, 0, WinState.GameMemorySize);
-
-
-				game_input GameInput = {};
-				GameInput.dt = TargetSecondsPerFrame;
-
-				game_input DebugCameraInput = {};
-
-				RAWINPUTDEVICE RID;
-				RID.usUsagePage = 1;
-				RID.usUsage = 2; // NOTE(georgy): 2 is for mouse input
-				RID.dwFlags = 0;
-				RID.hwndTarget = Window;
-				RegisterRawInputDevices(&RID, 1, sizeof(RID));
-
-				GlobalSecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
-
-				GlobalRunning = true;
-				LARGE_INTEGER LastCounter = WinGetPerformanceCounter();
-				while(GlobalRunning)
+				if(GameMemory.PermanentStorage && GameMemory.TemporaryStorage)
 				{
-	#if VOXEL_ENGINE_INTERNAL
-					if(WasDown(&GameInput.Pause))
-					{
-						GlobalGamePause = !GlobalGamePause;
-						GameInput.dt = GlobalGamePause ? 0.0f : TargetSecondsPerFrame;
-						GlobalDebugTable.ProfilePause = !GlobalDebugTable.ProfilePause || GlobalGamePause;
-					}
-	#endif
+					GameMemory.JobSystemQueue = &JobSystem;
 
-					BEGIN_BLOCK(InputAndMessageTime);
+					GameMemory.PlatformAPI.AddEntry = WinAddEntry;
+					GameMemory.PlatformAPI.CompleteAllWork = WinCompleteAllWork;
+					GameMemory.PlatformAPI.ReadEntireFile = WinReadEntireFile;
+					GameMemory.PlatformAPI.OpenFile = WinOpenFile;
+					GameMemory.PlatformAPI.ReadDataFromFile = WinReadDataFromFile;
+					GameMemory.PlatformAPI.AllocateMemory = WinAllocateMemory;
+					GameMemory.PlatformAPI.FreeMemory = WinFreeMemory;
+					GameMemory.PlatformAPI.OutputDebugString = WinOutputDebugString;
 
-					if (GlobalCursorShouldBeClipped)
-					{
-						RECT WindowRect;
-						GetWindowRect(Window, &WindowRect);
-						LONG WindowRectHeight = WindowRect.bottom - WindowRect.top;
-						LONG WindowRectWidth = WindowRect.right - WindowRect.left;
-						WindowRect.top = WindowRect.bottom = WindowRect.top + WindowRectHeight/2;
-						WindowRect.left = WindowRect.right = WindowRect.left + WindowRectWidth/2;
-						ClipCursor(&WindowRect);
-					}
-					else
-					{
-						ClipCursor(0);
-					}
+					// TODO(georgy): Make the path to be created automatically in .exe directory
+					WinState.RecordStateFile = 
+						CreateFileA("C:/Users/georg/source/repos/VoxelEngine 2.0/build/playback_state.vep", GENERIC_WRITE|GENERIC_READ, 
+									0, 0, CREATE_ALWAYS, 0, 0);
 
-					game_input *Input;
-					DEBUG_IF(DebugCamera, DebugTools)
-					{
-						Input = &DebugCameraInput;
-					}				
-					else
-					{
-						Input = &GameInput;
-					}
+					LARGE_INTEGER MaxSize;
+					MaxSize.QuadPart = WinState.GameMemorySize;
+					WinState.RecordStateMemoryMap = 
+						CreateFileMapping(WinState.RecordStateFile, 0, PAGE_READWRITE,
+										MaxSize.HighPart, MaxSize.LowPart, 0);
 
-					Input->MouseXDisplacement = Input->MouseYDisplacement = 0;
-					Input->MouseRight.HalfTransitionCount = Input->MouseLeft.HalfTransitionCount = 0;
+					WinState.RecordStateMemory = 
+						MapViewOfFile(WinState.RecordStateMemoryMap, FILE_MAP_ALL_ACCESS, 0, 0, WinState.GameMemorySize);
 
-					for(u32 ButtonIndex = 0;
-						ButtonIndex < ArrayCount(Input->Buttons);
-						ButtonIndex++)
+					game_input GameInput = {};
+					glfw_callback_struct GLFWCallbackStruct = {&WinState, &GameInput, &GameMemory};
+					glfwSetWindowUserPointer(Window, &GLFWCallbackStruct);
+					glfwSetKeyCallback(Window, GLFW_KeyCallback);
+					glfwSetMouseButtonCallback(Window, GLFW_MouseButtonCallback);
+					glfwSetCursorPosCallback(Window, GLFW_CursorPosCallback);
+					glfwSetFramebufferSizeCallback(Window, GLFW_WindowSizeCallback);
+
+					GameInput.dt = TargetSecondsPerFrame;
+
+					game_input DebugCameraInput = {};
+
+					GlobalSecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
+
+					GlobalRunning = true;
+					LARGE_INTEGER LastCounter = WinGetPerformanceCounter();
+					while(GlobalRunning)
 					{
-						button *Button = Input->Buttons + ButtonIndex;
-						Button->HalfTransitionCount = 0;
-					}
-
-					window_dimension Dimension = WinGetWindowDimension(Window);
-					POINT MouseP;
-					GetCursorPos(&MouseP);
-					ScreenToClient(Window, &MouseP);
-					Input->MouseX = (MouseP.x - 0.5f*Dimension.Width);
-					Input->MouseY = (0.5f*Dimension.Height - MouseP.y);				
-
-					MSG Message;
-					while (PeekMessage(&Message, 0, 0, 0, PM_REMOVE))
-					{
-						switch (Message.message)
+#if VOXEL_ENGINE_INTERNAL
+						if(WasDown(&GameInput.Pause))
 						{
-							case WM_QUIT:
-							{
-								GlobalRunning = false;
-							} break;
-
-							case WM_SYSKEYDOWN:
-							case WM_SYSKEYUP:
-							case WM_KEYDOWN:
-							case WM_KEYUP:
-							{
-								u32 KeyCode = (u32)Message.wParam;
-
-								bool WasDown = ((Message.lParam & (1 << 30)) != 0);
-								bool IsDown = ((Message.lParam & (1 << 31)) == 0);
-								if (WasDown != IsDown)
-								{
-									if (KeyCode == 'W')
-									{
-										WinProcessKey(&Input->MoveForward, IsDown);
-									}
-									if (KeyCode == 'S')
-									{
-										WinProcessKey(&Input->MoveBack, IsDown);
-									}
-									if (KeyCode == 'D')
-									{
-										WinProcessKey(&Input->MoveRight, IsDown);
-									}
-									if (KeyCode == 'A')
-									{
-										WinProcessKey(&Input->MoveLeft, IsDown);
-									}
-									if (KeyCode == VK_SPACE)
-									{
-										WinProcessKey(&Input->MoveUp, IsDown);
-									}
-									if (KeyCode == VK_ESCAPE)
-									{
-										WinProcessKey(&Input->Esc, IsDown);
-									}
-
-	#if VOXEL_ENGINE_INTERNAL
-									if (KeyCode == 'P')
-									{
-										// TODO(georgy): I don't want the pause button to be _game_ input
-										WinProcessKey(&Input->Pause, IsDown);
-										// if(IsDown)
-										// {
-										// 	GlobalGamePause = !GlobalGamePause;
-										// 	GameInput.dt = GlobalGamePause ? 0.0f : TargetSecondsPerFrame;
-										// 	GlobalDebugTable.ProfilePause = !GlobalDebugTable.ProfilePause || GlobalGamePause;
-										// }
-									}
-									if (KeyCode == 'L')
-									{
-										if(IsDown)
-										{
-											if(!WinState.InputPlayback)
-											{
-												WinCompleteAllWork(GameMemory.JobSystemQueue);
-												if(!WinState.InputRecording)
-												{
-													WinBeginRecordingInput(&WinState);
-												}
-												else
-												{
-													WinEndRecordingInput(&WinState);
-													WinBeginInputPlayback(&WinState);
-												}
-											}
-											else
-											{
-												WinEndInputPlayback(&WinState);
-											}
-										}
-									}
-									if (KeyCode == 0x32)
-									{
-										if(IsDown)
-										{
-											GlobalDEBUGCursor = !GlobalDEBUGCursor;
-											GlobalCursorShouldBeClipped = !GlobalDEBUGCursor;
-											ShowCursor(GlobalDEBUGCursor);
-										}
-									}
-	#endif
-								}
-
-								if(IsDown)
-								{
-									bool32 AltKeyWasDown = (Message.lParam & (1 << 29));
-									if((KeyCode == VK_F4) && AltKeyWasDown)
-									{
-										GlobalRunning = false;
-									}
-									if((KeyCode == VK_RETURN) && AltKeyWasDown)
-									{
-										if(Message.hwnd)
-										{
-											ToggleFullscreen(Message.hwnd);
-										}
-									}
-								}
-							} break;
-
-							case WM_INPUT:
-							{
-								RAWINPUT RawInput;
-								UINT RawInputSize = sizeof(RawInput);
-								GetRawInputData((HRAWINPUT)Message.lParam, RID_INPUT,
-												&RawInput, &RawInputSize, sizeof(RAWINPUTHEADER));
-								
-								if (RawInput.header.dwType == RIM_TYPEMOUSE)
-								{
-									if(!GlobalDEBUGCursor)
-									{
-										Input->MouseXDisplacement = RawInput.data.mouse.lLastX;
-										Input->MouseYDisplacement = RawInput.data.mouse.lLastY;
-									}
-									// GameInput.MouseX += RawInput.data.mouse.lLastX;
-									// GameInput.MouseY += RawInput.data.mouse.lLastY;
-									
-									if(RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN ||
-									   RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_UP)
-									{
-										WinProcessKey(&Input->MouseLeft, RawInput.data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN);
-									}
-										
-									if(RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN ||
-									   RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_UP)
-									{
-										WinProcessKey(&Input->MouseRight, RawInput.data.mouse.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN);
-									}
-								}
-							} break;
-							
-							default:
-							{
-								TranslateMessage(&Message);
-								DispatchMessage(&Message);
-							} break;
+							GlobalGamePause = !GlobalGamePause;
+							GameInput.dt = GlobalGamePause ? 0.0f : TargetSecondsPerFrame;
+							GlobalDebugTable.ProfilePause = !GlobalDebugTable.ProfilePause || GlobalGamePause;
 						}
-					}
-					
-					END_BLOCK(InputAndMessageTime);
+#endif
 
-	#if VOXEL_ENGINE_INTERNAL
-					if(!GlobalGamePause)
-					{
-						if(WinState.InputRecording)
+						BEGIN_BLOCK(InputAndMessageTime);
+
+						game_input *Input;
+						DEBUG_IF(DebugCamera, DebugTools)
 						{
-							WinRecordInput(&WinState, &GameInput);
-						}
-
-						if(WinState.InputPlayback)
-						{
-							game_input TempInput = GameInput;
-							WinPlaybackInput(&WinState, &GameInput);
-							GameInput.MouseX = TempInput.MouseX;
-							GameInput.MouseY = TempInput.MouseY;
-							GameInput.MouseLeft = TempInput.MouseLeft;
-							GameInput.Pause = TempInput.Pause;
-						}
-					}
-	#endif
-
-					BEGIN_BLOCK(GameUpdateTime); 
-
-					GameUpdate(&GameMemory, &GameInput, Dimension.Width, Dimension.Height, GlobalGamePause, DebugCamera, &DebugCameraInput);
-					if(GameInput.QuitRequested)
-					{
-						GlobalRunning = false;
-					}
-
-					END_BLOCK(GameUpdateTime);
-
-					
-					BEGIN_BLOCK(SoundUpdateTime);
-
-					r32 FromBeginToAudioSeconds = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
-
-					DWORD PlayCursor;
-					DWORD WriteCursor;
-					if(GlobalSecondaryBuffer->GetCurrentPosition(&PlayCursor, &WriteCursor) == DS_OK)
-					{
-						if(!SoundIsValid)
-						{
-							SoundOutput.RunningSampleIndex = WriteCursor / SoundOutput.BytesPerSample;
-							SoundIsValid = true;
-						}
-
-						DWORD ByteToLock = (SoundOutput.RunningSampleIndex*SoundOutput.BytesPerSample) % SoundOutput.SecondaryBufferSize;
-
-						DWORD ExpectedSoundBytesPerFrame = (SoundOutput.SamplesPerSecond*SoundOutput.BytesPerSample) / GameRefreshRate;
-						r32 SecondsLeftUntilFlip = TargetSecondsPerFrame - FromBeginToAudioSeconds;
-						DWORD ExpectedBytesUntilFlip = (DWORD)((SecondsLeftUntilFlip/TargetSecondsPerFrame)*
-																(r32)ExpectedSoundBytesPerFrame);
-
-						DWORD ExpectedFrameBoundaryByte = PlayCursor + ExpectedBytesUntilFlip;
-
-						DWORD SafeWriteCursor = WriteCursor;
-						if(SafeWriteCursor < PlayCursor)
-						{
-							SafeWriteCursor += SoundOutput.SecondaryBufferSize;
-						} 
-						Assert(SafeWriteCursor >= PlayCursor);
-						SafeWriteCursor += SoundOutput.SafetyBytes;
-
-						bool32 AudioCardIsLowLatency = (SafeWriteCursor < ExpectedFrameBoundaryByte);
-
-						DWORD TargetCursor = 0;
-						if(AudioCardIsLowLatency)
-						{
-							TargetCursor = (ExpectedFrameBoundaryByte + ExpectedSoundBytesPerFrame);
-						}
+							Input = &DebugCameraInput;
+						}				
 						else
 						{
-							TargetCursor = (WriteCursor + ExpectedSoundBytesPerFrame + SoundOutput.SafetyBytes);
+							Input = &GameInput;
 						}
-						TargetCursor = (TargetCursor % SoundOutput.SecondaryBufferSize);
+						GLFWCallbackStruct.Input = Input;
 
-						DWORD BytesToWrite = 0;
-						if(ByteToLock > TargetCursor)
+						Input->MouseXDisplacement = Input->MouseYDisplacement = 0;
+						Input->MouseRight.HalfTransitionCount = Input->MouseLeft.HalfTransitionCount = 0;
+
+						for(u32 ButtonIndex = 0;
+							ButtonIndex < ArrayCount(Input->Buttons);
+							ButtonIndex++)
 						{
-							BytesToWrite = SoundOutput.SecondaryBufferSize - ByteToLock;
-							BytesToWrite += TargetCursor;
-						}
-						else
-						{
-							BytesToWrite = TargetCursor - ByteToLock;
+							button *Button = Input->Buttons + ButtonIndex;
+							Button->HalfTransitionCount = 0;
 						}
 
-						game_sound_output_buffer SoundBuffer = {};
-						SoundBuffer.Samples = Samples;
-						SoundBuffer.SamplesPerSecond = SoundOutput.SamplesPerSecond;
-						SoundBuffer.SampleCount = BytesToWrite / SoundOutput.BytesPerSample;
-						GameGetSoundSamples(&GameMemory, &SoundBuffer);
+						glfwPollEvents();
+
+						END_BLOCK(InputAndMessageTime);
+
+#if VOXEL_ENGINE_INTERNAL
+						if(!GlobalGamePause)
+						{
+							if(WinState.InputRecording)
+							{
+								WinRecordInput(&WinState, &GameInput);
+							}
+
+							if(WinState.InputPlayback)
+							{
+								game_input TempInput = GameInput;
+								WinPlaybackInput(&WinState, &GameInput);
+								GameInput.MouseX = TempInput.MouseX;
+								GameInput.MouseY = TempInput.MouseY;
+								GameInput.MouseLeft = TempInput.MouseLeft;
+								GameInput.Pause = TempInput.Pause;
+							}
+						}
+#endif
+
+						BEGIN_BLOCK(GameUpdateTime); 
+
+						GameUpdate(&GameMemory, &GameInput, GlobalWindowWidth, GlobalWindowHeight, GlobalGamePause, DebugCamera, &DebugCameraInput);
+						if(GameInput.QuitRequested)
+						{
+							GlobalRunning = false;
+						}
+
+						END_BLOCK(GameUpdateTime);
+
+						
+						BEGIN_BLOCK(SoundUpdateTime);
+
+						r32 FromBeginToAudioSeconds = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
 
 						DWORD PlayCursor;
 						DWORD WriteCursor;
-						GlobalSecondaryBuffer->GetCurrentPosition(&PlayCursor, &WriteCursor);
+						if(GlobalSecondaryBuffer->GetCurrentPosition(&PlayCursor, &WriteCursor) == DS_OK)
+						{
+							if(!SoundIsValid)
+							{
+								SoundOutput.RunningSampleIndex = WriteCursor / SoundOutput.BytesPerSample;
+								SoundIsValid = true;
+							}
 
-						WinFillSoundBuffer(&SoundOutput, ByteToLock, BytesToWrite, &SoundBuffer);
-					}
-					else
-					{
-						SoundIsValid = false;
-					}
+							DWORD ByteToLock = (SoundOutput.RunningSampleIndex*SoundOutput.BytesPerSample) % SoundOutput.SecondaryBufferSize;
 
-					END_BLOCK(SoundUpdateTime);
+							DWORD ExpectedSoundBytesPerFrame = (SoundOutput.SamplesPerSecond*SoundOutput.BytesPerSample) / GameUpdateHz;
+							r32 SecondsLeftUntilFlip = TargetSecondsPerFrame - FromBeginToAudioSeconds;
+							DWORD ExpectedBytesUntilFlip = (DWORD)((SecondsLeftUntilFlip/TargetSecondsPerFrame)*
+																	(r32)ExpectedSoundBytesPerFrame);
+
+							DWORD ExpectedFrameBoundaryByte = PlayCursor + ExpectedBytesUntilFlip;
+
+							DWORD SafeWriteCursor = WriteCursor;
+							if(SafeWriteCursor < PlayCursor)
+							{
+								SafeWriteCursor += SoundOutput.SecondaryBufferSize;
+							} 
+							Assert(SafeWriteCursor >= PlayCursor);
+							SafeWriteCursor += SoundOutput.SafetyBytes;
+
+							bool32 AudioCardIsLowLatency = (SafeWriteCursor < ExpectedFrameBoundaryByte);
+
+							DWORD TargetCursor = 0;
+							if(AudioCardIsLowLatency)
+							{
+								TargetCursor = (ExpectedFrameBoundaryByte + ExpectedSoundBytesPerFrame);
+							}
+							else
+							{
+								TargetCursor = (WriteCursor + ExpectedSoundBytesPerFrame + SoundOutput.SafetyBytes);
+							}
+							TargetCursor = (TargetCursor % SoundOutput.SecondaryBufferSize);
+
+							DWORD BytesToWrite = 0;
+							if(ByteToLock > TargetCursor)
+							{
+								BytesToWrite = SoundOutput.SecondaryBufferSize - ByteToLock;
+								BytesToWrite += TargetCursor;
+							}
+							else
+							{
+								BytesToWrite = TargetCursor - ByteToLock;
+							}
+
+							game_sound_output_buffer SoundBuffer = {};
+							SoundBuffer.Samples = Samples;
+							SoundBuffer.SamplesPerSecond = SoundOutput.SamplesPerSecond;
+							SoundBuffer.SampleCount = BytesToWrite / SoundOutput.BytesPerSample;
+							GameGetSoundSamples(&GameMemory, &SoundBuffer);
+
+							DWORD PlayCursor;
+							DWORD WriteCursor;
+							GlobalSecondaryBuffer->GetCurrentPosition(&PlayCursor, &WriteCursor);
+
+							WinFillSoundBuffer(&SoundOutput, ByteToLock, BytesToWrite, &SoundBuffer);
+						}
+						else
+						{
+							SoundIsValid = false;
+						}
+
+						END_BLOCK(SoundUpdateTime);
 
 
 	#if VOXEL_ENGINE_INTERNAL
-					BEGIN_BLOCK(DebugStuffTime);
+						BEGIN_BLOCK(DebugStuffTime);
 
-					DEBUGEndDebugFrameAndRender(&GameMemory, Input, (r32)Dimension.Width, (r32)Dimension.Height);
+						DEBUGEndDebugFrameAndRender(&GameMemory, Input, (r32)GlobalWindowWidth, (r32)GlobalWindowHeight);
 
-					END_BLOCK(DebugStuffTime);
+						END_BLOCK(DebugStuffTime);
 	#endif
 
-					BEGIN_BLOCK(UpdateWindowTime);
+						BEGIN_BLOCK(UpdateWindowTime);
 
-					HDC DeviceContext = GetDC(Window);
-					WinUpdateWindow(DeviceContext, Dimension.Width, Dimension.Height);
-					ReleaseDC(Window, DeviceContext);
+						glfwSwapBuffers(Window);
 
-					END_BLOCK(UpdateWindowTime);			
+						END_BLOCK(UpdateWindowTime);			
 
-#if 0
-					BEGIN_BLOCK(SleepTime);
-
-					r32 SecondsElapsedForFrame = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
-
-					if(SecondsElapsedForFrame < TargetSecondsPerFrame)
-					{
-						if(SleepIsGranular)
-						{
-							DWORD SleepMS = (DWORD)(1000.0f * (TargetSecondsPerFrame - SecondsElapsedForFrame));
-
-							if(SleepMS > 0)
-							{
-								Sleep(SleepMS);
-							}
-						}
-
-						while (SecondsElapsedForFrame < TargetSecondsPerFrame)
-						{
-							SecondsElapsedForFrame = WinGetSecondsElapsed(LastCounter, WinGetPerformanceCounter());
-						}
+						LARGE_INTEGER EndCounter = WinGetPerformanceCounter();
+						r32 MSPerFrame = 1000.0f * WinGetSecondsElapsed(LastCounter, EndCounter);
+						FRAME_MARKER(MSPerFrame);
+						LastCounter = EndCounter;
 					}
-
-					END_BLOCK(SleepTime);
-	#endif
-
-					LARGE_INTEGER EndCounter = WinGetPerformanceCounter();
-					r32 MSPerFrame = 1000.0f * WinGetSecondsElapsed(LastCounter, EndCounter);
-					FRAME_MARKER(MSPerFrame);
-					LastCounter = EndCounter;
 				}
 			}
 		}

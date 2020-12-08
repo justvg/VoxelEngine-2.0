@@ -1771,7 +1771,7 @@ MergeSort(chunk **ChunkPtr)
 
 // NOTE(georgy): This function is optimized for Min to be vec3(0.0f, 0.0f, 0.0f) what is nice for chunks!
 internal bool32
-ChunkFrustumCulling(mat4 MVP, vec3 Min, vec3 Dim)
+ChunkFrustumCulling(mat4 &MVP, vec3 Min, vec3 Dim)
 {
 	vec4 Points[8];
 
@@ -1893,7 +1893,8 @@ RenderChunks(world *World, shader Shader, shader WaterShader, mat4 VP, vec3 Came
 		Chunk = Chunk->Next)
 	{
 		mat4 Model = Translate(Chunk->Translation);
-		if(ChunkFrustumCulling(VP * Model, vec3(0.0f, 0.0f, 0.0f), ChunkDim))
+		mat4 MVP = VP * Model;
+		if(ChunkFrustumCulling(MVP, vec3(0.0f, 0.0f, 0.0f), ChunkDim))
 		{
 			SetMat4(Shader, "Model", Model);
 
@@ -1920,7 +1921,8 @@ RenderChunks(world *World, shader Shader, shader WaterShader, mat4 VP, vec3 Came
 		if(Chunk->WaterVerticesP.EntriesCount)
 		{
 			mat4 Model = Translate(Chunk->Translation);
-			if(ChunkFrustumCulling(VP * Model, vec3(0.0f, 0.0f, 0.0f), ChunkDim))
+			mat4 MVP = VP * Model;
+			if(ChunkFrustumCulling(MVP, vec3(0.0f, 0.0f, 0.0f), ChunkDim))
 			{
 				SetMat4(WaterShader, "Model", Model);
 

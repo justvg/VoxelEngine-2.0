@@ -601,7 +601,7 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 	if(!DebugCamera || DEBUGGlobalPlaybackInfo.PlaybackPhase)
 #endif
 	{
-		Camera->Pitch -= Input->MouseYDisplacement*Camera->RotSensetivity;
+		Camera->Pitch += Input->MouseYDisplacement*Camera->RotSensetivity;
 		Camera->Head += Input->MouseXDisplacement*Camera->RotSensetivity;
 
 		Camera->Pitch = Camera->Pitch > 89.0f ? 89.0f : Camera->Pitch;
@@ -690,7 +690,7 @@ UpdateAndRenderWorld(game_state *GameState, game_mode_world *WorldMode, temp_sta
 	if(DebugCamera)
 	{
 		{
-			Camera->DEBUGPitch -= DebugCameraInput->MouseYDisplacement*Camera->RotSensetivity;
+			Camera->DEBUGPitch += DebugCameraInput->MouseYDisplacement*Camera->RotSensetivity;
 			Camera->DEBUGHead += DebugCameraInput->MouseXDisplacement*Camera->RotSensetivity;
 
 			Camera->DEBUGPitch = Camera->DEBUGPitch > 89.0f ? 89.0f : Camera->DEBUGPitch;
